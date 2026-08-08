@@ -13,6 +13,43 @@ projects reference it. Nothing in `spine/` names a language, framework, or
 tool — stack specificity lives only in a project's own `.spine/adapters/`,
 generated at install time.
 
+## Why this exists
+
+Building almost entirely with AI agents fails in a small number of
+specific, repeatable ways. Each mechanism in this system traces to one of
+them — nothing here exists for its own sake:
+
+- **Intent evaporates.** Steering happens in chat; only code gets
+  committed; the "why this shape" is gone by next week. → `research.md`,
+  `plan.md`, and the delta briefing are real files, not scrollback.
+- **Agents add, never consolidate.** Duplication compounds weekly. →
+  `clone-scan` fails the floor on new duplication touching changed code,
+  every task.
+- **Agent-written tests routinely assert nothing.** No acceptance
+  criteria means review is vibes. → the falsifier subagent stubs out the
+  feature logic and re-runs the tests; if they still pass, that's a
+  reported finding, not a shrug.
+- **Models see source text, not runtime behavior.** Authorization and
+  data-integrity bugs dominate production failures for a reason. → the
+  security adversary and the smoke/migration lane exist specifically for
+  the categories a text-only reviewer can't see.
+- **The engineer stops knowing what their product is.** Named first,
+  because it's the one that matters most. → the three touchpoints
+  (classify, approve the plan, read the briefing) are designed to be the
+  minimum that keeps a human oriented, not a rubber stamp.
+- **Agents fix symptoms in the wrong layer on a codebase they don't
+  understand.** → `docs/map.md` and per-task research exist so a change is
+  grounded in how *this* system actually works, not a guess.
+- **When plan meets reality, an unsupervised agent improvises — and each
+  improvisation is locally reasonable, globally corrosive, and nobody
+  decided it.** → the latitude table and the halt tier mean a real
+  surprise stops and asks, instead of getting quietly papered over.
+
+None of this removes the need for an engaged engineer — see
+`docs/tradeoffs.md` for where this system is the wrong tool, what it
+costs, and what it concedes by design. It's a floor, not a substitute for
+judgment.
+
 ## Install → first task, in one sitting
 
 **1. Clone this repo once, anywhere stable.** Its path is load-bearing: the
