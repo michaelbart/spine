@@ -1,0 +1,74 @@
+#!/bin/bash
+# path-escalate — PreToolUse, matcher: Edit|Write.
+#
+# A write matching a protected path halts (deny, exit 2) unless the active
+# task is already confirmed Class 2. A write matching a path tagged
+# `#migration` is denied flat regardless of class unless that class is
+# exactly 2 — migrations don't get the softer "not yet escalated" framing,
+# per build prompt §2.3 ("Migration-path edits outside a Class 2 task are
+# denied flat"). With no active task, class defaults to 0, so the same
+# not-class-2 branch applies — this is the Class 0 backstop from §2.2.
+#
+# Project state consulted:
+#   .spine/protected-paths.conf — one glob per line; `#` starts a comment;
+#                                  a trailing `#migration` tags the line
+#   .spine/current-task         — active task-id (or absent -> class 0)
+#   work/<task-id>/class        — single line, "0"|"1"|"2"
+set -uo pipefail
+
+input="$(cat)"
+project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
+file_path="$(jq -r '.tool_input.file_path // empty' <<<"$input")"
+[[ -n "$file_path" ]] || exit 0
+
+conf="$project/.spine/protected-paths.conf"
+[[ -f "$conf" ]] || exit 0
+
+case "$file_path" in
+  "$project"/*) rel="${file_path#"$project"/}" ;;
+  /*) rel="$file_path" ;;
+  *) rel="$file_path" ;;
+esac
+
+class="0"
+current_task_file="$project/.spine/current-task"
+if [[ -f "$current_task_file" ]]; then
+  task_id="$(tr -d '[:space:]' < "$current_task_file")"
+  class_file="$project/work/$task_id/class"
+  [[ -f "$class_file" ]] && class="$(tr -d '[:space:]' < "$class_file")"
+fi
+
+matched_glob=""
+is_migration=0
+while IFS= read -r raw || [[ -n "$raw" ]]; do
+  line="$raw"
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  tag=""
+  [[ "$line" == *"#migration"* ]] && tag="migration"
+  glob="${line%%#*}"
+  glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
+  [[ -z "$glob" ]] && continue
+  if [[ "$rel" == $glob ]]; then
+    matched_glob="$glob"
+    [[ "$tag" == "migration" ]] && is_migration=1
+    break
+  fi
+done < "$conf"
+
+[[ -n "$matched_glob" ]] || exit 0
+
+if [[ "$is_migration" -eq 1 ]]; then
+  if [[ "$class" != "2" ]]; then
+    echo "path-escalate: '$rel' matches migration-tagged protected path '$matched_glob'. Migration edits are denied outside a confirmed Class 2 task (current class: $class) — this is a flat deny, not an escalation prompt." >&2
+    exit 2
+  fi
+  exit 0
+fi
+
+if [[ "$class" == "2" ]]; then
+  exit 0
+fi
+
+echo "path-escalate: '$rel' matches protected path '$matched_glob' but the current task is Class $class. Halting — escalate to Class 2 (engineer confirms, work/<task-id>/class is set to 2) before editing protected paths." >&2
+exit 2

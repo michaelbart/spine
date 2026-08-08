@@ -1,0 +1,31 @@
+#!/bin/bash
+# q — quiet command wrapper. One line on success, full diagnostics on failure,
+# fail-fast: exits with the wrapped command's own exit code.
+#
+# Usage: q <command> [args...]
+#
+# Every capability adapter is expected to honor this same discipline itself
+# (see core/ADAPTER-CONTRACT.md §2); q exists so ad-hoc commands run by
+# skills or an engineer get the same discipline without every caller
+# reimplementing output capture.
+set -uo pipefail
+
+if [[ $# -eq 0 ]]; then
+  echo "usage: q <command> [args...]" >&2
+  exit 2
+fi
+
+out="$(mktemp "${TMPDIR:-/tmp}/spine-q.XXXXXX")"
+trap 'rm -f "$out"' EXIT
+
+"$@" >"$out" 2>&1
+code=$?
+
+if [[ $code -eq 0 ]]; then
+  echo "ok: $*"
+else
+  cat "$out"
+  echo "--- q: '$*' exited $code ---" >&2
+fi
+
+exit $code

@@ -1,0 +1,86 @@
+#!/bin/bash
+# conformance — scores a plan's predicted-touch list against the actual
+# diff. Informational only: never blocks merge, flags the plan (build
+# prompt §2.5 Layer 4). A trend of low scores means research or planning is
+# failing, not that this run is invalid.
+#
+# plan.md must contain a section:
+#
+#   ## Predicted touch
+#   - path/to/file1
+#   - path/to/file2
+#
+# Usage: conformance <plan.md-path> [--base <ref>] [--project <path>] [--out <json-path>]
+set -uo pipefail
+
+usage() { echo "usage: conformance <plan.md-path> [--base <ref>] [--project <path>] [--out <json-path>]" >&2; exit 2; }
+
+[[ $# -ge 1 ]] || usage
+plan="$1"; shift
+project="$(pwd)"
+base="HEAD"
+out_path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --base) base="$2"; shift 2 ;;
+    --project) project="$2"; shift 2 ;;
+    --out) out_path="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+[[ -f "$plan" ]] || { echo "conformance: $plan not found" >&2; exit 2; }
+
+predicted=()
+while IFS= read -r line; do
+  predicted+=("$line")
+done < <(awk '/^## Predicted touch/{f=1;next} f && /^- /{sub(/^- /,"");sub(/ — .*/,"");print} f && /^## /{exit}' "$plan")
+if [[ ${#predicted[@]} -eq 0 ]]; then
+  echo "conformance: $plan has no '## Predicted touch' section with entries" >&2
+  exit 2
+fi
+
+actual=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && actual+=("$line")
+done < <(cd "$project" && git diff --name-only "$base" -- .)
+
+pred_hit=0
+actual_hit=0
+if [[ ${#actual[@]} -gt 0 ]]; then
+  for p in "${predicted[@]}"; do
+    for a in "${actual[@]}"; do
+      [[ "$p" == "$a" ]] && { pred_hit=$((pred_hit+1)); break; }
+    done
+  done
+  for a in "${actual[@]}"; do
+    for p in "${predicted[@]}"; do
+      [[ "$a" == "$p" ]] && { actual_hit=$((actual_hit+1)); break; }
+    done
+  done
+fi
+
+precision="0"
+recall="0"
+[[ ${#predicted[@]} -gt 0 ]] && precision=$(awk -v h="$pred_hit" -v n="${#predicted[@]}" 'BEGIN{printf "%.2f", h/n}')
+[[ ${#actual[@]} -gt 0 ]] && recall=$(awk -v h="$actual_hit" -v n="${#actual[@]}" 'BEGIN{printf "%.2f", h/n}')
+score=$(awk -v p="$precision" -v r="$recall" 'BEGIN{ if (p+r==0) printf "0.00"; else printf "%.2f", 2*p*r/(p+r) }')
+
+echo "conformance: predicted=${#predicted[@]} actual=${#actual[@]} precision=$precision recall=$recall f1=$score"
+
+to_json_array() {
+  if [[ $# -eq 0 ]]; then echo "[]"; else printf '%s\n' "$@" | jq -R . | jq -s .; fi
+}
+
+predicted_json="[]"; [[ ${#predicted[@]} -gt 0 ]] && predicted_json="$(to_json_array "${predicted[@]}")"
+actual_json="[]"; [[ ${#actual[@]} -gt 0 ]] && actual_json="$(to_json_array "${actual[@]}")"
+
+if [[ -n "$out_path" ]]; then
+  jq -n --argjson predicted "$predicted_json" \
+        --argjson actual "$actual_json" \
+        --arg precision "$precision" --arg recall "$recall" --arg score "$score" \
+        '{predicted:$predicted, actual:$actual, precision:($precision|tonumber), recall:($recall|tonumber), f1:($score|tonumber)}' \
+        >"$out_path"
+fi
+
+exit 0

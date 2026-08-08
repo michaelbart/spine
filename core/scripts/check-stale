@@ -1,0 +1,84 @@
+#!/bin/bash
+# check-stale — diffs a research.md's grounding files against HEAD; if any
+# have changed since the research SHA, quarantines the document (marks it
+# stale in place, loudly) and exits non-zero.
+#
+# research.md must open with a machine-readable header:
+#
+#   <!-- spine:research
+#   sha: <full commit sha>
+#   files:
+#     - path/to/file1
+#     - path/to/file2
+#   -->
+#
+# Usage: check-stale <research.md-path> [--project <path>]
+set -uo pipefail
+
+usage() { echo "usage: check-stale <research.md-path> [--project <path>]" >&2; exit 2; }
+
+[[ $# -ge 1 ]] || usage
+doc="$1"; shift
+project="$(pwd)"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+[[ -f "$doc" ]] || { echo "check-stale: $doc not found" >&2; exit 2; }
+
+header="$(awk '/<!-- spine:research/,/-->/' "$doc")"
+[[ -n "$header" ]] || { echo "check-stale: $doc has no spine:research header — cannot verify grounding" >&2; exit 2; }
+
+sha="$(printf '%s\n' "$header" | awk -F': ' '/^sha:/{print $2; exit}')"
+[[ -n "$sha" ]] || { echo "check-stale: $doc header has no sha: field" >&2; exit 2; }
+
+files=()
+while IFS= read -r line; do
+  files+=("$line")
+done < <(printf '%s\n' "$header" | awk '/^files:/{f=1;next} f && /^  - /{sub(/^  - /,"");print} f && !/^  /{exit}')
+if [[ ${#files[@]} -eq 0 ]]; then
+  echo "check-stale: $doc header lists no grounding files" >&2
+  exit 2
+fi
+
+drifted=()
+for f in "${files[@]}"; do
+  if ! (cd "$project" && git cat-file -e "$sha:$f" 2>/dev/null); then
+    drifted+=("$f (did not exist at $sha, or path is wrong)")
+    continue
+  fi
+  if ! (cd "$project" && git diff --quiet "$sha" -- "$f" 2>/dev/null); then
+    drifted+=("$f")
+  fi
+done
+
+if [[ ${#drifted[@]} -eq 0 ]]; then
+  echo "ok: $doc is current as of $sha (${#files[@]} grounding files unchanged)"
+  exit 0
+fi
+
+echo "check-stale: STALE — ${#drifted[@]} of ${#files[@]} grounding files changed since $sha:"
+for f in "${drifted[@]}"; do echo "  - $f"; done
+
+if ! grep -q '^> \*\*STALE\*\*' "$doc"; then
+  tmp="$(mktemp)"
+  {
+    # Insert the header verbatim, then the stale banner, then the rest of the file after the header.
+    awk -v sha="$sha" '
+      BEGIN{done=0}
+      /<!-- spine:research/{print; inhdr=1; next}
+      inhdr && /-->/{print; inhdr=0; print ""; print "> **STALE** — grounding files have changed since " sha ". Regenerate this research before trusting it."; print ""; done=1; next}
+      inhdr{print; next}
+      {print}
+    ' "$doc"
+  } >"$tmp"
+  mv "$tmp" "$doc"
+  echo "check-stale: quarantine banner written into $doc"
+else
+  echo "check-stale: quarantine banner already present in $doc"
+fi
+
+exit 1

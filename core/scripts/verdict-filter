@@ -1,0 +1,79 @@
+#!/bin/bash
+# verdict-filter — schema-validates adversary verdicts (core/ADAPTER-CONTRACT.md
+# §5) and drops evidence-free or malformed entries before /verify ever reads
+# them. A script decides what counts as evidence; a model only triages what
+# survives. Never fails the run because verdicts were dropped — that's this
+# script working correctly — only fails on a structurally unreadable input.
+#
+# Usage: verdict-filter <verdicts.json> [--out <filtered.json>]
+set -uo pipefail
+
+usage() { echo "usage: verdict-filter <verdicts.json> [--out <filtered.json>]" >&2; exit 2; }
+
+[[ $# -ge 1 ]] || usage
+input="$1"; shift
+out_path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --out) out_path="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+[[ -f "$input" ]] || { echo "verdict-filter: $input not found" >&2; exit 2; }
+if ! jq -e . "$input" >/dev/null 2>&1; then
+  echo "verdict-filter: $input is not valid JSON" >&2
+  exit 2
+fi
+
+agent="$(jq -r '.agent // empty' "$input")"
+task_id="$(jq -r '.task_id // empty' "$input")"
+attacked_count="$(jq '(.attacked // []) | length' "$input")"
+
+if [[ -z "$agent" || -z "$task_id" ]]; then
+  echo "verdict-filter: $input missing required top-level agent/task_id" >&2
+  exit 2
+fi
+if [[ "$attacked_count" -eq 0 ]]; then
+  echo "verdict-filter: $input has an empty 'attacked' list — every run must enumerate what it attacked, even a clean bill" >&2
+  exit 2
+fi
+
+filtered_and_report="$(jq '
+  def valid_evidence:
+    if .evidence.kind == "file_line" then
+      (.evidence.file // "" | length > 0) and (.evidence.line != null)
+    elif .evidence.kind == "command" then
+      (.evidence.command // "" | length > 0) and (.evidence.output // "" | length > 0)
+    else false end;
+  def valid_verdict:
+    (.claim // "" | length > 0)
+    and (.severity as $s | ["high","medium","low"] | index($s) != null)
+    and valid_evidence;
+  {
+    kept: [ (.verdicts // [])[] | select(valid_verdict) ],
+    dropped: [ (.verdicts // [])[] | select(valid_verdict | not) ]
+  }
+' "$input")"
+
+kept_count="$(jq '.kept | length' <<<"$filtered_and_report")"
+dropped_count="$(jq '.dropped | length' <<<"$filtered_and_report")"
+
+if [[ "$dropped_count" -gt 0 ]]; then
+  echo "verdict-filter: dropped $dropped_count non-conforming verdict(s):" >&2
+  jq -c '.dropped[]' <<<"$filtered_and_report" >&2
+fi
+
+output="$(jq --arg agent "$agent" --arg task_id "$task_id" \
+  --argjson attacked "$(jq '.attacked' "$input")" \
+  --argjson kept "$(jq '.kept' <<<"$filtered_and_report")" \
+  -n '{agent:$agent, task_id:$task_id, attacked:$attacked, verdicts:$kept}')"
+
+if [[ -n "$out_path" ]]; then
+  echo "$output" >"$out_path"
+else
+  echo "$output"
+fi
+
+echo "verdict-filter: kept $kept_count/$((kept_count+dropped_count)) verdicts"
+exit 0

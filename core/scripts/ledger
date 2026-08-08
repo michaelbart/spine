@@ -1,0 +1,159 @@
+#!/bin/bash
+# ledger — cost instrumentation. Writes/aggregates work/<id>/ledger.json and
+# scans git log for the untracked-commit ratio (build prompt §2.6): since
+# every /ship commit carries a `Spine-Task:` trailer (core/ADAPTER-CONTRACT.md
+# §6), any commit without one is Class 0 or bypass work by definition — no
+# model judgment involved.
+#
+# Usage:
+#   ledger init    <task-id> [--project <path>]
+#   ledger mark    <task-id> <phase> [--project <path>]                    (timestamps a phase boundary)
+#   ledger harvest <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
+#   ledger set     <task-id> <key> <value> [--project <path>]
+#   ledger scan-untracked-ratio [--since <git-date>] [--project <path>]
+#   ledger aggregate [--since <git-date>] [--project <path>]
+set -uo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  ledger init    <task-id> [--project <path>]
+  ledger mark    <task-id> <phase> [--project <path>]
+  ledger harvest <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
+  ledger set     <task-id> <key> <value> [--project <path>]
+  ledger scan-untracked-ratio [--since <git-date>] [--project <path>]
+  ledger aggregate [--since <git-date>] [--project <path>]
+EOF
+  exit 2
+}
+
+[[ $# -ge 1 ]] || usage
+cmd="$1"; shift
+project="$(pwd)"
+
+ledger_path() { echo "$project/work/$1/ledger.json"; }
+
+case "$cmd" in
+  init)
+    [[ $# -ge 1 ]] || usage
+    task_id="$1"; shift
+    while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
+    lp="$(ledger_path "$task_id")"
+    mkdir -p "$(dirname "$lp")"
+    if [[ -f "$lp" ]]; then
+      echo "ok: ledger already initialized for $task_id"
+      exit 0
+    fi
+    jq -n --arg task_id "$task_id" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{task_id:$task_id, created_at:$ts, phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null}' \
+      >"$lp"
+    echo "ok: initialized $lp"
+    ;;
+
+  mark)
+    [[ $# -ge 2 ]] || usage
+    task_id="$1"; phase="$2"; shift 2
+    while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
+    lp="$(ledger_path "$task_id")"
+    [[ -f "$lp" ]] || { echo "ledger: $lp not initialized — run 'ledger init' first" >&2; exit 2; }
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    tmp="$(mktemp)"
+    jq --arg phase "$phase" --arg ts "$ts" '.phases[$phase].marked_at = $ts' "$lp" >"$tmp" && mv "$tmp" "$lp"
+    echo "ok: marked $phase at $ts"
+    ;;
+
+  harvest)
+    [[ $# -ge 2 ]] || usage
+    task_id="$1"; phase="$2"; shift 2
+    transcript=""; from=""; to=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --transcript) transcript="$2"; shift 2 ;;
+        --from) from="$2"; shift 2 ;;
+        --to) to="$2"; shift 2 ;;
+        --project) project="$2"; shift 2 ;;
+        *) usage ;;
+      esac
+    done
+    [[ -n "$transcript" && -n "$from" && -n "$to" ]] || usage
+    [[ -f "$transcript" ]] || { echo "ledger: transcript $transcript not found" >&2; exit 2; }
+    lp="$(ledger_path "$task_id")"
+    [[ -f "$lp" ]] || { echo "ledger: $lp not initialized" >&2; exit 2; }
+
+    usage_json="$(jq -s --arg from "$from" --arg to "$to" '
+      [ .[] | select(.type=="assistant" and .timestamp >= $from and .timestamp <= $to)
+        | .message.usage
+        | {input: (.input_tokens // 0), output: (.output_tokens // 0),
+           cache_create: (.cache_creation_input_tokens // 0), cache_read: (.cache_read_input_tokens // 0)} ]
+      | reduce .[] as $u ({input:0,output:0,cache_create:0,cache_read:0};
+          {input: (.input + $u.input), output: (.output + $u.output),
+           cache_create: (.cache_create + $u.cache_create), cache_read: (.cache_read + $u.cache_read)})
+    ' "$transcript")"
+
+    tmp="$(mktemp)"
+    jq --arg phase "$phase" --argjson u "$usage_json" '.phases[$phase].tokens = $u' "$lp" >"$tmp" && mv "$tmp" "$lp"
+    echo "ok: harvested tokens for $phase — $(jq -c . <<<"$usage_json")"
+    ;;
+
+  set)
+    [[ $# -ge 3 ]] || usage
+    task_id="$1"; key="$2"; value="$3"; shift 3
+    while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
+    lp="$(ledger_path "$task_id")"
+    [[ -f "$lp" ]] || { echo "ledger: $lp not initialized" >&2; exit 2; }
+    tmp="$(mktemp)"
+    # Try to preserve JSON types (numbers/booleans); fall back to string.
+    if jq -e . >/dev/null 2>&1 <<<"$value"; then
+      jq --arg key "$key" --argjson value "$value" '.[$key] = $value' "$lp" >"$tmp"
+    else
+      jq --arg key "$key" --arg value "$value" '.[$key] = $value' "$lp" >"$tmp"
+    fi
+    mv "$tmp" "$lp"
+    echo "ok: set $key"
+    ;;
+
+  scan-untracked-ratio)
+    since=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in --since) since="$2"; shift 2;; --project) project="$2"; shift 2;; *) usage;; esac
+    done
+    total=0; tracked=0; bypassed=0
+    while IFS= read -r -d '' body; do
+      total=$((total+1))
+      if grep -q '^Spine-Task: ' <<<"$body"; then tracked=$((tracked+1)); fi
+      if grep -q '^Spine-Bypass: ' <<<"$body"; then bypassed=$((bypassed+1)); fi
+    done < <(cd "$project" && if [[ -n "$since" ]]; then git log --since="$since" --format='%B%x00'; else git log --format='%B%x00'; fi)
+    if [[ "$total" -eq 0 ]]; then
+      echo "ledger: no commits in range"
+      exit 0
+    fi
+    untracked=$((total - tracked))
+    ratio=$(awk -v u="$untracked" -v t="$total" 'BEGIN{printf "%.2f", u/t}')
+    echo "untracked-commit ratio: $ratio ($untracked/$total commits have no Spine-Task: trailer) — bypassed: $bypassed"
+    ;;
+
+  aggregate)
+    since=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in --since) since="$2"; shift 2;; --project) project="$2"; shift 2;; *) usage;; esac
+    done
+    files=("$project"/work/*/ledger.json)
+    if [[ ! -e "${files[0]}" ]]; then
+      echo "ledger: no work/*/ledger.json found under $project"
+      exit 0
+    fi
+    jq -s --arg since "${since:-}" '
+      (if $since != "" then map(select(.created_at >= $since)) else . end) as $entries |
+      {
+        task_count: ($entries | length),
+        total_tokens: ($entries | map(.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0})
+            | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
+        avg_deviation_count: ($entries | map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
+        class_escalation_count: ($entries | map(select(.class_escalated==true)) | length),
+        bypass_count: ($entries | map(select(.bypass != null)) | length)
+      }
+    ' "${files[@]}"
+    ;;
+
+  *) usage ;;
+esac

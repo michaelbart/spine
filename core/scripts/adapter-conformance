@@ -1,0 +1,93 @@
+#!/bin/bash
+# adapter-conformance — feeds an adapter its own known-passing and
+# known-failing self-test fixtures (core/ADAPTER-CONTRACT.md §4) and verifies
+# exit codes and output discipline (one line on success, non-empty
+# diagnostics on failure). Installers must not mark a capability
+# `implemented` in capabilities.json until this passes.
+#
+# Usage:
+#   adapter-conformance <capability> [--project <path>]
+#   adapter-conformance --all [--project <path>]
+set -uo pipefail
+
+usage() {
+  echo "usage: adapter-conformance <capability> [--project <path>]" >&2
+  echo "       adapter-conformance --all [--project <path>]" >&2
+  exit 2
+}
+
+[[ $# -ge 1 ]] || usage
+target="$1"; shift
+project="$(pwd)"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+adapters_dir="$project/.spine/adapters"
+
+check_one() {
+  local cap="$1" adapter="$adapters_dir/$1" ok=1
+  echo "--- adapter-conformance: $cap ---"
+
+  if [[ ! -x "$adapter" ]]; then
+    echo "FAIL: $cap — $adapter missing or not executable"
+    return 1
+  fi
+
+  local pass_out pass_code
+  pass_out="$(cd "$project" && "$adapter" --self-test pass 2>&1)"; pass_code=$?
+  local pass_lines
+  pass_lines="$(printf '%s\n' "$pass_out" | grep -c '.' || true)"
+  if [[ $pass_code -ne 0 ]]; then
+    echo "FAIL: $cap --self-test pass exited $pass_code (expected 0)"
+    echo "$pass_out"
+    ok=0
+  elif [[ "$pass_lines" -ne 1 ]]; then
+    echo "FAIL: $cap --self-test pass exited 0 but printed $pass_lines lines (expected exactly 1 — output discipline violated)"
+    echo "$pass_out"
+    ok=0
+  else
+    echo "ok: --self-test pass — exit 0, one line: \"$pass_out\""
+  fi
+
+  local fail_out fail_code
+  fail_out="$(cd "$project" && "$adapter" --self-test fail 2>&1)"; fail_code=$?
+  if [[ $fail_code -eq 0 ]]; then
+    echo "FAIL: $cap --self-test fail exited 0 (expected non-zero — an adapter that always passes fails conformance by construction)"
+    ok=0
+  elif [[ -z "$fail_out" ]]; then
+    echo "FAIL: $cap --self-test fail exited $fail_code but printed no diagnostics"
+    ok=0
+  else
+    echo "ok: --self-test fail — exit $fail_code, diagnostics present ($(printf '%s\n' "$fail_out" | grep -c '.') lines)"
+  fi
+
+  [[ $ok -eq 1 ]]
+}
+
+if [[ "$target" == "--all" ]]; then
+  caps_json="$project/.spine/capabilities.json"
+  [[ -f "$caps_json" ]] || { echo "adapter-conformance: no $caps_json" >&2; exit 2; }
+  overall=0
+  for cap in $(jq -r 'to_entries[] | select(.value.status=="implemented") | .key' "$caps_json"); do
+    check_one "$cap" || overall=1
+  done
+  if [[ $overall -eq 0 ]]; then
+    echo "adapter-conformance --all: PASS — every capability marked implemented is conformant"
+  else
+    echo "adapter-conformance --all: FAIL — see above"
+  fi
+  exit $overall
+else
+  check_one "$target"
+  code=$?
+  if [[ $code -eq 0 ]]; then
+    echo "adapter-conformance: PASS — $target"
+  else
+    echo "adapter-conformance: FAIL — $target"
+  fi
+  exit $code
+fi

@@ -1,0 +1,248 @@
+#!/bin/bash
+# floor — dispatcher over the capability manifest. Runs the Layer 1
+# deterministic floor (plus Layer 2 mutate / Layer 5 smoke where the class
+# and calibration call for it) against a project's .spine/adapters/, per
+# core/ADAPTER-CONTRACT.md. Never names a language, framework, or tool.
+#
+# Usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>]
+#
+# Exit 0 iff every capability that ran passed. Fail-fast: stops at the first
+# failing capability and prints its full diagnostics. A capability marked
+# unavailable/not-applicable never fails the run — it is recorded as an
+# explicit degradation instead (see build prompt §2.5, "no silently skipped
+# gate").
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  echo "usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>]" >&2
+  exit 2
+}
+
+[[ $# -ge 1 ]] || usage
+class="$1"; shift
+project="$(pwd)"
+task_id=""
+out_path=""
+base_ref="HEAD"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --task) task_id="$2"; shift 2 ;;
+    --out) out_path="$2"; shift 2 ;;
+    --base) base_ref="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+if [[ "$class" != "1" && "$class" != "2" ]]; then
+  echo "floor: class must be 1 or 2 — Class 0 tasks run no floor (build prompt §2.2)" >&2
+  exit 2
+fi
+
+caps_json="$project/.spine/capabilities.json"
+if [[ ! -f "$caps_json" ]]; then
+  echo "floor: no $caps_json — project is not spine-installed" >&2
+  exit 2
+fi
+
+adapters_dir="$project/.spine/adapters"
+
+if [[ -n "$task_id" ]]; then
+  artifacts_dir="$project/work/$task_id/artifacts"
+else
+  artifacts_dir="$project/.spine/floor-artifacts"
+fi
+mkdir -p "$artifacts_dir"
+
+status_of() { jq -r --arg c "$1" '.[$c].status // "missing"' "$caps_json"; }
+reason_of() { jq -r --arg c "$1" '.[$c].reason // ""' "$caps_json"; }
+
+results="[]"
+add_result() {
+  # add_result <capability> <status: pass|fail|degraded> <detail>
+  results="$(jq -c --arg cap "$1" --arg st "$2" --arg detail "$3" \
+    '. + [{"capability":$cap,"status":$st,"detail":$detail}]' <<<"$results")"
+}
+
+overall_fail=0
+changed_files=""
+compute_changed_files() {
+  if [[ -z "$changed_files" ]]; then
+    changed_files="$(cd "$project" && git diff --name-only "$base_ref" -- . 2>/dev/null || true)"
+  fi
+}
+
+run_simple() {
+  # run_simple <capability> — no stdin, no args
+  local cap="$1" st reason adapter out code
+  st="$(status_of "$cap")"
+  if [[ "$st" == "implemented" ]]; then
+    adapter="$adapters_dir/$cap"
+    if [[ ! -x "$adapter" ]]; then
+      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
+      add_result "$cap" "fail" "adapter missing/not executable"
+      overall_fail=1; return 1
+    fi
+    out="$(cd "$project" && "$adapter" 2>&1)"; code=$?
+    if [[ $code -eq 0 ]]; then
+      echo "PASS: $cap — $out"
+      add_result "$cap" "pass" "$out"
+    else
+      echo "FAIL: $cap"
+      echo "$out"
+      add_result "$cap" "fail" "$out"
+      overall_fail=1; return 1
+    fi
+  else
+    reason="$(reason_of "$cap")"
+    echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
+    add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
+  fi
+  return 0
+}
+
+run_with_stdin() {
+  # run_with_stdin <capability> — feeds $changed_files on stdin
+  local cap="$1" st reason adapter out code
+  st="$(status_of "$cap")"
+  if [[ "$st" == "implemented" ]]; then
+    adapter="$adapters_dir/$cap"
+    if [[ ! -x "$adapter" ]]; then
+      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
+      add_result "$cap" "fail" "adapter missing/not executable"
+      overall_fail=1; return 1
+    fi
+    compute_changed_files
+    out="$(cd "$project" && printf '%s\n' "$changed_files" | "$adapter" 2>&1)"; code=$?
+    if [[ $code -eq 0 ]]; then
+      echo "PASS: $cap — $out"
+      add_result "$cap" "pass" "$out"
+    else
+      echo "FAIL: $cap"
+      echo "$out"
+      add_result "$cap" "fail" "$out"
+      overall_fail=1; return 1
+    fi
+  else
+    reason="$(reason_of "$cap")"
+    echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
+    add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
+  fi
+  return 0
+}
+
+run_artifact() {
+  # run_artifact <capability> [stdin: changed_files|none] — takes output-path arg
+  local cap="$1" needs_stdin="$2" st reason adapter out code art_path
+  st="$(status_of "$cap")"
+  art_path="$artifacts_dir/$cap.md"
+  if [[ "$st" == "implemented" ]]; then
+    adapter="$adapters_dir/$cap"
+    if [[ ! -x "$adapter" ]]; then
+      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
+      add_result "$cap" "fail" "adapter missing/not executable"
+      overall_fail=1; return 1
+    fi
+    if [[ "$needs_stdin" == "yes" ]]; then
+      compute_changed_files
+      out="$(cd "$project" && SPINE_BASE_REF="$base_ref" printf '%s\n' "$changed_files" | "$adapter" "$art_path" 2>&1)"; code=$?
+    else
+      out="$(cd "$project" && SPINE_BASE_REF="$base_ref" "$adapter" "$art_path" 2>&1)"; code=$?
+    fi
+    if [[ $code -eq 0 ]]; then
+      echo "PASS: $cap — $out (artifact: $art_path)"
+      add_result "$cap" "pass" "$out (artifact: $art_path)"
+    else
+      echo "FAIL: $cap"
+      echo "$out"
+      add_result "$cap" "fail" "$out"
+      overall_fail=1; return 1
+    fi
+  else
+    reason="$(reason_of "$cap")"
+    echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
+    add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
+  fi
+  return 0
+}
+
+echo "floor: class $class, project $project"
+
+# Layer 1 — deterministic floor, always for class >= 1. Fail-fast: stop at
+# the first failing capability.
+for cap in typecheck lint test secret-scan; do
+  run_simple "$cap" || { finish=1; break; }
+done
+if [[ "${finish:-0}" -ne 1 ]]; then
+  run_artifact dep-diff no || finish=1
+fi
+if [[ "${finish:-0}" -ne 1 ]]; then
+  run_with_stdin clone-scan || finish=1
+fi
+if [[ "${finish:-0}" -ne 1 ]]; then
+  run_artifact callers yes || finish=1
+fi
+
+# Layer 2 (mutate) and Layer 5 (smoke) — class-conditional.
+if [[ "${finish:-0}" -ne 1 ]]; then
+  user_cfg="$HOME/.spine/user-config.json"
+  smoke_budget=60
+  mutate_class1_optin=false
+  if [[ -f "$user_cfg" ]]; then
+    smoke_budget="$(jq -r '.smoke_runtime_budget_seconds // 60' "$user_cfg")"
+    mutate_class1_optin="$(jq -r '.mutate_class1_optin // false' "$user_cfg")"
+  fi
+
+  run_mutate=0
+  if [[ "$class" == "2" ]]; then run_mutate=1; fi
+  if [[ "$class" == "1" && "$mutate_class1_optin" == "true" ]]; then run_mutate=1; fi
+  if [[ "$run_mutate" -eq 1 ]]; then
+    run_simple mutate || finish=1
+  fi
+
+  if [[ "${finish:-0}" -ne 1 ]]; then
+    smoke_status="$(status_of smoke-run)"
+    include_smoke=0
+    if [[ "$class" == "2" ]]; then
+      include_smoke=1
+      if [[ "$smoke_status" != "implemented" ]]; then
+        echo "DEGRADED (HARD GATE): smoke is not implemented ($smoke_status) at Class 2 — this is a real gap, not a soft skip" >&2
+      fi
+    else
+      cache_file="$project/.spine/.smoke-runtime-seconds"
+      if [[ -f "$cache_file" ]]; then
+        cached="$(cat "$cache_file" 2>/dev/null || echo 999999)"
+        if [[ "$smoke_status" == "implemented" && "$cached" -le "$smoke_budget" ]]; then
+          include_smoke=1
+        fi
+      elif [[ "$smoke_status" == "implemented" ]]; then
+        echo "floor: smoke runtime not yet measured — measuring now to establish the Class 1 inclusion threshold (budget: ${smoke_budget}s)"
+        include_smoke=1
+      fi
+    fi
+    if [[ "$include_smoke" -eq 1 ]]; then
+      smoke_start=$(date +%s)
+      for cap in smoke-seed smoke-run smoke-golden; do
+        run_simple "$cap" || { finish=1; break; }
+      done
+      smoke_end=$(date +%s)
+      echo $(( smoke_end - smoke_start )) > "$project/.spine/.smoke-runtime-seconds" 2>/dev/null || true
+    fi
+  fi
+fi
+
+if [[ -n "$out_path" ]]; then
+  jq -n --arg class "$class" --arg project "$project" --argjson results "$results" \
+    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{class:($class|tonumber), project:$project, ran_at:$ts, results:$results}' >"$out_path"
+fi
+
+if [[ "${finish:-0}" -eq 1 ]]; then
+  echo "floor: FAIL"
+  exit 1
+fi
+echo "floor: PASS"
+exit 0
