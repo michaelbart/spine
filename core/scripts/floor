@@ -4,19 +4,26 @@
 # and calibration call for it) against a project's .spine/adapters/, per
 # core/ADAPTER-CONTRACT.md. Never names a language, framework, or tool.
 #
-# Usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>]
+# Usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>] [--full]
 #
 # Exit 0 iff every capability that ran passed. Fail-fast: stops at the first
 # failing capability and prints its full diagnostics. A capability marked
 # unavailable/not-applicable never fails the run — it is recorded as an
 # explicit degradation instead (see build prompt §2.5, "no silently skipped
 # gate").
+#
+# --full: whole-tree mode (Phase E). `lint` and `typecheck` are, by
+# default, changed-file-set capabilities (ADAPTER-CONTRACT.md §3.1) — a
+# per-task floor run must reflect the task's own diff, not the repo's
+# accumulated history. --full bypasses that scoping and invokes both
+# adapters with `--full` instead, for CI or a dedicated whole-tree cleanup
+# task. Never pass --full from a per-task `/task` run.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
-  echo "usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>]" >&2
+  echo "usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>] [--full]" >&2
   exit 2
 }
 
@@ -26,6 +33,7 @@ project="$(pwd)"
 task_id=""
 out_path=""
 base_ref="HEAD"
+full_mode=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,6 +41,7 @@ while [[ $# -gt 0 ]]; do
     --task) task_id="$2"; shift 2 ;;
     --out) out_path="$2"; shift 2 ;;
     --base) base_ref="$2"; shift 2 ;;
+    --full) full_mode=1; shift ;;
     *) usage ;;
   esac
 done
@@ -134,6 +143,42 @@ run_with_stdin() {
   return 0
 }
 
+run_scoped() {
+  # run_scoped <capability> — changed-file-set capability (lint, typecheck).
+  # Normal mode: feeds $changed_files on stdin, same as run_with_stdin.
+  # --full mode: invokes the adapter with `--full`, no stdin, whole-tree.
+  local cap="$1" st reason adapter out code
+  st="$(status_of "$cap")"
+  if [[ "$st" == "implemented" ]]; then
+    adapter="$adapters_dir/$cap"
+    if [[ ! -x "$adapter" ]]; then
+      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
+      add_result "$cap" "fail" "adapter missing/not executable"
+      overall_fail=1; return 1
+    fi
+    if [[ "$full_mode" -eq 1 ]]; then
+      out="$(cd "$project" && "$adapter" --full 2>&1)"; code=$?
+    else
+      compute_changed_files
+      out="$(cd "$project" && printf '%s\n' "$changed_files" | "$adapter" 2>&1)"; code=$?
+    fi
+    if [[ $code -eq 0 ]]; then
+      echo "PASS: $cap — $out"
+      add_result "$cap" "pass" "$out"
+    else
+      echo "FAIL: $cap"
+      echo "$out"
+      add_result "$cap" "fail" "$out"
+      overall_fail=1; return 1
+    fi
+  else
+    reason="$(reason_of "$cap")"
+    echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
+    add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
+  fi
+  return 0
+}
+
 run_artifact() {
   # run_artifact <capability> [stdin: changed_files|none] — takes output-path arg
   local cap="$1" needs_stdin="$2" st reason adapter out code art_path
@@ -169,13 +214,28 @@ run_artifact() {
   return 0
 }
 
-echo "floor: class $class, project $project"
+echo "floor: class $class, project $project$([[ "$full_mode" -eq 1 ]] && echo " (--full: whole-tree lint/typecheck)")"
 
 # Layer 1 — deterministic floor, always for class >= 1. Fail-fast: stop at
-# the first failing capability.
-for cap in typecheck lint test secret-scan; do
-  run_simple "$cap" || { finish=1; break; }
+# the first failing capability. typecheck/lint are changed-file-set
+# capabilities (ADAPTER-CONTRACT.md §3.1) unless --full was passed.
+for cap in typecheck lint; do
+  run_scoped "$cap" || { finish=1; break; }
 done
+if [[ "${finish:-0}" -ne 1 ]]; then
+  run_simple test || finish=1
+fi
+if [[ "${finish:-0}" -ne 1 ]]; then
+  # secret-scan takes the changed-file set as a scope-narrowing option
+  # (ADAPTER-CONTRACT.md §3) — feeding it here, not via run_simple's no-
+  # stdin path, is what keeps a per-task floor run from falling back to
+  # a full-tree scan (and, e.g., flagging an adapter's own self-test
+  # fixture for embedding a fake secret shape, a real cross-stack finding
+  # from this project's own build). A capability with no stdin content
+  # still runs correctly — secret-scan's own empty-stdin fallback is the
+  # full-tree scan, unchanged for --full-style whole-repo use elsewhere.
+  run_with_stdin secret-scan || finish=1
+fi
 if [[ "${finish:-0}" -ne 1 ]]; then
   run_artifact dep-diff no || finish=1
 fi
