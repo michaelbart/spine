@@ -87,6 +87,19 @@ memory, and the ceremony around producing them becomes pure cost.
   Nothing in v1 detects this.
 - **The plan-adequacy gap** (below) is the single most important of these,
   named explicitly by the build prompt, and worth its own heading.
+- **The circuit breaker's honor-system dependency.** The 3rd-deviation
+  circuit breaker (build prompt §2.4) counts deviations logged to
+  `deviations.md`; nothing forces a deviation to actually get logged.
+  Deliberately not turned into enforcement in Phase E — this is a norm
+  about model/human judgment ("did this count as a deviation"), not a tool
+  call, and mechanizing it would mean intercepting judgment rather than a
+  Bash/Edit/Write invocation, which is a different (and much larger) kind
+  of gate than anything else in v1. An implementer motivated to avoid
+  tripping the breaker can simply not log a deviation and proceed. Recorded
+  here, alongside the other conceded gaps, rather than only in the
+  self-red-team section below — a reader deciding whether to trust the
+  breaker needs this next to the rest of what's conceded by design, not
+  buried in a gate-by-gate attack log.
 
 ### The plan-adequacy gap
 
@@ -180,9 +193,63 @@ it for spine-installed project sessions or file the specific denial pattern
 with Anthropic. This is exactly the kind of "silently degraded gate" the
 build prompt says is the worst object this system can produce (§4) — the
 difference is that here the degradation is in the *build's own tooling*,
-not a project capability, and no mechanism in v1 makes it visible the way
-`capabilities.json` makes a missing adapter visible. **This is this build's
-single strongest self-red-team finding** and is repeated there.
+not a project capability. **This was this build's single strongest
+self-red-team finding through Phase D.**
+
+**Phase E: made the degradation loud, and confirmed the scope of the
+wall.** Two things changed:
+
+1. **The wall is confirmed specific to headless/unattended sessions, not
+   the ordinary case.** Phase D suspected but never confirmed this
+   ("should not recur for an ordinary, attended, interactive session — that
+   case was not the one this build had trouble with"). Phase E confirmed it
+   directly: `ledger init`/`mark`/`set`, `check-stale`, `conformance`, and
+   `verdict-filter` were all run for real, from a normal attended session
+   (no `-p`, no `--dangerously-skip-permissions`, permission prompts
+   available to approve exactly as they would be for any engineer),
+   against horizon's real worked-example task artifacts. **All four
+   executed cleanly and wrote exactly what they claim to** — a real
+   `ledger.json` with a real `classify` phase timestamp; `check-stale`
+   correctly detecting real drift (the worked example's own research.md
+   *is* stale — a grounding file changed after research was written — and
+   `check-stale` correctly quarantined a scratch copy of it, non-
+   destructively, to prove this without touching the real task's
+   artifacts); `conformance` computing a real precision/recall/f1 against
+   the actual diff; `verdict-filter` validating and passing 4/4 real
+   falsifier verdicts. The Auto Mode classifier wall is real and still
+   unresolved for headless use, but the engineer's actual day-to-day
+   case — an attended `/task` session — is now confirmed clean, not just
+   assumed clean.
+2. **The degradation is now mechanically visible when it does happen**,
+   closing the "no mechanism in v1 makes it visible" half of this finding.
+   `ledger` gained `note-gap` (any skill that hits an unreachable script
+   records `{script, consequence, at}` into that task's `tooling_gaps`
+   array) and a `hand_tracked` stamp (a skill that cannot reach `ledger`
+   itself hand-authors a same-shaped `ledger.json` with `hand_tracked:
+   true`, so the task stays visible to `aggregate` instead of silently
+   having no ledger file at all — the worked example's own task is the
+   concrete case this fixes: it has no `ledger.json` on disk today,
+   precisely the invisible-task failure mode this stamp exists for).
+   `ledger aggregate` now reports `tooling_gap_count` and
+   `hand_tracked_task_count`; `/costs` surfaces both next to the bypass
+   count, with the same "say so plainly if nonzero" framing bypass already
+   gets. `work/<task-id>/notes.md` is the running log a skill writes to the
+   moment a gap happens (`TOOLING GAP: <script> — <consequence>`), and
+   `/verify`/`/ship` fold it into `verify.md`'s and `briefing.md`'s new
+   "Tooling gaps" sections — so a human reading either document sees the
+   gap without having to already know to look in notes.md or run
+   `/costs`. This does not make the classifier wall disappear, and it
+   still depends on the model actually following the recording discipline
+   the skills now spell out (the same honor-system caveat every other norm-
+   not-hook-enforced mechanism in this system carries — see the circuit
+   breaker's own residual-risk entry) — but a degradation that happens now
+   leaves a trace in three places (notes.md, ledger.json, verify.md/
+   briefing.md) instead of zero. **This build's single strongest
+   self-red-team finding is narrowed, not closed**: the wall itself is
+   unfixed (still Anthropic-internal classifier behavior this build cannot
+   see into), but both halves of why it mattered — "does it actually hit
+   the common case" and "would anyone notice" — now have real answers
+   instead of open questions.
 
 ## v2 shelf (forbidden in v1, insertion points noted)
 
@@ -245,10 +312,15 @@ single strongest self-red-team finding** and is repeated there.
 6. **Floor in CI.** Not wired for horizon in this build — Layer 2
    calibration's default (mirror locally; CI integration is an addendum)
    was accepted, and horizon's actual CI
-   (`.github/workflows/main.yaml`) was left untouched. Given the floor
-   currently fails on `lint` for pre-existing reasons (below), wiring it
-   into CI today would just turn every PR red — sequence this after the
-   formatting-debt task, not before.
+   (`.github/workflows/main.yaml`) was left untouched. Through Phase D the
+   floor failed on `lint` for pre-existing, task-independent reasons (see
+   the worked example, below) — Phase E's rescoping (§ "Phase E: the
+   lint/typecheck rescoping decision") means a per-task floor run no
+   longer fails on debt the task never touched, but horizon's CI still
+   isn't wired to `floor --full` (the whole-tree mode that *would* still
+   hit that debt) — sequence that after the formatting-debt cleanup task,
+   not before, same reasoning as Phase D, now with a concrete mechanism
+   (`--full`) rather than an open question.
 7. **Adapter argument convention.** stdin for changed-file sets, first
    positional arg for output artifacts, `SPINE_BASE_REF` for a diff base
    (`core/ADAPTER-CONTRACT.md §3`). Validated twice now — once against
@@ -256,6 +328,84 @@ single strongest self-red-team finding** and is repeated there.
    Python/pytest/mypy/ruff/mutmut/jscpd adapter set built fresh in Phase D
    for two-stack validation — with zero changes needed to the convention
    itself across either stack.
+
+## Phase E: the lint/typecheck rescoping decision (answered architecture question)
+
+Phase D found and named, but explicitly declined to resolve unilaterally,
+the standing property that **the floor could not pass on any task in
+horizon** because `lint` and `typecheck` checked the whole tree, not the
+diff, against a tree that already carried 330 files of pre-existing
+formatting debt. Phase D offered two paths — a dedicated cleanup task, or
+moving `lint`/`typecheck` into the changed-file-set bucket — and left the
+choice to the engineer rather than deciding it. That choice has now been
+made, from outside this build: **both, not either.**
+
+**What changed.** `core/ADAPTER-CONTRACT.md §3` now places `lint` and
+`typecheck` in the changed-file-set bucket alongside `test-changed` and
+`clone-scan` (§3.1). `floor` gained a `--full` flag that restores the
+pre-Phase-E whole-tree verdict for both capabilities, unchanged in
+implementation — it is a mode switch, not a second code path bolted on.
+horizon's two adapters and a freshly-built synthetic Python project's two
+adapters (mypy/ruff — Phase D's own synthetic project no longer exists on
+disk; rebuilding it in full was judged disproportionate to validating a
+two-capability contract change, so only `typecheck`/`lint` were rebuilt for
+this validation, not all nine of Phase D's capabilities) were both updated
+to the same convention and both pass `adapter-conformance --all`.
+
+**What this concedes, stated plainly, per the build prompt's own
+instruction to disclose architecture tradeoffs rather than bury them:**
+
+- **Pre-existing debt in untouched files becomes invisible to the per-task
+  floor**, by design. A file nobody has touched in months can carry a real
+  lint or type violation indefinitely, and no per-task `/task` run will
+  ever surface it — only `floor --full` or CI (once wired) will. This is
+  the direct cost of making the per-task gate reflect only the task's own
+  diff: the price of "stop punishing engineers for debt they didn't write"
+  is "stop mechanically re-discovering that debt on every task." horizon's
+  330-file formatting debt is the concrete, currently-live instance of
+  this — it does not go away, it becomes something only `--full`/CI will
+  ever find.
+- **`typecheck`'s scoping is verdict-filtering, not invocation-scoping**
+  (a real asymmetry between the two rescoped capabilities, worth naming
+  explicitly): `flutter analyze`/`mypy` still run against the whole
+  package/root internally, because a type checker needs full-project
+  context to resolve types correctly — the adapter filters the *verdict*
+  to errors located in changed files. `lint` (`dart format`/`eslint`/
+  `ruff`), having no cross-file semantics, scopes the *invocation* itself.
+  A consequence of the filtering approach: if a changed file's signature
+  edit breaks an *unchanged* caller elsewhere, that break is real, would
+  show up in `flutter analyze`'s full output, and is filtered out because
+  the broken file isn't in the changed set. This is the same "changed-file
+  scope can miss change-caused breakage in a file that isn't itself
+  changed" tradeoff every capability in this bucket already carries
+  (`test-changed`'s own vacuous-pass-when-no-matching-test-file behavior is
+  the same shape) — not new to this fix, but worth stating next to it
+  rather than leaving it implicit.
+- **`--full` is not wired anywhere yet** — it exists as a capability, not
+  a running check. Nothing currently calls it except a human running
+  `floor --full` by hand. Until it's wired into CI or a scheduled cleanup
+  cadence, "the debt is invisible to per-task floor but visible to
+  `--full`" is true in principle and unenforced in practice — the same gap
+  named in open question #6 above, now with a mechanism rather than an
+  open question, but still not automated.
+
+**Verified, not asserted:** re-ran the exact previously-failing scenario.
+`floor 1 --task 20260808-fix-building-group-delete-orphans-units` (the
+worked example's own task) now reports `PASS: typecheck` and `PASS: lint`
+— both scoped to the task's real 3-file diff — and proceeds to (correctly,
+separately) fail at `test` for the pre-existing, disclosed, unrelated
+reason already on record in `capabilities.json` (the Very Good CLI
+counter-template suite and the admin `file_picker` version conflict). The
+same invocation with `--full` appended reproduces the original 330-file
+`lint: FAIL` exactly. `adapter-conformance --all` passes for both
+capabilities in horizon and in the rebuilt synthetic Python project, with
+self-test fixtures that specifically prove scoping (a sibling
+always-violating file excluded from the "changed" set, per
+`ADAPTER-CONTRACT.md §4`'s new requirement) — not just that the underlying
+tool wrapper works. The synthetic Python project additionally reproduces
+the same real-repo proof horizon's did: a genuinely committed
+`preexisting_debt.py` (real ruff and mypy violations) that scoped
+`lint`/`typecheck` correctly ignore and `--full` correctly still catches.
 
 ## Install mechanism (Phase A's decision, re-confirmed here)
 
@@ -384,6 +534,16 @@ task: `git status` before and after the floor run showed only the task's
 own 3 intended files modified — `dart format`'s `--output=none` flag means
 the floor's lint check never mutates the tree, only reports.
 
+**Historical note (Phase E):** this `FAIL` was real, at the time, under the
+whole-tree `lint`/`typecheck` scoping Phase D shipped with. Phase E
+rescoped both to the changed-file set (§ "Phase E: the lint/typecheck
+rescoping decision") and re-ran this exact task's floor: it now reports
+`PASS: typecheck` and `PASS: lint`, correctly proceeding to fail at `test`
+instead for the separate, pre-existing, disclosed reason already on record
+above. The 330-file debt this paragraph describes has not been fixed — it
+would still fail `floor --full` — it has simply stopped being something a
+per-task floor run reports as this task's problem.
+
 **Real adversary results, both in worktree/read-only isolation as
 designed**: falsifier reported 4 verdicts (1 low, 2 medium, 1 low — no
 `verdict-filter` run, see below, but all 4 were well-formed and would have
@@ -451,6 +611,10 @@ the build prompt's own instruction to raise architecture disagreements
 rather than resolve them silently. Recorded here as the clearest possible
 example of "the worked example is also your integration test."
 
+**Decided in Phase E: both, not either** — see "Phase E: the lint/
+typecheck rescoping decision" above for the resolved architecture question,
+what it concedes, and the re-run proof against this exact task.
+
 Full artifacts — `research.md`, `plan.md`, `verify.md`, the ledger (partial,
 hand-tracked), the delta briefing — live under
 `horizon/work/20260808-fix-building-group-delete-orphans-units/`.
@@ -462,15 +626,56 @@ Per build prompt §8, attacking this build's own gates before delivery.
 **Laziest defeat of each gate, and whether anything detects it:**
 
 - **`phase-gate`/`path-escalate`** (deny `Edit`/`Write` outside task
-  folder during research/plan; halt on protected paths): matcher is
-  `Edit|Write` only. **A `Bash` shell redirect (`printf ... > file`,
-  `sed -i`) bypasses both hooks entirely** — confirmed as a real gap in
-  Phase B (§2, "phase-gate first-attempt failure"), not newly found here,
-  but re-confirmed still true: neither hook's matcher was widened in this
-  phase. Nothing detects this after the fact; a diff that appeared via
-  Bash redirect looks identical to one that appeared via Edit. This is the
-  single most exploitable gap in the whole enforcement layer and is
-  unresolved.
+  folder during research/plan; halt on protected paths): **CLOSED in Phase
+  E.** The matcher was `Edit|Write` only through Phase D, so a `Bash` shell
+  redirect (`printf ... > file`, `sed -i`) bypassed both hooks entirely —
+  confirmed as a real gap in Phase B (§2, "phase-gate first-attempt
+  failure"), re-confirmed still open through Phase D. Phase E widened both
+  matchers to `Edit|Write|Bash` and added `core/hooks/_bash-write-targets`,
+  a shared extraction library both hooks source: it recognizes output
+  redirection, `sed`/`perl -i`, `tee`, `cp`/`mv`/`install`, `truncate`, and
+  `dd of=`, resolves the target the same way the Edit/Write path already
+  did, and — critically — **fails closed** (denies) when a write-shaped
+  command's target can't be confidently resolved (a shell variable,
+  command substitution, glob, or a relative path after an in-command `cd`),
+  rather than silently passing it through. This is a gate, not a shell
+  parser, and it is not perfect closure — see "Residual shapes still open"
+  below — but the specific bypass this build shipped with (a plain
+  redirect or `sed -i` sailing past an `Edit|Write`-only matcher) is
+  closed.
+
+  **Fire-tested against horizon's real tree, fresh `claude -p` subprocess
+  each time** (2026-08-08): (1) `printf 'x' > lib/bash_bypass_firetest.dart`
+  during a scratch task's research phase — real block by `phase-gate`,
+  file never created (confirmed by `ls` before/after). (2)
+  `sed -i '' 's/nonexistentstring123/replacement123/' firestore.rules` — real
+  flat-deny block by `path-escalate` (migration-tagged, Class 1 active
+  task), file's md5 confirmed unchanged before/after. (3) `git status
+  --short` — passed through uninspected, proving the widened matcher did
+  not become a blanket deny. (4) `TARGET=firestore.rules; sed -i ''
+  's/a/b/' $TARGET` — real fail-closed block: `path-escalate` correctly
+  refused to resolve the variable and denied rather than silently pass a
+  write whose target it couldn't verify.
+
+  **Residual shapes still open, stated plainly:** (a) a Bash command run
+  from a working directory this hook can't observe (a `cd` in a *prior,
+  separate* Bash tool call, not the same command string) can still evade
+  path resolution — the hook only sees one `tool_input.command` string at a
+  time, never prior shell state; a relative-path write issued after an
+  earlier, separate `cd` will resolve against the wrong base and may
+  incorrectly pass. (b) `sed`/`perl -i` invocations naming more than one
+  target file (`sed -i ... f1 f2 f3`) are only checked against the last
+  token of the command — `f1`/`f2` are not inspected. (c) any shell
+  mutation shape not in the recognized list (e.g. a custom wrapper script,
+  `xxd -r` writing via a language interpreter's own file-write call
+  invoked through `python -c "..."`, `>&2`-into-a-real-fd-remap trick) is
+  invisible to this gate the same way it always was — this closes the
+  *known, named* shapes from the build prompt and Phase B/D's own
+  self-red-team, not shell-mutation in general. Nothing mechanically
+  detects a diff that arrived via one of these residual shapes versus one
+  that arrived via a recognized path — the same "looks identical after the
+  fact" problem the original finding named, narrowed to a smaller set of
+  shapes rather than eliminated as a category.
 - **`dep-gate`** (force manifest edits/install commands to `ask`): a
   command that doesn't match any line in `.spine/install-command-
   patterns.conf` sails through uninspected — e.g. `curl | sh`-style
@@ -512,35 +717,65 @@ could never have caught or required.
 failure (above) is precisely this pattern. An engineer under deadline
 pressure, faced with every single task failing floor for reasons that have
 nothing to do with their change, reaches for `--bypass` on every task
-rather than the one dedicated cleanup task that would fix it once. What
-makes this visible: `ledger scan-untracked-ratio`'s bypass count, which
-`/costs` surfaces first per build prompt §2.6 — but only if the engineer
-actually runs `/costs` and reads it. Nothing pushes that number in front of
-them proactively.
+rather than the one dedicated cleanup task that would fix it once. **Phase
+E narrows this**: `lint`/`typecheck` no longer fail every task for
+pre-existing, task-independent debt (§ "Phase E: the lint/typecheck
+rescoping decision"), so this specific pressure toward reflexive
+`--bypass` is reduced for the two capabilities that were actually causing
+it. It is narrowed, not eliminated as a category — any *other* capability
+that later turns out to be whole-tree-scoped and pre-violated (or `--full`,
+once someone wires it into CI and hits the still-unfixed 330-file debt)
+would recreate the same pressure. What makes it visible either way:
+`ledger scan-untracked-ratio`'s bypass count, which `/costs` surfaces first
+per build prompt §2.6 — but only if the engineer actually runs `/costs`
+and reads it. Nothing pushes that number in front of them proactively.
 
 **Hooks shipped without watching them fire**: none. All three
 (`phase-gate`, `path-escalate`, `dep-gate`) were fire-tested via fresh
 `claude -p` subprocesses against horizon's real tree in this phase, in
 addition to Phase B's scratch-repo tests, including the post-audit
-`dep-gate` retest after moving its patterns out of spine core.
+`dep-gate` retest after moving its patterns out of spine core. **Phase E
+added a new Bash branch to `phase-gate` and `path-escalate` and watched
+every new branch fire for real** (see the closed self-red-team finding
+above): the deny branch (redirect during research), the flat-deny branch
+(`sed -i` on a migration path), the pass-through branch (a harmless
+command), and the new fail-closed/unresolved branch (a variable-named
+target) — four fresh `claude -p` subprocesses against horizon's real tree,
+none unwatched.
 
 **Capabilities marked `implemented` without a passing conformance run**:
 none, in either horizon or the synthetic Python project — `adapter-
 conformance --all` passed for every `implemented` entry in both
 `capabilities.json` files, re-run in this phase after horizon's codebase
 changed since Phase B (confirmed still passing against the current tree,
-not just the original one).
+not just the original one). **Phase E note**: Phase D's original synthetic
+Python project no longer exists on disk (it was scratch, never committed).
+Phase E rebuilt a smaller, two-capability synthetic Python project
+(`typecheck` via `mypy --strict`, `lint` via `ruff`, the two capabilities
+this phase's rescoping actually touched) rather than reconstructing all
+nine of Phase D's capabilities, and ran `adapter-conformance --all` against
+it — PASS. This is a narrower second-stack proof than Phase D's original
+(nine capabilities vs. two), disclosed as exactly that rather than implied
+to be a full re-validation.
 
 **Files that would not run today**: none found. Every script, hook, and
 adapter referenced by a skill was either executed directly or fire-tested
 via subprocess in this phase or a prior one.
 
-**The Auto Mode classifier wall (above) is this self-red-team's top
-finding** — it's the one gap that isn't a hole in a specific gate but a
-systemic risk to the *ledger/conformance tooling's own reliability* under
-one real permission configuration, and it was found only by actually
-running the built system end-to-end rather than testing its parts in
-isolation.
+**The Auto Mode classifier wall (above) was this self-red-team's top
+finding through Phase D** — it's the one gap that isn't a hole in a
+specific gate but a systemic risk to the *ledger/conformance tooling's own
+reliability* under one real permission configuration, and it was found
+only by actually running the built system end-to-end rather than testing
+its parts in isolation. **Phase E narrowed it**: confirmed by direct,
+attended re-run that `ledger`/`check-stale`/`conformance`/`verdict-filter`
+all execute correctly outside the specific headless-subprocess
+configuration that originally surfaced the wall, and added a mechanical
+trail (`ledger note-gap`, the `hand_tracked` stamp, `verify.md`/
+`briefing.md`'s Tooling gaps sections, `/costs`' `tooling_gap_count`) so a
+future recurrence — headless or not — leaves a visible trace instead of
+looking identical to a clean run. See "Phase E: made the degradation loud"
+above for the full account.
 
 ## `spine/work/.build/` — keep it
 

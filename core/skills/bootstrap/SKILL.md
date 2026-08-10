@@ -108,9 +108,10 @@ checkout — confirmed mechanism, `phase-A-handoff.md` §4):
 ```
 
 Write `<project>/.claude/settings.json` (committed, team-shared) wiring the
-three hooks by `${CLAUDE_PROJECT_DIR}/.claude/hooks/<name>` path — matchers
-`Edit|Write` for `phase-gate` and `path-escalate`, `Edit|Write|Bash` for
-`dep-gate` (see each hook's own header comment in `core/hooks/`).
+three hooks by `${CLAUDE_PROJECT_DIR}/.claude/hooks/<name>` path — matcher
+`Edit|Write|Bash` for all three (`phase-gate`, `path-escalate`, `dep-gate`
+each resolve Bash file-mutation targets themselves; see each hook's own
+header comment in `core/hooks/` and `core/hooks/_bash-write-targets`).
 
 Write `<project>/CLAUDE.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/CLAUDE.md`, filled with this project's

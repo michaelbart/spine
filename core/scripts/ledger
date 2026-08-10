@@ -5,11 +5,27 @@
 # §6), any commit without one is Class 0 or bypass work by definition — no
 # model judgment involved.
 #
+# `hand_tracked` (Phase E): a skill that cannot invoke this script at all
+# (e.g. `ledger init` itself is unreachable) hand-authors a same-shaped
+# ledger.json stub with `hand_tracked: true` instead of leaving the task
+# invisible to `aggregate`. Real, script-produced ledgers always carry
+# `hand_tracked: false`. This is the stamp that lets a reader (and
+# `aggregate`) tell hand-tracked state from script-derived state.
+#
+# `tooling_gaps` (Phase E): every time a skill hits a core script it
+# genuinely could not invoke (not "ran and failed" — "could not run at
+# all"), it calls `ledger note-gap` if this script itself is reachable, or
+# hand-appends the same fact to work/<task-id>/notes.md and stamps
+# ledger.json by hand if this script *isn't* reachable either. `aggregate`
+# surfaces the total as `tooling_gap_count` — `/costs` puts it next to the
+# bypass count, per docs/tradeoffs.md's self-red-team.
+#
 # Usage:
-#   ledger init    <task-id> [--project <path>]
-#   ledger mark    <task-id> <phase> [--project <path>]                    (timestamps a phase boundary)
-#   ledger harvest <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
-#   ledger set     <task-id> <key> <value> [--project <path>]
+#   ledger init      <task-id> [--project <path>]
+#   ledger mark      <task-id> <phase> [--project <path>]                    (timestamps a phase boundary)
+#   ledger harvest   <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
+#   ledger set       <task-id> <key> <value> [--project <path>]
+#   ledger note-gap  <task-id> <script> <consequence> [--project <path>]
 #   ledger scan-untracked-ratio [--since <git-date>] [--project <path>]
 #   ledger aggregate [--since <git-date>] [--project <path>]
 set -uo pipefail
@@ -17,10 +33,11 @@ set -uo pipefail
 usage() {
   cat >&2 <<'EOF'
 usage:
-  ledger init    <task-id> [--project <path>]
-  ledger mark    <task-id> <phase> [--project <path>]
-  ledger harvest <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
-  ledger set     <task-id> <key> <value> [--project <path>]
+  ledger init      <task-id> [--project <path>]
+  ledger mark      <task-id> <phase> [--project <path>]
+  ledger harvest   <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
+  ledger set       <task-id> <key> <value> [--project <path>]
+  ledger note-gap  <task-id> <script> <consequence> [--project <path>]
   ledger scan-untracked-ratio [--since <git-date>] [--project <path>]
   ledger aggregate [--since <git-date>] [--project <path>]
 EOF
@@ -45,7 +62,7 @@ case "$cmd" in
       exit 0
     fi
     jq -n --arg task_id "$task_id" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      '{task_id:$task_id, created_at:$ts, phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null}' \
+      '{task_id:$task_id, created_at:$ts, phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null, hand_tracked:false, tooling_gaps:[]}' \
       >"$lp"
     echo "ok: initialized $lp"
     ;;
@@ -112,6 +129,18 @@ case "$cmd" in
     echo "ok: set $key"
     ;;
 
+  note-gap)
+    [[ $# -ge 3 ]] || usage
+    task_id="$1"; script="$2"; consequence="$3"; shift 3
+    while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
+    lp="$(ledger_path "$task_id")"
+    [[ -f "$lp" ]] || { echo "ledger: $lp not initialized" >&2; exit 2; }
+    tmp="$(mktemp)"
+    jq --arg script "$script" --arg consequence "$consequence" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.tooling_gaps += [{script:$script, consequence:$consequence, at:$ts}]' "$lp" >"$tmp" && mv "$tmp" "$lp"
+    echo "ok: noted tooling gap — $script: $consequence"
+    ;;
+
   scan-untracked-ratio)
     since=""
     while [[ $# -gt 0 ]]; do
@@ -150,7 +179,9 @@ case "$cmd" in
             | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
         avg_deviation_count: ($entries | map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
         class_escalation_count: ($entries | map(select(.class_escalated==true)) | length),
-        bypass_count: ($entries | map(select(.bypass != null)) | length)
+        bypass_count: ($entries | map(select(.bypass != null)) | length),
+        tooling_gap_count: ($entries | map(.tooling_gaps // [] | length) | add // 0),
+        hand_tracked_task_count: ($entries | map(select(.hand_tracked==true)) | length)
       }
     ' "${files[@]}"
     ;;

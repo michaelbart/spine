@@ -1,0 +1,197 @@
+# _bash-write-targets — shared library, sourced by phase-gate and
+# path-escalate. Not a hook itself (no shebang execution path; nothing in
+# .claude/settings.json wires it directly).
+#
+# Extracts candidate file-mutation targets from a Bash `tool_input.command`
+# string, for the same hooks that already gate Edit/Write. This is a gate,
+# not a shell parser: it recognizes common file-mutating shapes (output
+# redirection, in-place editors, tee, cp/mv/install, truncate, dd) via
+# regex/token heuristics, not a real shell grammar. Deliberately conservative
+# in one direction only — a write-shaped command whose target can't be
+# confidently resolved is reported as UNRESOLVED rather than silently
+# dropped, so the caller can fail closed.
+#
+# Usage:
+#   bash_write_targets "$command"
+# Prints zero or more lines to stdout, each one of:
+#   PATH:<resolved-or-relative-path>   — a concrete candidate target
+#   UNRESOLVED:<reason>                — a write-shaped command whose
+#                                         target(s) could not be confidently
+#                                         extracted or whose working
+#                                         directory is ambiguous (a `cd` was
+#                                         found earlier in the same command)
+#
+# Known, disclosed gaps (see docs/tradeoffs.md residual risks):
+#   - sed/perl -i with multiple trailing file arguments: only the last
+#     token of the matched segment is taken as the target. A command
+#     rewriting several files in one `sed -i ... f1 f2 f3` invocation is
+#     only checked against f3.
+#   - Chained commands are split naively on `;`, `&&`, `||`, `|`, and
+#     newlines — a separator embedded inside a quoted string or a nested
+#     `$(...)` will mis-split. This can only produce spurious UNRESOLVED
+#     findings (fail closed), never a missed target being silently accepted
+#     as a plain PATH.
+#   - A `cd` appearing anywhere in the command marks every *relative*
+#     target UNRESOLVED for the rest of the command, even ones that
+#     execute before the `cd`. Conservative on purpose.
+
+_bwt_is_devnull_like() {
+  case "$1" in
+    /dev/null|/dev/stdout|/dev/stderr|/dev/tty|/dev/console) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+_bwt_is_confidently_resolvable() {
+  # Rejects targets containing shell metacharacters we won't try to expand:
+  # variable/command substitution, globs, tilde, quotes left dangling.
+  case "$1" in
+    *'$'*|*'`'*|*'*'*|*'?'*|*'['*|*'~'*|*'"'*|*"'"*) return 1 ;;
+    "") return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+_bwt_emit() {
+  local target="$1"
+  if _bwt_is_devnull_like "$target"; then
+    return 0
+  fi
+  if ! _bwt_is_confidently_resolvable "$target"; then
+    echo "UNRESOLVED:target '$target' contains a variable/glob/quote this gate won't expand"
+    return 0
+  fi
+  echo "PATH:$target"
+}
+
+bash_write_targets() {
+  local command="$1"
+  [[ -n "$command" ]] || return 0
+
+  # Fast path: nothing about this command looks write-shaped. Keeps the
+  # overwhelming majority of Bash calls (git status, flutter test, grep,
+  # ls, ...) out of the extraction logic entirely — this is what keeps the
+  # widened matcher from becoming a blanket deny.
+  if ! grep -qE '(^|[^0-9&])[0-9]*>{1,2}|\bsed\b.*-i|\bperl\b.*-i|\btee\b|\bcp\b|\bmv\b|\binstall\b|\btruncate\b|\bdd\b[[:space:]].*\bof=' <<<"$command"; then
+    return 0
+  fi
+
+  local has_cd=0
+  if grep -qE '(^|[;&|[:space:]])cd([[:space:]]|$)' <<<"$command"; then
+    has_cd=1
+  fi
+
+  # Split into segments on ; && || | and newlines — naive, best-effort.
+  local -a segments
+  local IFS_old="$IFS"
+  local normalized
+  normalized="$(printf '%s' "$command" | sed -E 's/(&&|\|\||;|\|)/\n/g')"
+  local seg
+  while IFS= read -r seg || [[ -n "$seg" ]]; do
+    [[ -n "${seg// /}" ]] || continue
+
+    # --- output redirection: >, >>, N>, N>>, but not N>&M (fd dup) ---
+    local redir
+    while read -r redir; do
+      [[ -n "$redir" ]] || continue
+      local tgt="${redir#*>}"
+      tgt="${tgt#>}"
+      tgt="$(printf '%s' "$tgt" | sed -E 's/^[[:space:]]+//; s/[[:space:]].*$//')"
+      [[ -n "$tgt" ]] || continue
+      [[ "$tgt" == "&"* ]] && continue
+      if [[ "$has_cd" -eq 1 && "$tgt" != /* ]]; then
+        echo "UNRESOLVED:relative redirect target '$tgt' after a 'cd' earlier in the same command — working directory can't be confidently determined"
+        continue
+      fi
+      _bwt_emit "$tgt"
+    done < <(grep -oE '[0-9]*>{1,2}[[:space:]]*[^[:space:];&|]+' <<<"$seg")
+
+    # --- sed/perl -i: take the last whitespace token of the segment ---
+    if grep -qE '\b(sed|perl)\b.*-i' <<<"$seg"; then
+      local last
+      last="$(printf '%s' "$seg" | awk '{print $NF}')"
+      if [[ "$has_cd" -eq 1 && "$last" != /* ]]; then
+        echo "UNRESOLVED:relative in-place-edit target '$last' after a 'cd' earlier in the same command"
+      else
+        _bwt_emit "$last"
+      fi
+    fi
+
+    # --- tee: all non-flag trailing tokens, stopping at the next shell
+    # operator (<, <<, <<<, >, >>, &, |, ;) since those aren't tee's file
+    # arguments (redirection into/out of the tee command itself) ---
+    if grep -qE '\btee\b' <<<"$seg"; then
+      local seen_tee=0 w
+      for w in $seg; do
+        if [[ "$seen_tee" -eq 0 ]]; then
+          [[ "$w" == "tee" ]] && seen_tee=1
+          continue
+        fi
+        case "$w" in
+          '<'*|'>'*|'&'*|'|'*|';'*) break ;;
+        esac
+        [[ "$w" == -* ]] && continue
+        if [[ "$has_cd" -eq 1 && "$w" != /* ]]; then
+          echo "UNRESOLVED:relative tee target '$w' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$w"
+        fi
+      done
+    fi
+
+    # --- cp/mv/install: destination is the arg after -t, else the last
+    # non-flag token ---
+    if grep -qE '\b(cp|mv|install)\b' <<<"$seg"; then
+      local -a nonflag=()
+      local dest="" prev="" take_next=0
+      for w in $seg; do
+        if [[ "$take_next" -eq 1 ]]; then
+          dest="$w"; take_next=0; continue
+        fi
+        if [[ "$w" == "-t" ]]; then take_next=1; continue; fi
+        [[ "$w" == -* ]] && continue
+        nonflag+=("$w")
+      done
+      if [[ -z "$dest" && "${#nonflag[@]}" -gt 1 ]]; then
+        dest="${nonflag[${#nonflag[@]}-1]}"
+      fi
+      if [[ -n "$dest" ]]; then
+        if [[ "$has_cd" -eq 1 && "$dest" != /* ]]; then
+          echo "UNRESOLVED:relative cp/mv/install destination '$dest' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$dest"
+        fi
+      fi
+    fi
+
+    # --- truncate: all non-flag tokens, skipping -s/--size's argument ---
+    if grep -qE '\btruncate\b' <<<"$seg"; then
+      local skip_next=0
+      for w in $seg; do
+        if [[ "$skip_next" -eq 1 ]]; then skip_next=0; continue; fi
+        if [[ "$w" == "-s" || "$w" == "--size" ]]; then skip_next=1; continue; fi
+        [[ "$w" == -* ]] && continue
+        [[ "$w" == "truncate" ]] && continue
+        if [[ "$has_cd" -eq 1 && "$w" != /* ]]; then
+          echo "UNRESOLVED:relative truncate target '$w' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$w"
+        fi
+      done
+    fi
+
+    # --- dd of=path ---
+    if grep -qE '\bdd\b' <<<"$seg"; then
+      local ofval
+      ofval="$(grep -oE 'of=[^[:space:]]+' <<<"$seg" | head -1 | sed -E 's/^of=//')"
+      if [[ -n "$ofval" ]]; then
+        if [[ "$has_cd" -eq 1 && "$ofval" != /* ]]; then
+          echo "UNRESOLVED:relative dd of= target '$ofval' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$ofval"
+        fi
+      fi
+    fi
+  done <<<"$normalized"
+  IFS="$IFS_old"
+}
