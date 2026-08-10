@@ -12,16 +12,32 @@
 # since "ask" behavior under a missing user isn't documented.
 #
 # Project state consulted:
-#   .spine/protected-paths.conf          — lines tagged `#manifest` are dependency manifests
+#   .spine/protected-paths.conf          — lines tagged `#manifest` are
+#     dependency manifests. In workspace mode (workspace.json present at
+#     $project) the *owning repo's own* copy governs an Edit/Write inside a
+#     member repo — see core/hooks/_workspace-route, same routing
+#     path-escalate uses. A plain single-repo project is unaffected:
+#     workspace_route degenerates to $project's own conf, exactly as before.
 #   .spine/install-command-patterns.conf — one extended-regex fragment per
 #     line (grep -E syntax), generated at install time from this project's
 #     confirmed Layer 3 stack/commands (bootstrap/adopt SKILL.md §4). Any
 #     line matching a Bash command is treated as a dependency install/change.
 #     Absent file (not yet installed, or a stack with no recognizable
 #     install-command shape) means the Bash-command check is a no-op — the
-#     Edit/Write manifest-tag check above is unaffected either way.
+#     Edit/Write manifest-tag check above is unaffected either way. In
+#     workspace mode, a Bash command's *working directory* (hence which
+#     repo's install-command shape applies) isn't reliably knowable from
+#     the command string alone the way an Edit/Write's file_path is, so this
+#     check is the **union** of every member repo's own
+#     install-command-patterns.conf, plus $project's own (a workspace root
+#     is unlikely to have one, but nothing forbids it) — matching any one
+#     of them is enough to ask. A single-repo project has exactly one
+#     pattern file in that union (its own), so this degenerates to the
+#     original behavior unchanged.
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_workspace-route"
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 tool_name="$(jq -r '.tool_name // empty' <<<"$input")"
@@ -36,13 +52,12 @@ case "$tool_name" in
   Edit|Write)
     file_path="$(jq -r '.tool_input.file_path // empty' <<<"$input")"
     [[ -n "$file_path" ]] || exit 0
-    conf="$project/.spine/protected-paths.conf"
+    workspace_route "$project" "$file_path"
+    [[ -n "$WSR_OWNER_ROOT" ]] || exit 0
+    conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
     [[ -f "$conf" ]] || exit 0
-    case "$file_path" in
-      "$project"/*) rel="${file_path#"$project"/}" ;;
-      /*) rel="$file_path" ;;
-      *) rel="$file_path" ;;
-    esac
+    rel="$WSR_REL"
+    if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$rel"; else display="$rel"; fi
     while IFS= read -r raw || [[ -n "$raw" ]]; do
       line="$raw"
       [[ -z "$line" || "$line" == \#* ]] && continue
@@ -51,7 +66,7 @@ case "$tool_name" in
       glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
       [[ -z "$glob" ]] && continue
       if [[ "$rel" == $glob ]]; then
-        ask "Editing dependency manifest '$rel' — package changes always require a human decision (supply-chain and accretion control, build prompt §2.3)."
+        ask "Editing dependency manifest '$display' — package changes always require a human decision (supply-chain and accretion control, build prompt §2.3)."
       fi
     done < "$conf"
     exit 0
@@ -59,11 +74,24 @@ case "$tool_name" in
   Bash)
     command="$(jq -r '.tool_input.command // empty' <<<"$input")"
     [[ -n "$command" ]] || exit 0
-    patterns="$project/.spine/install-command-patterns.conf"
-    [[ -f "$patterns" ]] || exit 0
-    if grep -qEf "$patterns" <<<"$command"; then
-      ask "Command looks like a dependency install/change: '$command' — forced to a human decision."
+    pattern_files=("$project/.spine/install-command-patterns.conf")
+    ws_conf="$project/workspace.json"
+    if [[ -f "$ws_conf" ]]; then
+      n="$(jq '(.repos // []) | length' "$ws_conf" 2>/dev/null || echo 0)"
+      for ((i = 0; i < n; i++)); do
+        repo_path="$(jq -r --argjson i "$i" '.repos[$i].path // empty' "$ws_conf")"
+        [[ -n "$repo_path" ]] && pattern_files+=("$repo_path/.spine/install-command-patterns.conf")
+      done
     fi
+    any_exist=0
+    for pf in "${pattern_files[@]}"; do
+      [[ -f "$pf" ]] || continue
+      any_exist=1
+      if grep -qEf "$pf" <<<"$command"; then
+        ask "Command looks like a dependency install/change: '$command' — forced to a human decision."
+      fi
+    done
+    [[ "$any_exist" -eq 1 ]] || exit 0
     exit 0
     ;;
   *) exit 0 ;;

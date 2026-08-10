@@ -1,5 +1,5 @@
 #!/bin/bash
-# path-escalate — PreToolUse, matcher: Edit|Write.
+# path-escalate — PreToolUse, matcher: Edit|Write|Bash.
 #
 # A write matching a protected path halts (deny, exit 2) unless the active
 # task is already confirmed Class 2. A write matching a path tagged
@@ -9,27 +9,46 @@
 # denied flat"). With no active task, class defaults to 0, so the same
 # not-class-2 branch applies — this is the Class 0 backstop from §2.2.
 #
+# Bash is included in the matcher (Phase E fix) because a shell redirect,
+# in-place editor, tee, cp/mv/install, truncate, or dd targeting a protected
+# path bypassed this gate entirely under the pre-fix Edit|Write-only
+# matcher — see core/hooks/_bash-write-targets and docs/tradeoffs.md's
+# self-red-team. A Bash write whose target can't be confidently resolved is
+# denied outright (not "no match found") — we cannot prove it doesn't touch
+# a protected path, so this gate does not extend it the benefit of the
+# doubt it would give a plain, resolvable path.
+#
 # Project state consulted:
 #   .spine/protected-paths.conf — one glob per line; `#` starts a comment;
-#                                  a trailing `#migration` tags the line
-#   .spine/current-task         — active task-id (or absent -> class 0)
-#   work/<task-id>/class        — single line, "0"|"1"|"2"
+#                                  a trailing `#migration` tags the line.
+#                                  In workspace mode (workspace.json present
+#                                  at $project), the *owning repo's own*
+#                                  .spine/protected-paths.conf governs a
+#                                  target inside a member repo — see
+#                                  _workspace-route. A plain single-repo
+#                                  project (no workspace.json) is entirely
+#                                  unaffected: workspace_route degenerates
+#                                  to $project's own conf, exactly as before.
+#   .spine/current-task         — active task-id (or absent -> class 0),
+#                                  always read from $project (the workspace
+#                                  root for a multi-repo task — one task
+#                                  folder at the workspace, build prompt §2)
+#   work/<task-id>/class        — single line, "0"|"1"|"2", same rule: one
+#                                  class for the whole multi-repo task, so
+#                                  a protected path in *any* member repo is
+#                                  gated by that one class, which is what
+#                                  makes plan-time "max across repos"
+#                                  escalation (core/skills/task/SKILL.md)
+#                                  sufficient — this hook never itself
+#                                  computes a max, it only ever reads one.
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/_workspace-route"
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
-file_path="$(jq -r '.tool_input.file_path // empty' <<<"$input")"
-[[ -n "$file_path" ]] || exit 0
-
-conf="$project/.spine/protected-paths.conf"
-[[ -f "$conf" ]] || exit 0
-
-case "$file_path" in
-  "$project"/*) rel="${file_path#"$project"/}" ;;
-  /*) rel="$file_path" ;;
-  *) rel="$file_path" ;;
-esac
+tool_name="$(jq -r '.tool_name // empty' <<<"$input")"
 
 class="0"
 current_task_file="$project/.spine/current-task"
@@ -39,36 +58,79 @@ if [[ -f "$current_task_file" ]]; then
   [[ -f "$class_file" ]] && class="$(tr -d '[:space:]' < "$class_file")"
 fi
 
-matched_glob=""
-is_migration=0
-while IFS= read -r raw || [[ -n "$raw" ]]; do
-  line="$raw"
-  [[ -z "$line" || "$line" == \#* ]] && continue
-  tag=""
-  [[ "$line" == *"#migration"* ]] && tag="migration"
-  glob="${line%%#*}"
-  glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
-  [[ -z "$glob" ]] && continue
-  if [[ "$rel" == $glob ]]; then
-    matched_glob="$glob"
-    [[ "$tag" == "migration" ]] && is_migration=1
-    break
+check_target() {
+  # check_target <file_path-as-given> — denies per the owning root's
+  # protected-paths.conf (workspace_route resolves which root that is;
+  # single-repo projects always resolve to $project itself).
+  local file_path="$1" rel matched_glob="" is_migration=0 line tag glob conf display
+
+  workspace_route "$project" "$file_path"
+  [[ -n "$WSR_OWNER_ROOT" ]] || return 0
+  conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
+  [[ -f "$conf" ]] || return 0
+  rel="$WSR_REL"
+  # Repo-qualified display form for messages only — glob matching below
+  # always uses the plain $rel against that owner's own conf. Empty
+  # WSR_OWNER_NAME (plain single-repo project, no workspace.json) means
+  # display==rel, byte-identical to this hook's pre-Extension-B messages.
+  if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$rel"; else display="$rel"; fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    tag=""
+    [[ "$line" == *"#migration"* ]] && tag="migration"
+    glob="${line%%#*}"
+    glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
+    [[ -z "$glob" ]] && continue
+    if [[ "$rel" == $glob ]]; then
+      matched_glob="$glob"
+      [[ "$tag" == "migration" ]] && is_migration=1
+      break
+    fi
+  done < "$conf"
+
+  [[ -n "$matched_glob" ]] || return 0
+
+  if [[ "$is_migration" -eq 1 ]]; then
+    if [[ "$class" != "2" ]]; then
+      echo "path-escalate: '$display' matches migration-tagged protected path '$matched_glob'. Migration edits are denied outside a confirmed Class 2 task (current class: $class) — this is a flat deny, not an escalation prompt." >&2
+      return 1
+    fi
+    return 0
   fi
-done < "$conf"
 
-[[ -n "$matched_glob" ]] || exit 0
-
-if [[ "$is_migration" -eq 1 ]]; then
-  if [[ "$class" != "2" ]]; then
-    echo "path-escalate: '$rel' matches migration-tagged protected path '$matched_glob'. Migration edits are denied outside a confirmed Class 2 task (current class: $class) — this is a flat deny, not an escalation prompt." >&2
-    exit 2
+  if [[ "$class" == "2" ]]; then
+    return 0
   fi
-  exit 0
-fi
 
-if [[ "$class" == "2" ]]; then
-  exit 0
-fi
+  echo "path-escalate: '$display' matches protected path '$matched_glob' but the current task is Class $class. Halting — escalate to Class 2 (engineer confirms, work/<task-id>/class is set to 2) before editing protected paths." >&2
+  return 1
+}
 
-echo "path-escalate: '$rel' matches protected path '$matched_glob' but the current task is Class $class. Halting — escalate to Class 2 (engineer confirms, work/<task-id>/class is set to 2) before editing protected paths." >&2
-exit 2
+case "$tool_name" in
+  Edit|Write)
+    file_path="$(jq -r '.tool_input.file_path // empty' <<<"$input")"
+    [[ -n "$file_path" ]] || exit 0
+    check_target "$file_path" || exit 2
+    exit 0
+    ;;
+  Bash)
+    command="$(jq -r '.tool_input.command // empty' <<<"$input")"
+    [[ -n "$command" ]] || exit 0
+    source "$SCRIPT_DIR/_bash-write-targets"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      case "$line" in
+        UNRESOLVED:*)
+          echo "path-escalate: Bash command '$command' plausibly writes a file this gate can't confidently locate (${line#UNRESOLVED:}). Protected-path membership can't be ruled out — failing closed rather than passing an unresolvable write through." >&2
+          exit 2
+          ;;
+        PATH:*)
+          check_target "${line#PATH:}" || exit 2
+          ;;
+      esac
+    done < <(bash_write_targets "$command")
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac

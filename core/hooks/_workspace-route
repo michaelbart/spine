@@ -1,0 +1,117 @@
+# _workspace-route — shared library, sourced by phase-gate, path-escalate,
+# dep-gate. Not a hook itself (no shebang execution path; nothing in
+# .claude/settings.json wires it directly) — same convention as
+# _bash-write-targets.
+#
+# Resolves which root's own `.spine/` config should govern an edit target:
+# the project itself (plain single-repo project, or a workspace-native path
+# like workspace.json/contracts/**), or — only when $project/workspace.json
+# exists — the specific member repo the target's absolute path falls under,
+# per workspace.json's repos[] list. This is the mechanical form of build
+# prompt §2's "hooks load once, from the workspace, and route by path,"
+# verified against primitive §0.1: a hook loaded at the workspace root is
+# the only one that ever fires for an edit inside an added member-repo
+# directory, so routing happens *inside* that one hook, not by installing a
+# second copy of it in the member repo (which, per §0.1(b), would never
+# fire at all).
+#
+# Usage:
+#   workspace_route "$project" "$file_path"
+# Sets three globals (never prints — this runs in the caller's own shell,
+# sourced, not a subshell, so plain variable assignment is simpler and
+# safer than serializing paths that could themselves contain the field
+# separator):
+#   WSR_OWNER_ROOT  — absolute path whose .spine/ should be consulted, or
+#                      empty if $file_path resolves under neither $project
+#                      nor any registered repo (a genuinely unknown path).
+#   WSR_OWNER_NAME  — the matched repo's `name` from workspace.json when the
+#                      target falls under a member repo; the literal string
+#                      "(workspace)" for a workspace-native path (inside the
+#                      workspace root itself, not any member repo);
+#                      "(unknown)" when WSR_OWNER_ROOT is empty; or, when
+#                      $project/workspace.json does not exist at all (plain
+#                      single-repo project), the **empty string** —
+#                      deliberately distinct from "(workspace)", so a caller
+#                      that only prefixes messages with "$WSR_OWNER_NAME:"
+#                      when it's non-empty reproduces its pre-Extension-B,
+#                      unqualified single-repo message text exactly. This is
+#                      the specific detail that makes the routing helper's
+#                      regression guarantee (below) hold at the message-text
+#                      level, not just the allow/deny level.
+#   WSR_REL         — $file_path relative to WSR_OWNER_ROOT ("." if it names
+#                      the root itself), or $file_path verbatim when
+#                      WSR_OWNER_ROOT is empty (nothing to make it relative
+#                      to).
+#
+# **Regression guarantee**: when $project/workspace.json does not exist,
+# this always sets WSR_OWNER_ROOT="$project", WSR_OWNER_NAME="(workspace)",
+# WSR_REL=<$file_path relative to $project> — i.e. it degenerates to
+# exactly the single-repo rel-path computation every hook already did
+# before workspace routing existed. A caller that routes every target
+# through this function instead of hand-rolling the rel computation gets
+# byte-identical single-repo behavior for free; this is what makes "a
+# single-repo project sees zero behavioral change" a property of the
+# routing helper itself, not something each of the three call sites has to
+# separately get right.
+workspace_route() {
+  local project="$1" file_path="$2" abs_path ws_conf best_root="" best_name="" i n repo_path repo_name
+
+  case "$file_path" in
+    /*) abs_path="$file_path" ;;
+    *) abs_path="$project/$file_path" ;;
+  esac
+
+  ws_conf="$project/workspace.json"
+  if [[ ! -f "$ws_conf" ]]; then
+    WSR_OWNER_ROOT="$project"
+    WSR_OWNER_NAME=""
+    case "$abs_path" in
+      "$project"/*) WSR_REL="${abs_path#"$project"/}" ;;
+      "$project") WSR_REL="." ;;
+      *) WSR_REL="$file_path" ;;
+    esac
+    return 0
+  fi
+
+  # Workspace mode. Longest-prefix match across repos[] so a repo nested
+  # inside another repo's path (unusual, but not forbidden) resolves to the
+  # more specific owner rather than whichever entry happened to come first.
+  n="$(jq '(.repos // []) | length' "$ws_conf" 2>/dev/null || echo 0)"
+  for ((i = 0; i < n; i++)); do
+    repo_path="$(jq -r --argjson i "$i" '.repos[$i].path // empty' "$ws_conf")"
+    repo_name="$(jq -r --argjson i "$i" '.repos[$i].name // empty' "$ws_conf")"
+    [[ -n "$repo_path" ]] || continue
+    case "$abs_path" in
+      "$repo_path"|"$repo_path"/*)
+        if [[ ${#repo_path} -gt ${#best_root} ]]; then
+          best_root="$repo_path"
+          best_name="$repo_name"
+        fi
+        ;;
+    esac
+  done
+
+  if [[ -n "$best_root" ]]; then
+    WSR_OWNER_ROOT="$best_root"
+    WSR_OWNER_NAME="${best_name:-$best_root}"
+    if [[ "$abs_path" == "$best_root" ]]; then
+      WSR_REL="."
+    else
+      WSR_REL="${abs_path#"$best_root"/}"
+    fi
+    return 0
+  fi
+
+  case "$abs_path" in
+    "$project"/*)
+      WSR_OWNER_ROOT="$project"; WSR_OWNER_NAME="(workspace)"; WSR_REL="${abs_path#"$project"/}"
+      ;;
+    "$project")
+      WSR_OWNER_ROOT="$project"; WSR_OWNER_NAME="(workspace)"; WSR_REL="."
+      ;;
+    *)
+      WSR_OWNER_ROOT=""; WSR_OWNER_NAME="(unknown)"; WSR_REL="$file_path"
+      ;;
+  esac
+  return 0
+}

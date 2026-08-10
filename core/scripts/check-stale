@@ -1,7 +1,8 @@
 #!/bin/bash
-# check-stale — diffs a research.md's grounding files against HEAD; if any
-# have changed since the research SHA, quarantines the document (marks it
-# stale in place, loudly) and exits non-zero.
+# check-stale — diffs a research.md's grounding files (and, since the
+# design-stage extension, its cited decisions) against current state; if
+# any have drifted, quarantines the document (marks it stale in place,
+# loudly) and exits non-zero.
 #
 # research.md must open with a machine-readable header:
 #
@@ -10,10 +11,39 @@
 #   files:
 #     - path/to/file1
 #     - path/to/file2
+#   grounding-decisions:
+#     - D-3@<hash>
 #   -->
+#
+# `grounding-decisions:` is optional — its absence is a total no-op, not
+# an error; only research citing a docs/decisions/ record needs it. Each
+# entry is `<decision-id>@<hash>`, the hash from `core/scripts/decision-hash`
+# at the moment the citing research was written. A cited decision drifts
+# this document stale two ways, either sufficient on its own:
+#   - its current content hash no longer matches the cited one (the
+#     decision's actual Context/Decision/Consequences changed since), or
+#   - its current `- Status:` line reads `superseded` (regardless of
+#     whether the content hash still matches — a superseded decision is
+#     stale grounding even if nobody has edited its body).
+# A decision's `- Status:` line flipping between any two of
+# proposed/adopted/implemented does NOT by itself count as drift —
+# decision-hash deliberately excludes that line (see its own header
+# comment) so a routine ship-time adopted->implemented flip never
+# spuriously quarantines every research.md that already cites it.
+#
+# Multi-repo (Extension B): a `files:` entry may be repo-qualified,
+# `<repo-name>:<path>` — resolved via workspace.json (at --project, which
+# is the workspace root for a multi-repo task) and diffed against that
+# repo's own sha from the header's `repos:` block, not the top-level `sha:`
+# (which continues to govern only unqualified, workspace-native entries —
+# a single-repo research.md never has a `repos:` block or a qualified
+# `files:` entry, so this is purely additive; see core/templates/
+# research.md's own header comment for the full grammar).
 #
 # Usage: check-stale <research.md-path> [--project <path>]
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() { echo "usage: check-stale <research.md-path> [--project <path>]" >&2; exit 2; }
 
@@ -38,29 +68,141 @@ sha="$(printf '%s\n' "$header" | awk -F': ' '/^sha:/{print $2; exit}')"
 files=()
 while IFS= read -r line; do
   files+=("$line")
-done < <(printf '%s\n' "$header" | awk '/^files:/{f=1;next} f && /^  - /{sub(/^  - /,"");print} f && !/^  /{exit}')
+done < <(printf '%s\n' "$header" | awk '/^files:/{f=1;next} f{if ($0 ~ /^  - /){line=$0; sub(/^  - /,"",line); print line; next} exit}')
 if [[ ${#files[@]} -eq 0 ]]; then
   echo "check-stale: $doc header lists no grounding files" >&2
   exit 2
 fi
 
+decisions=()
+while IFS= read -r line; do
+  decisions+=("$line")
+done < <(printf '%s\n' "$header" | awk '/^grounding-decisions:/{f=1;next} f{if ($0 ~ /^  - /){line=$0; sub(/^  - /,"",line); print line; next} exit}')
+
+repos=()
+while IFS= read -r line; do
+  repos+=("$line")
+done < <(printf '%s\n' "$header" | awk '/^repos:/{f=1;next} f{if ($0 ~ /^  - /){line=$0; sub(/^  - /,"",line); print line; next} exit}')
+
+repo_sha_for() {
+  # repo_sha_for <name> — sha registered for <name> in the header's own
+  # repos: block, or empty if absent.
+  local name="$1" entry rname
+  for entry in ${repos[@]+"${repos[@]}"}; do
+    rname="${entry%%@*}"
+    [[ "$rname" == "$name" ]] && { echo "${entry#*@}"; return 0; }
+  done
+  echo ""
+}
+
+repo_path_for() {
+  # repo_path_for <name> — resolves via $project/workspace.json. Empty
+  # (never repo-qualified) for a plain single-repo project, since it has
+  # no workspace.json at all — this is what keeps an ordinary, colon-free
+  # single-repo files: entry from ever being misrouted.
+  local ws_conf="$project/workspace.json"
+  [[ -f "$ws_conf" ]] || { echo ""; return 0; }
+  jq -r --arg n "$1" '(.repos // [])[] | select(.name == $n) | .path' "$ws_conf" 2>/dev/null | head -1
+}
+
 drifted=()
 for f in "${files[@]}"; do
-  if ! (cd "$project" && git cat-file -e "$sha:$f" 2>/dev/null); then
-    drifted+=("$f (did not exist at $sha, or path is wrong)")
+  repo_name="" path="$f"
+  case "$f" in
+    *:*)
+      candidate_repo="${f%%:*}"
+      candidate_path="${f#*:}"
+      candidate_repo_path="$(repo_path_for "$candidate_repo")"
+      if [[ -n "$candidate_repo_path" ]]; then
+        repo_name="$candidate_repo"
+        path="$candidate_path"
+      fi
+      ;;
+  esac
+
+  if [[ -n "$repo_name" ]]; then
+    check_root="$(repo_path_for "$repo_name")"
+    check_sha="$(repo_sha_for "$repo_name")"
+    if [[ -z "$check_sha" ]]; then
+      drifted+=("$f (repo '$repo_name' has no matching 'repos:' entry in the header — cannot verify)")
+      continue
+    fi
+  else
+    check_root="$project"
+    check_sha="$sha"
+  fi
+
+  if ! (cd "$check_root" && git cat-file -e "$check_sha:$path" 2>/dev/null); then
+    drifted+=("$f (did not exist at $check_sha, or path is wrong)")
     continue
   fi
-  if ! (cd "$project" && git diff --quiet "$sha" -- "$f" 2>/dev/null); then
+  if ! (cd "$check_root" && git diff --quiet "$check_sha" -- "$path" 2>/dev/null); then
     drifted+=("$f")
   fi
 done
 
+for entry in ${decisions[@]+"${decisions[@]}"}; do
+  did_raw="${entry%%@*}"
+  cited_hash="${entry#*@}"
+  [[ -n "$did_raw" && -n "$cited_hash" && "$did_raw" != "$entry" ]] || {
+    drifted+=("grounding-decisions: '$entry' is not in <id>@<hash> shape")
+    continue
+  }
+
+  # Multi-repo (Extension B): a decision id may be repo-qualified,
+  # "<repo-name>:D-<seq>" — a member repo joining the workspace brownfield
+  # keeps its own pre-existing docs/decisions/ store (D-<seq> ids are
+  # scoped per-store, not globally unique across repos), exactly the same
+  # qualification convention files: already uses. Unqualified means the
+  # workspace root's own store, unchanged from before this existed.
+  did="$did_raw" decisions_root="$project"
+  case "$did_raw" in
+    *:*)
+      candidate_repo="${did_raw%%:*}"
+      candidate_did="${did_raw#*:}"
+      candidate_repo_path="$(repo_path_for "$candidate_repo")"
+      if [[ -n "$candidate_repo_path" ]]; then
+        did="$candidate_did"
+        decisions_root="$candidate_repo_path"
+      fi
+      ;;
+  esac
+
+  matches=("$decisions_root"/docs/decisions/"$did"-*.md)
+  if [[ ! -e "${matches[0]}" ]]; then
+    drifted+=("$did_raw (no docs/decisions/$did-*.md record found under $decisions_root)")
+    continue
+  fi
+  if [[ ${#matches[@]} -gt 1 ]]; then
+    drifted+=("$did_raw (ambiguous — ${#matches[@]} records match docs/decisions/$did-*.md)")
+    continue
+  fi
+  decision_file="${matches[0]}"
+
+  status="$(awk -F': ' '/^- Status: /{print $2; exit}' "$decision_file")"
+  if [[ "$status" == "superseded" ]]; then
+    drifted+=("$did_raw (status: superseded)")
+    continue
+  fi
+
+  current_hash="$("$SCRIPT_DIR/decision-hash" "$decision_file" 2>/dev/null)"
+  if [[ -z "$current_hash" ]]; then
+    drifted+=("$did_raw (decision-hash could not be computed for $decision_file)")
+    continue
+  fi
+  if [[ "$current_hash" != "$cited_hash" ]]; then
+    drifted+=("$did_raw (content hash changed: cited $cited_hash, now $current_hash)")
+  fi
+done
+
 if [[ ${#drifted[@]} -eq 0 ]]; then
-  echo "ok: $doc is current as of $sha (${#files[@]} grounding files unchanged)"
+  repo_note=""
+  [[ ${#repos[@]} -gt 0 ]] && repo_note=", ${#repos[@]} repo(s)"
+  echo "ok: $doc is current as of $sha (${#files[@]} grounding files$repo_note, ${#decisions[@]} grounding decisions unchanged)"
   exit 0
 fi
 
-echo "check-stale: STALE — ${#drifted[@]} of ${#files[@]} grounding files changed since $sha:"
+echo "check-stale: STALE — ${#drifted[@]} grounding item(s) changed since $sha:"
 for f in "${drifted[@]}"; do echo "  - $f"; done
 
 if ! grep -q '^> \*\*STALE\*\*' "$doc"; then

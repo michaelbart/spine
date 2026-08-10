@@ -4,22 +4,47 @@ source — this file quotes scripts, it doesn't paraphrase them. A degraded
 gate (a capability that's `unavailable`/`not-applicable`) must appear here
 explicitly; a silently missing section is exactly the "silently skipped
 gate" the build prompt calls the worst object this system can produce.
+
+Multi-repo (Extension B): §"Floor results" repeats once per repo this task
+*edited* — full floor, unmodified per-repo, per build prompt §2's
+edited-vs-affected rule. §"Contract conformance" is new, and covers every
+repo this task's diff put in *contract* blast radius without editing it
+directly (core/scripts/contract-touch) — those repos never run their own
+floor for this task, only contract-check, so a consumer's pre-existing
+unrelated failures can never block a producer task forever (the "stranger's
+mess" anti-pattern, build prompt §1). A single-repo task has exactly one
+"Floor results" table and an empty "Contract conformance" section — this
+is the same zero-behavioral-change guarantee as everywhere else in
+Extension B, expressed at the template level.
 -->
 
 # Verify: `<task-id>`
 
 Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
 
-## Floor results
+## Floor results — `<repo-name, omit label for single-repo>`
 
 <!-- One line per capability, verbatim from `floor --out`'s JSON: PASS/FAIL
      with the adapter's one-line success message, or DEGRADED with the
      capabilities.json reason. Fail-fast means capabilities after the first
-     failure are marked "not reached," not silently absent. -->
+     failure are marked "not reached," not silently absent. Repeat this
+     whole section, once per repo, for a multi-repo task that edited more
+     than one — never merge two repos' results into one table. -->
 
 | Capability | Result | Detail |
 |---|---|---|
 | typecheck | | |
+
+## Contract conformance
+
+<!-- Multi-repo only, omitted entirely for single-repo. One line per
+     contract core/scripts/contract-touch reported touched: the contract
+     name, its spec_change classification (additive/breaking/unchanged),
+     registry_stale flag, and — for every repo in that contract's
+     consumers_in_blast_radius that this task did *not* edit directly —
+     that repo's contract-check result (PASS/FAIL/DEGRADED, same
+     discipline as a floor capability). "None" only if contract-touch
+     reported zero touched contracts. -->
 
 ## Conformance
 
@@ -29,6 +54,12 @@ Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
      trend across tasks via /costs, don't chase a single low score. -->
 
 predicted=`<n>` actual=`<n>` precision=`<p>` recall=`<r>` f1=`<f>`
+
+<!-- Multi-repo: one predicted/actual/precision/recall/f1 line per edited
+     repo — conformance itself is unchanged (core/scripts/conformance still
+     takes one --project), /verify just calls it once per repo with that
+     repo's own predicted-touch subset (the repo-qualified prefix stripped)
+     and its own git diff. -->
 
 ## Adversary verdicts
 
@@ -42,6 +73,12 @@ predicted=`<n>` actual=`<n>` precision=`<p>` recall=`<r>` f1=`<f>`
 ### Falsifier
 
 Attacked: <the `attacked` list, verbatim>
+
+<!-- Multi-repo: falsifier's delegation additionally received the touched
+     contracts + their consumer lists (core/agents/falsifier.md's
+     "Cross-repo mandate") — its `attacked` list should show that hunt
+     alongside (a)/(b)/(c) and the three questions; if it doesn't, that's
+     itself worth a line here, not silent. -->
 
 Verdicts kept: `<n>` · dropped: `<n>`
 
@@ -59,3 +96,13 @@ Verdicts kept: `<n>` · dropped: `<n>`
      .spine/capabilities.json that this class would otherwise have run,
      with its recorded reason. Empty only when every capability for this
      class is genuinely `implemented`. -->
+
+## Tooling gaps
+
+<!-- Distinct from capability gaps above: this is about spine's own core
+     scripts (ledger, check-stale, conformance, verdict-filter, floor
+     itself) being unreachable during this task, not a project capability
+     being unimplemented. Merged from work/<task-id>/notes.md's
+     accumulated `TOOLING GAP:` lines plus anything hit during this
+     /verify run. One line per gap: script name, consequence. Write "none"
+     only if genuinely empty. -->

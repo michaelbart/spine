@@ -1,0 +1,176 @@
+#!/bin/bash
+# contract-touch — workspace-level, stack-blind. For a multi-repo task's
+# diff, determines which declared contracts (workspace.json's `contracts[]`)
+# this task touches — either the spec itself or a producer's own
+# `producer_paths` — and therefore which consumer repos enter this task's
+# blast radius (build prompt §2, "Cross-repo blast radius"). Also classifies
+# each touched contract's spec change as additive/breaking (core/rules/
+# contracts.md) and flags registry staleness (open question §5.3).
+#
+# Never blocks by itself (informational, like core/scripts/conformance) —
+# `/verify`'s aggregation step is what turns a `breaking` classification
+# into a real refusal, per core/rules/contracts.md. This script only
+# produces facts a script can check; it does not itself gate.
+#
+# Portability: no associative arrays, no `mapfile` — this machine's default
+# `/bin/bash` is 3.2.57 (macOS), which has neither (bash <4 limitation
+# already hit and fixed the same way in core/scripts/check-stale and
+# bookmarks' own callers/lint adapters, per ext-phase-C-handoff.md §2).
+# Repo/contract lookups shell out to jq directly instead of caching into a
+# bash associative array.
+#
+# Usage: contract-touch [--project <workspace-root>] [--base <ref>] [--out <json-path>]
+set -uo pipefail
+
+usage() { echo "usage: contract-touch [--project <workspace-root>] [--base <ref>] [--out <json-path>]" >&2; exit 2; }
+
+project="$(pwd)"
+base="HEAD"
+out_path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --base) base="$2"; shift 2 ;;
+    --out) out_path="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+ws_conf="$project/workspace.json"
+[[ -f "$ws_conf" ]] || { echo "contract-touch: $ws_conf not found — this script only applies to a workspace root (build prompt §2, Extension B)" >&2; exit 2; }
+if ! jq -e . "$ws_conf" >/dev/null 2>&1; then
+  echo "contract-touch: $ws_conf is not valid JSON" >&2
+  exit 2
+fi
+
+# changed_files_for <repo-abs-path> — tracked diff + untracked (same fix
+# core/scripts/conformance carries: git diff --name-only alone misses files
+# a task newly created, which is the common case).
+changed_files_for() {
+  local repo="$1"
+  ( cd "$repo" && { git diff --name-only "$base" -- . 2>/dev/null; git ls-files --others --exclude-standard -- . 2>/dev/null; } | sort -u )
+}
+
+repo_path_for() {
+  # repo_path_for <name> — echoes the repo's absolute path, or empty.
+  jq -r --arg n "$1" '(.repos // [])[] | select(.name == $n) | .path' "$ws_conf" | head -1
+}
+
+ws_changed="$(changed_files_for "$project")"
+
+contract_count="$(jq '(.contracts // []) | length' "$ws_conf")"
+touched_json="[]"
+all_consumers=""
+
+for ((c = 0; c < contract_count; c++)); do
+  name="$(jq -r --argjson c "$c" '.contracts[$c].name // empty' "$ws_conf")"
+  [[ -n "$name" ]] || continue
+  producer="$(jq -r --argjson c "$c" '.contracts[$c].producer // empty' "$ws_conf")"
+  spec_path="$(jq -r --argjson c "$c" '.contracts[$c].spec_path // empty' "$ws_conf")"
+  stored_count="$(jq -r --argjson c "$c" '.contracts[$c].producer_paths_match_count // 0' "$ws_conf")"
+  producer_globs=()
+  while IFS= read -r g; do [[ -n "$g" ]] && producer_globs+=("$g"); done < <(jq -r --argjson c "$c" '(.contracts[$c].producer_paths // [])[]' "$ws_conf")
+  consumers=()
+  while IFS= read -r cn; do [[ -n "$cn" ]] && consumers+=("$cn"); done < <(jq -r --argjson c "$c" '(.contracts[$c].consumers // [])[]' "$ws_conf")
+
+  spec_touched=false
+  if [[ -n "$spec_path" ]] && grep -qxF "$spec_path" <<<"$ws_changed"; then
+    spec_touched=true
+  fi
+
+  producer_path="$(repo_path_for "$producer")"
+  producer_touched=false
+  if [[ -n "$producer_path" && ${#producer_globs[@]} -gt 0 ]]; then
+    producer_changed="$(changed_files_for "$producer_path")"
+    for glob in "${producer_globs[@]}"; do
+      while IFS= read -r f; do
+        [[ -n "$f" ]] || continue
+        case "$f" in
+          $glob) producer_touched=true ;;
+        esac
+      done <<<"$producer_changed"
+    done
+  fi
+
+  spec_change="unchanged"
+  if [[ "$spec_touched" == "true" ]]; then
+    diff_out="$(cd "$project" && git diff "$base" -- "$spec_path" 2>/dev/null)"
+    # A removed-or-modified line in a unified diff is any line starting
+    # with '-' *after* the first hunk header (@@...@@) — restricting to
+    # post-@@ lines, rather than pattern-matching the leading character
+    # alone, is what correctly excludes the "--- a/<path>" file-header line
+    # without also excluding genuine removed content that itself starts
+    # with a literal '-' (a markdown bullet, a CLI flag, a YAML list item —
+    # all real and all otherwise indistinguishable from the header line by
+    # a same-character heuristic; caught exactly this way in testing
+    # against a spec using '-' as its own list marker). A modified line
+    # always appears as a remove+add pair, so this catches in-place changes
+    # too, not just outright deletions — core/rules/contracts.md's own
+    # documented scope, and its documented limitation (a pure-addition
+    # required-field break is invisible to this heuristic by construction).
+    if awk '/^@@/{p=1; next} p && /^-/{f=1} END{exit !f}' <<<"$diff_out"; then
+      spec_change="breaking"
+    else
+      spec_change="additive"
+    fi
+  fi
+
+  registry_stale=false
+  current_match_count=0
+  if [[ -n "$producer_path" && ${#producer_globs[@]} -gt 0 ]]; then
+    current_match_count="$(cd "$producer_path" && git ls-files -- "${producer_globs[@]}" 2>/dev/null | wc -l | tr -d ' ')"
+    if [[ "$current_match_count" -eq 0 && "$stored_count" -gt 0 ]]; then
+      registry_stale=true
+    fi
+  fi
+
+  # A stale registry (producer_paths currently matches nothing, though it
+  # matched something when registered) means producer_touched above cannot
+  # be trusted — the glob may simply no longer point at the real files, so
+  # a real producer change could be silently invisible to it. Fail safe:
+  # treat a stale contract as touched regardless of what producer_touched
+  # says, so its consumers still enter blast radius and the staleness
+  # itself is surfaced loudly rather than only warned about in a run that
+  # happened to also touch the spec directly. This is this script's answer
+  # to open question §5.3 ("the registry needs its own invalidation story
+  # — design it, it is not optional"): degrade to conservative-gate-anyway,
+  # never to silent-skip.
+  touched=false
+  [[ "$spec_touched" == "true" || "$producer_touched" == "true" || "$registry_stale" == "true" ]] && touched=true
+
+  if [[ "$touched" == "true" ]]; then
+    for cons in ${consumers[@]+"${consumers[@]}"}; do
+      all_consumers="$all_consumers$cons"$'\n'
+    done
+    consumers_json="[]"
+    [[ ${#consumers[@]} -gt 0 ]] && consumers_json="$(printf '%s\n' "${consumers[@]}" | jq -R . | jq -s .)"
+    entry="$(jq -n --arg name "$name" --arg producer "$producer" \
+      --argjson spec_touched "$spec_touched" --argjson producer_touched "$producer_touched" \
+      --arg spec_change "$spec_change" --argjson registry_stale "$registry_stale" \
+      --argjson current_match_count "$current_match_count" --argjson stored_count "$stored_count" \
+      --argjson consumers "$consumers_json" \
+      '{name:$name, producer:$producer, spec_touched:$spec_touched, producer_touched:$producer_touched, spec_change:$spec_change, registry_stale:$registry_stale, current_producer_paths_match_count:$current_match_count, registered_producer_paths_match_count:$stored_count, consumers:$consumers}')"
+    touched_json="$(jq --argjson e "$entry" '. + [$e]' <<<"$touched_json")"
+    if [[ "$spec_change" == "breaking" ]]; then
+      echo "contract-touch: '$name' — BREAKING spec change (removed/modified lines in $spec_path)" >&2
+    fi
+    if [[ "$registry_stale" == "true" ]]; then
+      echo "contract-touch: '$name' — registry may be stale: producer_paths currently matches 0 files in '$producer' (registered count was $stored_count)" >&2
+    fi
+  fi
+done
+
+consumers_blast_radius="$(printf '%s' "$all_consumers" | awk 'NF' | sort -u | jq -R . | jq -s .)"
+
+output="$(jq -n --argjson touched "$touched_json" --argjson blast "$consumers_blast_radius" \
+  '{touched_contracts:$touched, consumers_in_blast_radius:$blast}')"
+
+if [[ -n "$out_path" ]]; then
+  echo "$output" >"$out_path"
+else
+  echo "$output"
+fi
+
+touched_count="$(jq 'length' <<<"$touched_json")"
+echo "contract-touch: ${touched_count} contract(s) touched, $(jq 'length' <<<"$consumers_blast_radius") consumer(s) in blast radius"
+exit 0

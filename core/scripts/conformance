@@ -43,7 +43,13 @@ fi
 actual=()
 while IFS= read -r line; do
   [[ -n "$line" ]] && actual+=("$line")
-done < <(cd "$project" && git diff --name-only "$base" -- .)
+done < <(cd "$project" && { git diff --name-only "$base" -- .; git ls-files --others --exclude-standard -- .; } | sort -u)
+# git diff --name-only alone only ever shows *tracked* file changes — a
+# task that creates genuinely new files (the common case) never gets
+# them staged by anything in the /task flow before /verify runs, so
+# those new files were invisible to "actual" and silently tanked
+# precision/recall for exactly the tasks this score matters most for.
+# ls-files --others (untracked, respecting .gitignore) closes that gap.
 
 pred_hit=0
 actual_hit=0

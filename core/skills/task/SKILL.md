@@ -2,11 +2,38 @@
 name: task
 description: Run the spine on a piece of work — classify, research, plan, approve, implement, verify, ship. The default way any non-trivial change gets made in a spine-installed project.
 disable-model-invocation: true
-argument-hint: [description of the work]
+argument-hint: [description of the work] [--milestone <milestone-id>]
 ---
 
 You are running `/task`, the spine (build prompt §2.2). `$ARGUMENTS` is the
-task description as given; if empty, ask for one before doing anything else.
+task description as given, plus an optional `--milestone <milestone-id>`;
+if the description is empty, ask for one before doing anything else.
+
+**Multi-repo (Extension B)**: if `workspace.json` exists at the project
+root, this session's own project root *is* the workspace root, and this
+one `/task` invocation is the single task folder, single plan, single
+human approval for however many member repos the change touches (build
+prompt §2 — never a separate `/task` per repo). Every step below runs
+exactly once, at the workspace root; the only things that change shape are
+the `## Predicted touch` list (repo-qualified) and the plan-time escalation
+check in §3 — both called out inline below. **A project with no
+workspace.json runs every step below exactly as it always has** — this is
+the zero-behavioral-change guarantee at the skill level.
+
+**If `--milestone <id>` is given:** read `work/<id>/milestone.md` (design-
+stage extension, `core/templates/milestone.md`) before classifying — its
+`## Member tasks` list, `## Inter-task contracts` (what a prior member task
+in this milestone left true, which this task may assume without
+re-verifying), and `## Capability targets` all become planning context for
+every phase below. Once this task's ID is generated (step 1), replace this
+milestone's first still-`TBD` member-task line with the real task ID
+(`Edit` on `work/<id>/milestone.md` — this is bookkeeping, not a phase
+artifact, so it's exempt from `phase-gate`'s task-folder restriction the
+same way any pre-approved administrative edit would need to be; do it
+during step 1, before `phase-gate` would even apply). Record
+`work/<task-id>/milestone` = `<id>`, one line, so `/ship` (final member
+task's own done-definition check) and a resumed session both know this
+task belongs to a milestone without re-parsing `$ARGUMENTS`.
 
 State lives in three places, and every phase transition below updates them
 — they are not decoration, the hooks (`core/hooks/phase-gate`,
@@ -25,6 +52,45 @@ before proceeding.
 
 Scripts referenced below live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
 Templates live at `${CLAUDE_SKILL_DIR}/../../templates/<name>`.
+
+**Tooling-gap discipline (applies to every script invocation below, not
+just ledger):** every time you invoke a core script, distinguish three
+outcomes, not two — "ran and passed," "ran and failed" (a real result, act
+on it normally), and **could not run at all** (the tool call itself was
+blocked, denied, or errored before the script's own logic ever executed —
+a permission denial, a sandbox/classifier block, "command not found" from
+a broken symlink; not the script exiting non-zero on its own). The third
+state is the one that's silently indistinguishable from the second if you
+don't name it — see `docs/tradeoffs.md`'s Auto Mode classifier wall finding
+for why this matters. On "could not run":
+
+1. Append a line to `work/<task-id>/notes.md` (create it, header `# Notes`,
+   if it doesn't exist yet): `TOOLING GAP: <script> could not run — <one-line
+   consequence>.` Be concrete about the consequence (e.g. "research
+   staleness unmeasured for this task," not "check-stale failed").
+2. If `ledger` itself is reachable (this gap is about some *other* script),
+   also run `ledger note-gap <task-id> <script> "<consequence>"` — this is
+   what feeds `/costs`' tooling-degradation count mechanically instead of
+   leaving it as prose only a human reading notes.md would find.
+3. If `ledger` itself is what's unreachable — including `ledger init` never
+   having succeeded for this task — hand-author `work/<task-id>/ledger.json`
+   directly (Write tool) with the same shape `ledger init` would have
+   produced (see `core/scripts/ledger`'s `init` case for the exact fields)
+   but with **`hand_tracked: true`** and a `tooling_gaps` array containing
+   at least this gap. This is the stamp that keeps the task from being
+   silently invisible to `ledger aggregate` (which globs
+   `work/*/ledger.json`) — a real ledger.json with `hand_tracked:false` and
+   a hand-authored one with `hand_tracked:true` are visually and
+   mechanically distinguishable to anyone reading either the file or
+   `/costs`' output.
+4. Never let a could-not-run script silently read as "nothing to report."
+   Degrade gracefully (keep going by hand, per the phase's own fallback —
+   e.g. hand-tracking `state` below) but the degradation itself must leave
+   a trace in at least one of notes.md / ledger.json / verify.md.
+
+This discipline is what `/verify` (step 1 below hands off to) and `/ship`
+carry forward into `verify.md`'s and `briefing.md`'s own "Tooling gaps"
+sections — notes.md is this task's running log until then.
 
 ## 1. Classify — the first recurring human touchpoint
 
@@ -53,7 +119,15 @@ Once confirmed, for Class 1/2: generate the task ID
 `mkdir -p work/<task-id>`, write `.spine/current-task`, write
 `work/<task-id>/class`, write `work/<task-id>/state` = `research`, then
 `${CLAUDE_SKILL_DIR}/../../scripts/ledger init <task-id>` and
-`ledger mark <task-id> classify`.
+`ledger mark <task-id> classify`. If `ledger init` could not run at all,
+this is the ledger-itself-unreachable case in the tooling-gap discipline
+above — hand-author the `ledger.json` stub (`hand_tracked: true`) right
+now, at task creation, rather than waiting for a later phase to notice; a
+task that never gets a ledger.json at all is invisible to `/costs`, not
+just degraded. **If `--milestone <id>` was given**, also write
+`work/<task-id>/milestone` = `<id>` and replace this milestone's first
+still-`TBD` member-task entry with `<task-id>` in `work/<id>/milestone.md`
+now, per this skill's own header note.
 
 ## 2. Research
 
@@ -83,21 +157,55 @@ Harvest its subagent transcript into the ledger under phase key
 `ledger mark <task-id> plan`, write `state` = `plan`. First run
 `${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md`
 — if it reports stale, the grounding drifted since it was written; regenerate
-research (back to step 2) before planning on it.
+research (back to step 2) before planning on it. If `check-stale` could not
+run at all (see the tooling-gap discipline above), do not treat that as
+"assume fresh" — record the gap ("research staleness unmeasured for this
+task") and proceed on the assumption research *might* be stale, noting that
+explicitly when you present the plan for approval so the human's review
+accounts for it.
 
 Write `work/<task-id>/plan.md` yourself, following
 `${CLAUDE_SKILL_DIR}/../../templates/plan.md`'s structure exactly — the
 `## Predicted touch` section is machine-parsed verbatim by
-`core/scripts/conformance`, don't reformat it. **200-line hard cap,
-comments included** — `wc -l` it before presenting; if it doesn't fit, the
-task splits into two, it does not get compressed into unreadability.
+`core/scripts/conformance`, don't reformat it (multi-repo: every entry
+repo-qualified, `<repo-name>:<path>`, per the template's own comment).
+**200-line hard cap, comments included** — `wc -l` it before presenting;
+if it doesn't fit, the task splits into two, it does not get compressed
+into unreadability. Multi-repo, additionally: write `## Ship order` the
+moment `## Predicted touch` names more than one repo. Write `## Contract
+change` if research or your own reading of `## Predicted touch` suggests
+this plan touches a declared contract's producer paths or spec — this is a
+judgment call at plan time, since `core/scripts/contract-touch` itself
+needs a real diff and can't run yet; `/verify` (step 5 below) runs it for
+real against the actual diff regardless and fails the task if a `breaking`
+classification and this line disagree, so a wrong guess here is caught,
+never silently trusted. See `core/templates/plan.md`'s own comments and
+`core/rules/contracts.md` for what each value means. If
+this task belongs to a milestone (`work/<task-id>/milestone` set), the
+plan's `## Approach` must be consistent with that milestone's `##
+Inter-task contracts` — what a prior member task already left true is a
+real constraint on this plan, not optional context; if the plan needs to
+violate one, that's a deviation against the milestone itself and belongs
+in the plan's own rejected-alternatives reasoning, said explicitly, not
+silently contradicted. If any decision from `/design` grounds this plan,
+add the `## Grounds on decisions` section per `core/templates/plan.md`.
 
-Check every `## Predicted touch` entry against
-`.spine/protected-paths.conf`. If any match and `work/<task-id>/class` is
-not already `2`, auto-escalate: rewrite the class file to `2`, and say so
-plainly when you present the plan — this is the plan-triggered escalation
-build prompt §2.2 describes; it does not need a separate confirmation
-prompt beyond the plan approval you're about to ask for anyway.
+Check every `## Predicted touch` entry against `.spine/protected-paths.conf`
+— single-repo, that's always this project's own file. **Multi-repo: check
+each entry against its *own* repo's `.spine/protected-paths.conf`**
+(strip the `<repo-name>:` prefix, resolve the repo's absolute path via
+`workspace.json`, read that repo's own conf) — checking every entry across
+every repo in one pass is what makes this "escalate if *any* repo's
+protected path is hit" loop the mechanical form of build prompt §2's "class
+escalation composes as max across repos": there is no separate max
+computation to write, it falls out of checking every entry regardless of
+which repo it belongs to. If any match and `work/<task-id>/class` is not
+already `2`, auto-escalate: rewrite the class file to `2` (one file, at the
+workspace root for a multi-repo task — one class for the whole task), and
+say so plainly when you present the plan — this is the plan-triggered
+escalation build prompt §2.2 describes; it does not need a separate
+confirmation prompt beyond the plan approval you're about to ask for
+anyway.
 
 **Present the plan and stop — this is the second recurring human
 touchpoint.** Do not proceed to implementation in the same turn. Wait for

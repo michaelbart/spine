@@ -1,0 +1,26 @@
+{
+  "_comment": "One per workspace root, written by /workspace, never hand-edited except through /workspace's own re-run (adding/removing a repo) or a task's own plan touching contracts/registry entries under human approval. Stack-blind: this file names repos, paths, and contracts — never a language or tool. The three hooks (phase-gate, path-escalate, dep-gate) read this file to route by target path; its absence at $CLAUDE_PROJECT_DIR is exactly how a hook tells 'plain single-repo project' from 'workspace root' and falls back to pre-Extension-B behavior unchanged.",
+
+  "repos": [
+    {
+      "_comment": "One entry per member repo. `path` is absolute — this is what additionalDirectories in .claude/settings.json also lists, and what the hooks longest-prefix-match an edited file's absolute path against. `role` is free text for humans (producer/consumer/both) — nothing mechanical reads it; the contract registry below is what actually encodes producer/consumer direction.",
+      "name": "<repo-name>",
+      "path": "/absolute/path/to/repo",
+      "role": "producer | consumer | both | unspecified"
+    }
+  ],
+
+  "contracts": [
+    {
+      "_comment": "One entry per declared cross-repo contract. `spec_path` is workspace-root-relative, always under contracts/<name>/. `producer_paths` are globs relative to the producer repo's own root — the files whose change means the producer's real implementation of this contract moved, consulted by contract-touch alongside spec_path itself. `spec_hash` is sha256 of spec_path's content (core/scripts/decision-hash's algorithm, no status-line exclusion needed here since a spec file has no status line of its own) — contract-touch's own staleness/drift signal, not a merge gate by itself. `producer_paths_match_count` is a mechanical staleness proxy (open question 5.3): the count of real files matching producer_paths at the time this entry was last confirmed accurate; if a later contract-touch run finds that count has dropped to zero, the registry is very likely stale (the producer refactored those paths away without updating this entry) and contract-touch says so loudly rather than silently under-detecting blast radius.",
+      "name": "<contract-name>",
+      "producer": "<repo-name>",
+      "producer_paths": ["src/routes/items.*"],
+      "producer_paths_match_count": 0,
+      "consumers": ["<repo-name>"],
+      "spec_path": "contracts/<contract-name>/spec.md",
+      "spec_hash": "<sha256 of spec_path content>",
+      "registered": "<yyyy-mm-dd>"
+    }
+  ]
+}
