@@ -1,0 +1,39 @@
+#!/bin/bash
+# decision-hash — deterministic content hash of a docs/decisions/ record,
+# excluding the `- Status:` line.
+#
+# Why exclude it: a decision's status line changes on its own lifecycle
+# (adopted -> implemented when /ship records implementing paths; the
+# append-only supersession flip on the superseded record itself) without
+# the decision's actual content changing. research.md cites a decision by
+# id + hash (core/templates/research.md's `grounding-decisions:` header);
+# if the hash moved every time a status line did, every research citing an
+# about-to-ship decision would spuriously go stale the moment that same
+# ship recorded its own implementing paths. check-stale's `superseded`
+# check (a separate, explicit branch — see core/scripts/check-stale) is
+# what catches supersession; this hash is only ever about the decision's
+# actual Context/Decision/Consequences content drifting.
+#
+# Single source of truth for the algorithm — check-stale calls this
+# script rather than reimplementing it, and so must anything else that
+# ever needs to compute or verify a decision's grounding hash.
+#
+# Usage: decision-hash <decision.md-path>
+set -uo pipefail
+
+usage() { echo "usage: decision-hash <decision.md-path>" >&2; exit 2; }
+
+[[ $# -eq 1 ]] || usage
+doc="$1"
+[[ -f "$doc" ]] || { echo "decision-hash: $doc not found" >&2; exit 2; }
+
+if command -v sha256sum >/dev/null 2>&1; then
+  hash_stdin() { sha256sum | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+  hash_stdin() { shasum -a 256 | awk '{print $1}'; }
+else
+  echo "decision-hash: neither sha256sum nor shasum is available" >&2
+  exit 2
+fi
+
+grep -v '^- Status: ' "$doc" | hash_stdin

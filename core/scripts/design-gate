@@ -1,0 +1,136 @@
+#!/bin/bash
+# design-gate — the four /design stopping-rule checks, all mechanical.
+# /design refuses handoff (to milestone-0 implementation work) until this
+# passes. Stack-blind: reads only capability *names* (already stack-blind
+# identifiers per core/ADAPTER-CONTRACT.md §1), never a tool or language.
+#
+# Checks, all must pass:
+#   1. work/M0/milestone.md exists and its Capability targets table has a
+#      filled-in (non-empty) status for test, smoke-seed, smoke-run,
+#      smoke-golden — the walking-skeleton floor named in the build prompt.
+#   2. Every one of the 13 core/ADAPTER-CONTRACT.md capabilities has a
+#      status (implemented|unavailable|not-applicable) in
+#      .spine/capabilities.json — "missing" fails this check the same as
+#      an absent file would.
+#   3. Every one of six fixed foundational categories (state-management,
+#      persistence, module-boundaries, error-handling, auth-model,
+#      repo-topology) is covered by either an adopted-or-implemented
+#      docs/decisions/D-*.md record carrying that Category, or a
+#      docs/decisions/DEFERRED.md entry carrying that Category with a
+#      non-empty Trigger.
+#   4. The count of decisions currently in `adopted` status is <= the cap
+#      (default 12; --cap overrides). Decisions already `implemented`
+#      don't count against this — the cap governs design-time decision
+#      load, not a running total that grows forever as code ships.
+#
+# Usage: design-gate [--project <path>] [--cap <n>]
+set -uo pipefail
+
+usage() { echo "usage: design-gate [--project <path>] [--cap <n>]" >&2; exit 2; }
+
+project="$(pwd)"
+cap=12
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --cap) cap="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+fail=0
+report() { echo "design-gate: FAIL — $1" >&2; fail=1; }
+
+CAPABILITIES=(typecheck lint test test-changed secret-scan dep-diff clone-scan callers mutate smoke-seed smoke-run smoke-golden migrate-rehearse)
+CATEGORIES=(state-management persistence module-boundaries error-handling auth-model repo-topology)
+
+# --- Check 1: milestone 0 ---------------------------------------------
+milestone_file="$project/work/M0/milestone.md"
+if [[ ! -f "$milestone_file" ]]; then
+  report "no $milestone_file — milestone 0 (the walking skeleton) is not defined"
+else
+  for cap_name in test smoke-seed smoke-run smoke-golden; do
+    row="$(grep -E "^\| $cap_name \|" "$milestone_file" || true)"
+    if [[ -z "$row" ]]; then
+      report "work/M0/milestone.md's Capability targets table has no row for '$cap_name'"
+      continue
+    fi
+    status_cell="$(awk -F'|' '{print $3}' <<<"$row" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    [[ -n "$status_cell" ]] || report "work/M0/milestone.md's Capability targets row for '$cap_name' has no planned status filled in"
+  done
+fi
+
+# --- Check 2: every capability has a planned status --------------------
+caps_json="$project/.spine/capabilities.json"
+if [[ ! -f "$caps_json" ]]; then
+  report "no $caps_json — no capability can have a planned status"
+else
+  for cap_name in "${CAPABILITIES[@]}"; do
+    st="$(jq -r --arg c "$cap_name" '.[$c].status // "missing"' "$caps_json")"
+    [[ "$st" != "missing" ]] || report "capability '$cap_name' has no status in .spine/capabilities.json"
+  done
+fi
+
+# --- Check 3: foundational category coverage ----------------------------
+decisions_dir="$project/docs/decisions"
+deferred_file="$decisions_dir/DEFERRED.md"
+
+deferred_map=""
+if [[ -f "$deferred_file" ]]; then
+  deferred_map="$(awk '
+    /^## Deferred/{ if (cat!="") print cat "\t" trig; cat=""; trig="" }
+    /^- Category: /{ line=$0; sub(/^- Category: /,"",line); cat=line }
+    /^- Trigger: /{ line=$0; sub(/^- Trigger: /,"",line); trig=line }
+    END{ if (cat!="") print cat "\t" trig }
+  ' "$deferred_file")"
+fi
+
+deferred_covers() {
+  local cat="$1"
+  [[ -n "$deferred_map" ]] || return 1
+  local c t
+  while IFS=$'\t' read -r c t; do
+    [[ "$c" == "$cat" && -n "$t" ]] && return 0
+  done <<<"$deferred_map"
+  return 1
+}
+
+decision_covers() {
+  local cat="$1" f file_cat file_status
+  [[ -d "$decisions_dir" ]] || return 1
+  for f in "$decisions_dir"/D-*.md; do
+    [[ -e "$f" ]] || continue
+    file_cat="$(awk -F': ' '/^- Category: /{print $2; exit}' "$f")"
+    file_status="$(awk -F': ' '/^- Status: /{print $2; exit}' "$f")"
+    if [[ "$file_cat" == "$cat" && ( "$file_status" == "adopted" || "$file_status" == "implemented" ) ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+for cat in "${CATEGORIES[@]}"; do
+  if ! decision_covers "$cat" && ! deferred_covers "$cat"; then
+    report "foundational category '$cat' has neither an adopted decision nor a DEFERRED.md entry with a trigger"
+  fi
+done
+
+# --- Check 4: adopted-decision count vs. cap -----------------------------
+adopted_count=0
+if [[ -d "$decisions_dir" ]]; then
+  for f in "$decisions_dir"/D-*.md; do
+    [[ -e "$f" ]] || continue
+    st="$(awk -F': ' '/^- Status: /{print $2; exit}' "$f")"
+    [[ "$st" == "adopted" ]] && adopted_count=$((adopted_count + 1))
+  done
+fi
+if [[ "$adopted_count" -gt "$cap" ]]; then
+  report "$adopted_count decisions are adopted, exceeding the cap of $cap — exceeding it means deciding things code should decide"
+fi
+
+if [[ "$fail" -eq 1 ]]; then
+  echo "design-gate: FAIL — see above" >&2
+  exit 1
+fi
+echo "design-gate: PASS — milestone 0 defined, all capabilities planned, all foundational categories decided-or-deferred, $adopted_count/$cap adopted decisions"
+exit 0

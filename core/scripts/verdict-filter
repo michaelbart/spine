@@ -5,17 +5,32 @@
 # survives. Never fails the run because verdicts were dropped — that's this
 # script working correctly — only fails on a structurally unreadable input.
 #
-# Usage: verdict-filter <verdicts.json> [--out <filtered.json>]
+# Evidence kinds: `file_line`, `command` (both shape-checked only — the
+# claim's *truth* is still a human/model judgment, per ADAPTER-CONTRACT.md
+# §5's own self-red-team entry), and `decision` (design-stage extension):
+# `{"kind":"decision","decision_id":"D-3","quote":"<verbatim span>"}`. Unlike
+# the other two kinds, `decision` gets a second, stronger check beyond
+# shape: `decision_id` must resolve to a real `docs/decisions/<id>-*.md`
+# record and `quote` must appear verbatim in it, or the verdict is dropped
+# just as if it were malformed. This is still shape-and-resolution
+# validation, not truth validation — a real quote lifted out of context
+# still passes — but it's a strictly higher bar than the other two kinds
+# get, because a decision id is trivially cheap to fabricate compared to a
+# real file:line or a real command's captured output.
+#
+# Usage: verdict-filter <verdicts.json> [--out <filtered.json>] [--project <path>]
 set -uo pipefail
 
-usage() { echo "usage: verdict-filter <verdicts.json> [--out <filtered.json>]" >&2; exit 2; }
+usage() { echo "usage: verdict-filter <verdicts.json> [--out <filtered.json>] [--project <path>]" >&2; exit 2; }
 
 [[ $# -ge 1 ]] || usage
 input="$1"; shift
 out_path=""
+project="$(pwd)"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) out_path="$2"; shift 2 ;;
+    --project) project="$2"; shift 2 ;;
     *) usage ;;
   esac
 done
@@ -39,12 +54,16 @@ if [[ "$attacked_count" -eq 0 ]]; then
   exit 2
 fi
 
+# Pass 1 — shape validation (jq only; kind=="decision" checked for
+# non-empty decision_id/quote here, resolution happens in pass 2 below).
 filtered_and_report="$(jq '
   def valid_evidence:
     if .evidence.kind == "file_line" then
       (.evidence.file // "" | length > 0) and (.evidence.line != null)
     elif .evidence.kind == "command" then
       (.evidence.command // "" | length > 0) and (.evidence.output // "" | length > 0)
+    elif .evidence.kind == "decision" then
+      (.evidence.decision_id // "" | length > 0) and (.evidence.quote // "" | length > 0)
     else false end;
   def valid_verdict:
     (.claim // "" | length > 0)
@@ -56,17 +75,57 @@ filtered_and_report="$(jq '
   }
 ' "$input")"
 
-kept_count="$(jq '.kept | length' <<<"$filtered_and_report")"
-dropped_count="$(jq '.dropped | length' <<<"$filtered_and_report")"
+# Pass 2 — resolution check for kind=="decision" survivors of pass 1. A
+# shape-valid decision verdict whose id doesn't resolve to exactly one
+# docs/decisions/ record, or whose quote isn't found verbatim in it, moves
+# from kept to dropped here — plain bash + grep, not something jq alone
+# can do against a filename it doesn't already have open.
+final_kept="[]"
+resolution_dropped="[]"
+while IFS= read -r verdict; do
+  [[ -n "$verdict" ]] || continue
+  kind="$(jq -r '.evidence.kind // empty' <<<"$verdict")"
+  if [[ "$kind" != "decision" ]]; then
+    final_kept="$(jq --argjson v "$verdict" '. + [$v]' <<<"$final_kept")"
+    continue
+  fi
+  did="$(jq -r '.evidence.decision_id' <<<"$verdict")"
+  quote="$(jq -r '.evidence.quote' <<<"$verdict")"
+  matches=("$project"/docs/decisions/"$did"-*.md)
+  # Whitespace-normalized containment, not a raw line-bound grep -F: a
+  # decision record is hand-wrapped prose, and an accurate quote spanning
+  # a source line-wrap would otherwise be a false negative — dropping a
+  # true finding is a worse failure than the marginal risk that collapsing
+  # whitespace lets through a quote that only fuzzily matches. Still exact
+  # on every non-whitespace character; only run-of-whitespace differences
+  # (including newlines) are treated as equivalent.
+  normalize() { tr '\n\t' '  ' | tr -s ' '; }
+  if [[ -e "${matches[0]}" && ${#matches[@]} -eq 1 ]]; then
+    norm_quote="$(printf '%s' "$quote" | normalize)"
+    norm_file="$(normalize <"${matches[0]}")"
+    if [[ "$norm_file" == *"$norm_quote"* ]]; then
+      final_kept="$(jq --argjson v "$verdict" '. + [$v]' <<<"$final_kept")"
+    else
+      resolution_dropped="$(jq --argjson v "$verdict" '. + [$v]' <<<"$resolution_dropped")"
+    fi
+  else
+    resolution_dropped="$(jq --argjson v "$verdict" '. + [$v]' <<<"$resolution_dropped")"
+  fi
+done < <(jq -c '.kept[]' <<<"$filtered_and_report")
+
+dropped_all="$(jq -n --argjson a "$(jq '.dropped' <<<"$filtered_and_report")" --argjson b "$resolution_dropped" '$a + $b')"
+
+kept_count="$(jq 'length' <<<"$final_kept")"
+dropped_count="$(jq 'length' <<<"$dropped_all")"
 
 if [[ "$dropped_count" -gt 0 ]]; then
   echo "verdict-filter: dropped $dropped_count non-conforming verdict(s):" >&2
-  jq -c '.dropped[]' <<<"$filtered_and_report" >&2
+  jq -c '.[]' <<<"$dropped_all" >&2
 fi
 
 output="$(jq --arg agent "$agent" --arg task_id "$task_id" \
   --argjson attacked "$(jq '.attacked' "$input")" \
-  --argjson kept "$(jq '.kept' <<<"$filtered_and_report")" \
+  --argjson kept "$final_kept" \
   -n '{agent:$agent, task_id:$task_id, attacked:$attacked, verdicts:$kept}')"
 
 if [[ -n "$out_path" ]]; then
