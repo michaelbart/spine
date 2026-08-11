@@ -9,6 +9,25 @@ You are running `/task`, the spine (build prompt §2.2). `$ARGUMENTS` is the
 task description as given, plus an optional `--milestone <milestone-id>`;
 if the description is empty, ask for one before doing anything else.
 
+**Step 0 — core version check (Extension C §2.1, the "cheap session-start
+check").** No SessionStart-shaped hook exists to carry this — the
+manifest forbids a new one — so it lives here, the one recurring entry
+point every real task passes through:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/setup --check --project <project root>
+```
+
+`ok`/`unpinned`: continue. `mismatch-warn`: show the warning, continue —
+this machine's core may enforce differently than what this project was
+calibrated against, but it's not a halt. `mismatch-strict`: stop here,
+show the message, do not classify or touch any task state until the
+engineer has pulled this machine's spine checkout to the pinned sha or a
+maintainer has bumped the pin (`docs/tradeoffs.md`'s Extension C section
+has the full upgrade workflow). If `setup` itself could not run at all,
+this is the tooling-gap discipline below's "could not run" case —
+note it and proceed, don't treat an unreachable check as a passing one.
+
 **Multi-repo (Extension B)**: if `workspace.json` exists at the project
 root, this session's own project root *is* the workspace root, and this
 one `/task` invocation is the single task folder, single plan, single
@@ -43,6 +62,57 @@ State lives in three places, and every phase transition below updates them
   task = Class 0 default.
 - `work/<task-id>/state` — the current phase name, one line.
 - `work/<task-id>/class` — `0`, `1`, or `2`, one line.
+
+**The registry (Extension C §2.2/§2.3), sibling files alongside the three
+above — never crammed into `state` itself**, which every hook and skill
+above already reads as a bare one-line phase name
+(`work/.build/ext-c-phase-A-handoff.md`'s own recorded reason for this
+split):
+
+- `work/<task-id>/owner` — one line, the git identity
+  (`git config user.name <user.email>`) that created this task. Written
+  once, at classify, never edited.
+- `work/<task-id>/claims.json` — this task's declared surfaces
+  (`core/templates/claims.json`). Empty skeleton at classify, populated
+  for real at plan approval (§3).
+- `work/<task-id>/flags.json` — array, `[]` at classify. Written by
+  `core/scripts/propagate` (Extension C §2.5) when another task's ship
+  changes something this task grounds on.
+
+**Flag-blocked advance — the real enforcement point, not a suggestion.**
+Before writing `state` forward at *any* of the three phase transitions
+below (research→plan, plan→implement, implement→verify), read
+`work/<task-id>/flags.json` first. If any entry has `"acknowledged":
+false`, refuse to advance: tell the human exactly what changed, when, by
+whom, and which grounding entry it hit (the flag's own fields — quote
+them, don't paraphrase), and stop. The human resolves it the same way any
+halt-tier deviation resolves — by acting on the information, then editing
+that flag entry (`"acknowledged": true`, `"acknowledged_at"`,
+`"acknowledged_by"` set) — never by silently clearing it or advancing
+around it. This is the mechanism `core/scripts/propagate`'s flags exist to
+be *for*; a flag nothing ever reads back would be exactly the "manufactures
+confidence" failure shape build prompt §1 names for a hook that doesn't
+fire — `/task` is what performs every phase transition, so `/task` is what
+owns this check, the same way `phase-gate` owns write-restriction during
+research/plan.
+
+**Registry sync — every write to any file in this list, and every phase
+transition, is followed by:**
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/registry-sync <task-id> --project <project root> --message "<short reason>"
+```
+
+This is what makes "the registry is shared state" (Extension C §2.2) real
+rather than aspirational — a task folder that only exists on its creator's
+own machine is invisible to `claims-check` and `propagate` running
+anywhere else. `registry-sync` stages only `work/<task-id>/`, never the
+rest of the working tree (mid-implement code edits sitting elsewhere stay
+untouched and uncommitted, exactly as `phase-gate`'s own restriction
+already implies they should during research/plan). A "no remote
+configured" or "nothing changed" result is a normal, silent success, not a
+tooling gap — only a real push failure after `registry-sync`'s own
+rebase-retry is.
 
 **Resuming:** if `.spine/current-task` already exists, read its `state` and
 `class` and offer to resume that task where it left off rather than starting
@@ -129,6 +199,29 @@ just degraded. **If `--milestone <id>` was given**, also write
 still-`TBD` member-task entry with `<task-id>` in `work/<id>/milestone.md`
 now, per this skill's own header note.
 
+**Registry init (Extension C §2.2), same step, before the first
+`registry-sync`:** resolve owner identity —
+`git config user.name` and `git config user.email`. **If either is empty,
+stop before creating the task folder** and tell the human plainly: "spine's
+ownership model reads git identity, it does not invent one — run `git
+config --global user.name '<you>'` and `--global user.email
+'<you@example.com>'` first." (Primitive verification,
+`ext-c-phase-A-handoff.md` §0.2 — a fresh machine genuinely has neither set;
+never fall back to `$USER`, hostname, or any other guess.) Otherwise write
+`work/<task-id>/owner` = `<name> <email>`, one line. Write
+`work/<task-id>/claims.json` from `core/templates/claims.json` with
+`task_id` filled in and every array empty (populated for real at plan
+approval, §3). Write `work/<task-id>/flags.json` = `[]`. Then:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/registry-sync <task-id> --project <project root> --message "task: open <task-id>"
+```
+
+This is the literal "committed and pushed to it at task creation" build
+prompt §2.2 requires — a task invisible to a colleague's `claims-check`
+until `/ship` would defeat the entire mechanism, so this happens now, not
+deferred to the end of the phase.
+
 ## 2. Research
 
 `ledger mark <task-id> research`. Delegate to the `researcher` agent (Agent
@@ -154,7 +247,10 @@ Harvest its subagent transcript into the ledger under phase key
 
 ## 3. Plan
 
-`ledger mark <task-id> plan`, write `state` = `plan`. First run
+**Flag check first** (per this skill's own header note on flag-blocked
+advance): read `work/<task-id>/flags.json`; any unacknowledged entry halts
+here, before anything else in this step. `ledger mark <task-id> plan`,
+write `state` = `plan`, `registry-sync <task-id>`. First run
 `${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md`
 — if it reports stale, the grounding drifted since it was written; regenerate
 research (back to step 2) before planning on it. If `check-stale` could not
@@ -207,17 +303,79 @@ escalation build prompt §2.2 describes; it does not need a separate
 confirmation prompt beyond the plan approval you're about to ask for
 anyway.
 
+**Populate `work/<task-id>/claims.json` for real** (Extension C §2.2/§2.3),
+now that a plan exists: `predicted_touch` from `## Predicted touch`
+verbatim, `grounding_files`/`grounding_decisions` from `research.md`'s own
+header, `contracts` from `## Contract change`'s named contract if present,
+`updated_at` set to the current timestamp. `registry-sync <task-id>` — this is the version of claims.json a
+colleague's `claims-check` (Phase C) sees; a claims.json still at its
+empty classify-time skeleton would make every intersection check
+vacuously pass, silently defeating the whole mechanism.
+
+**Run `claims-check` before presenting the plan** (Extension C §2.3 — "invoked
+by the plan-approval step of `/task`"):
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/claims-check <task-id> --project <project root>
+```
+
+Print any warnings (read/read or shared grounding — informational, never
+blocking). If it blocks (exit 1): **do not present the plan for approval
+yet** — show the human the specific conflicting task(s), owner(s), and
+surface(s), and the three resolution paths verbatim from its own output
+(wait / renegotiate scope / override). Renegotiate means revising `##
+Predicted touch` and re-running this check, same as any other plan
+revision. Override means proceeding anyway, loudly: append a note to
+*this* task's `deviations.md` (tier `record-and-proceed`, since choosing
+to override is itself the resolution) naming the conflicting task, and
+`ledger set <task-id> claims_conflicts <n>` (`n` = the blocking count
+`claims-check` reported) so `/costs`' per-engineer view has real data
+instead of a permanent zero — do this on *every* blocking run, override
+or not, since a conflict that gets resolved by waiting/renegotiating
+still happened and is worth counting. If clear (exit 0, warnings or not),
+proceed straight to presenting the plan.
+
 **Present the plan and stop — this is the second recurring human
 touchpoint.** Do not proceed to implementation in the same turn. Wait for
 explicit approval. If the human requests changes, revise and re-present;
 this doesn't count against the deviation circuit breaker, it's pre-approval
 iteration.
 
+**Record the approval** (Extension C §2.6) — `work/<task-id>/approval.json`:
+`{"approver": "<git identity>", "at": "<iso8601>", "override": false,
+"override_reason": null}`. `registry-sync <task-id>`.
+
+- **Class 0/1**: the approver is whoever's session this is — resolve from
+  `git config user.name`/`user.email` in *this* session, same as `owner`.
+  Self-approval is expected and correct here; build prompt §2.6 is explicit
+  that mandatory cross-review does not extend to Class 1 — "recreates the
+  review-bottleneck theater spine exists to escape."
+- **Class 2**: the approver must be a *different* git identity than
+  `work/<task-id>/owner`. This session cannot manufacture that identity —
+  it can only ever resolve its own `git config`. So: if this session's own
+  identity equals `owner`, **do not write `approver` as this session's own
+  identity and call it approved.** Tell the human plainly: "Class 2 needs a
+  second approver. Have a colleague pull this project, read
+  `work/<task-id>/plan.md` (already on the shared mainline — that's what
+  makes this possible without a separate review tool), and if they
+  approve, run their own session and write
+  `work/<task-id>/approval.json` themselves (their own `git config`
+  identity, not typed/asserted) + `registry-sync`." Then stop — this
+  session waits (pull periodically, or the human says when it's done)
+  rather than proceeding to implement on an unapproved Class 2 plan.
+  **Override** (a genuine solo/vacation-coverage situation, same trust
+  model as `/ship --bypass`): the owner may self-approve by writing
+  `approval.json` with `"override": true` and a real
+  `"override_reason"` — loud, not silent; `/ship` (Phase C's own
+  extension) surfaces this in the briefing and the ledger unconditionally,
+  never treats it as an ordinary approval.
+
 ## 4. Implement
 
-On approval: `ledger mark <task-id> implement`, write `state` = `implement`.
-This is what unblocks `phase-gate` — it only restricts writes during
-`research`/`plan`.
+**Flag check first**, same rule as step 3. On approval: `ledger mark
+<task-id> implement`, write `state` = `implement`, `registry-sync
+<task-id>`. This is what unblocks `phase-gate` — it only restricts writes
+during `research`/`plan`.
 
 Work the plan's steps directly (you have full tool access again; `phase-gate`
 no longer applies, `path-escalate`/`dep-gate` still do). For each decision
@@ -240,10 +398,10 @@ you hit, use the plan's latitude table:
 On the third for this task, the plan is invalidated — `git stash push -u -m
 "spine: circuit breaker, work/<task-id>"` to preserve what you'd built
 without losing it, write `state` back to `research`, bump
-`work/<task-id>/ledger.json`'s `deviation_count` (see §6), and tell the
-human plainly: three wrong guesses means the research was wrong once, not
-that each guess should be patched forward. Fresh research is required
-before re-planning.
+`work/<task-id>/ledger.json`'s `deviation_count` (see §6), `registry-sync
+<task-id>`, and tell the human plainly: three wrong guesses means the
+research was wrong once, not that each guess should be patched forward.
+Fresh research is required before re-planning.
 
 If a resolution (halt or otherwise) cites a `docs/charter.md` line, it must
 end amend-or-reaffirm: the human either edits that charter line or
@@ -251,16 +409,20 @@ reaffirms it as-is, dated, and the deviations.md resolution records which.
 
 ## 5. Verify and ship
 
-Implementation acceptance checks (from the plan) should already pass before
-you move on — check them yourself first; don't hand a known-broken diff to
-`/verify`. Then: `ledger mark <task-id> verify`, write `state` = `verify`,
-invoke `/verify` (Skill tool) with the task ID.
+**Flag check first**, same rule as step 3. Implementation acceptance
+checks (from the plan) should already pass before you move on — check them
+yourself first; don't hand a known-broken diff to `/verify`. Then: `ledger
+mark <task-id> verify`, write `state` = `verify`, `registry-sync
+<task-id>`, invoke `/verify` (Skill tool) with the task ID.
 
 If `/verify` reports the floor failed: fix it (back to implementation,
 same task, not a new deviation by itself unless the fix itself diverges
 from the plan) and re-run `/verify`. If it passed: write `state` = `ship`,
-invoke `/ship` (Skill tool) with the task ID. `/ship` handles the merge
-gate, the commit trailer, the briefing, and clearing `.spine/current-task`.
+`registry-sync <task-id>`, invoke `/ship` (Skill tool) with the task ID.
+`/ship` handles the merge gate, the commit trailer, the briefing, and
+clearing `.spine/current-task` (Extension C additions to `/ship` itself —
+ship-time re-grounding, second-approver, its own final registry sync —
+land in Phase C, not here).
 
 **Point the human at the delta briefing path when `/ship` completes** — that
 read is the third recurring touchpoint, and it happens once, at the end,

@@ -1,0 +1,18 @@
+{
+  "task_id": "20260811-auth-rate-limit",
+  "created_at": "2026-08-11T12:45:28Z",
+  "engineer": "Bob <bob@example.com>",
+  "phases": {},
+  "deviation_count": 1,
+  "class_declared": null,
+  "class_escalated": false,
+  "conformance_score": null,
+  "capability_gaps": [],
+  "bypass": null,
+  "hand_tracked": false,
+  "tooling_gaps": [],
+  "claims_conflicts": 2,
+  "ship_time_regrounding": "check-stale: stale",
+  "ship_time_regrounding_claims": null,
+  "second_approver": null
+}

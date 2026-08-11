@@ -1,0 +1,11 @@
+{
+  "task_id": "20260811-auth-rate-limit",
+  "predicted_touch": [
+    "src/routes/login.ts"
+  ],
+  "grounding_files": [
+    "src/lib/session.ts"
+  ],
+  "grounding_decisions": [],
+  "contracts": []
+}

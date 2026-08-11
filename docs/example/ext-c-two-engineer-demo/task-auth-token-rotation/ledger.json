@@ -1,0 +1,18 @@
+{
+  "task_id": "20260811-auth-token-rotation",
+  "created_at": "2026-08-11T12:46:20Z",
+  "engineer": "Alice <alice@example.com>",
+  "phases": {},
+  "deviation_count": 0,
+  "class_declared": null,
+  "class_escalated": false,
+  "conformance_score": null,
+  "capability_gaps": [],
+  "bypass": null,
+  "hand_tracked": false,
+  "tooling_gaps": [],
+  "claims_conflicts": 0,
+  "ship_time_regrounding": null,
+  "ship_time_regrounding_claims": null,
+  "second_approver": "Bob <bob@example.com>"
+}

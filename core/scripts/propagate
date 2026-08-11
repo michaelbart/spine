@@ -1,0 +1,146 @@
+#!/bin/bash
+# propagate — supersession propagation (build prompt Extension C §2.5).
+# Invoked by /ship right after a task's own commit(s) land, and by
+# whatever supersedes a decision or a contract spec (Extension A / B,
+# when present). Scans every *other* open task's claims.json for
+# grounding on what just changed and writes a structured flag into each
+# match's own work/<task-id>/flags.json — a commit to the shared mainline
+# (registry-sync), since these are other engineers' task folders and a
+# flag that stays local until their next pull isn't a flag.
+#
+# Branches on docs/decisions/ *existing*, never on whether Extension A is
+# installed (Phase A review correction — check-stale's own
+# grounding-decisions: handling already proved decisions are baseline
+# infrastructure, not an A-exclusive one; work/.build/ext-c-phase-A-
+# handoff.md §0.4). Contracts are Extension B only, naturally, because
+# --contracts has nothing to match against without workspace.json's
+# registry — no separate presence check needed, the data just won't be
+# there.
+#
+# Open question 2 (build prompt §5.2): "same flag, different urgency?" —
+# answered here, mechanically, not just in prose: each flag records the
+# target task's *own* phase at write time as `severity` — advisory for a
+# task still in research/plan (nothing implemented yet, cheapest to
+# redirect), disruptive for implement/verify/ship (real work may need
+# rework). Same flag shape either way; the field is what carries urgency.
+#
+# Usage: propagate <source-task-id> --project <path>
+#          [--decisions <D-id>[,<D-id>...]] [--contracts <name>[,<name>...]]
+#          [--by <engineer>]
+#        Changed file paths (repo-qualified in multi-repo, matching
+#        claims.json's own convention) on stdin, newline-separated —
+#        same convention ADAPTER-CONTRACT.md §3 already uses for a
+#        changed-file set.
+# Exit: 0 (informational — never blocks a ship by itself; the flag it
+# writes is what later blocks a *different* task's own phase advance,
+# via core/skills/task/SKILL.md's flag-blocked-advance check). 2 usage.
+set -uo pipefail
+
+usage() {
+  echo "usage: propagate <source-task-id> --project <path> [--decisions <D-id>[,...]] [--contracts <name>[,...]] [--by <engineer>]" >&2
+  exit 2
+}
+
+[[ $# -ge 1 ]] || usage
+source_id="$1"; shift
+project=""
+decisions_csv=""
+contracts_csv=""
+by=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --decisions) decisions_csv="$2"; shift 2 ;;
+    --contracts) contracts_csv="$2"; shift 2 ;;
+    --by) by="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$project" ]] || usage
+[[ -n "$by" ]] || by="$(git -C "$project" config user.name 2>/dev/null) <$(git -C "$project" config user.email 2>/dev/null)>"
+
+changed_paths=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && changed_paths+=("$line")
+done
+
+decisions=()
+if [[ -n "$decisions_csv" ]]; then
+  IFS=',' read -ra decisions <<<"$decisions_csv"
+fi
+contracts=()
+if [[ -n "$contracts_csv" ]]; then
+  IFS=',' read -ra contracts <<<"$contracts_csv"
+fi
+
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+flagged_count=0
+
+for other_dir in "$project"/work/*/; do
+  other_id="$(basename "$other_dir")"
+  [[ "$other_id" == "$source_id" ]] && continue
+  state_file="$other_dir/state"
+  [[ -f "$state_file" ]] || continue
+  other_state="$(cat "$state_file")"
+  [[ "$other_state" == "done" ]] && continue
+  claims_file="$other_dir/claims.json"
+  [[ -f "$claims_file" ]] || continue
+
+  case "$other_state" in
+    research|plan) severity="advisory" ;;
+    *) severity="disruptive" ;;
+  esac
+
+  new_flags="[]"
+
+  for p in ${changed_paths[@]+"${changed_paths[@]}"}; do
+    hit="$(jq --arg p "$p" '(.grounding_files // []) | index($p)' "$claims_file")"
+    [[ "$hit" == "null" ]] && continue
+    new_flags="$(jq --arg what "file '$p' changed (task $source_id shipped)" --arg at "$now" \
+      --arg by "$by" --arg entry "$p" --arg src "$source_id" --arg sev "$severity" \
+      '. + [{what_changed:$what, at:$at, by:$by, grounding_entry:$entry, source_task:$src, severity:$sev, acknowledged:false, acknowledged_at:null, acknowledged_by:null}]' \
+      <<<"$new_flags")"
+  done
+
+  for d in ${decisions[@]+"${decisions[@]}"}; do
+    [[ -n "$d" ]] || continue
+    hit="$(jq --arg d "$d" '(.grounding_decisions // []) | index($d)' "$claims_file")"
+    [[ "$hit" == "null" ]] && continue
+    new_flags="$(jq --arg what "decision '$d' changed status/content (task $source_id shipped)" --arg at "$now" \
+      --arg by "$by" --arg entry "$d" --arg src "$source_id" --arg sev "$severity" \
+      '. + [{what_changed:$what, at:$at, by:$by, grounding_entry:$entry, source_task:$src, severity:$sev, acknowledged:false, acknowledged_at:null, acknowledged_by:null}]' \
+      <<<"$new_flags")"
+  done
+
+  for c in ${contracts[@]+"${contracts[@]}"}; do
+    [[ -n "$c" ]] || continue
+    hit="$(jq --arg c "$c" '(.contracts // []) | index($c)' "$claims_file")"
+    [[ "$hit" == "null" ]] && continue
+    new_flags="$(jq --arg what "contract '$c' spec/producer changed (task $source_id shipped)" --arg at "$now" \
+      --arg by "$by" --arg entry "$c" --arg src "$source_id" --arg sev "$severity" \
+      '. + [{what_changed:$what, at:$at, by:$by, grounding_entry:$entry, source_task:$src, severity:$sev, acknowledged:false, acknowledged_at:null, acknowledged_by:null}]' \
+      <<<"$new_flags")"
+  done
+
+  n_new="$(jq 'length' <<<"$new_flags")"
+  [[ "$n_new" -eq 0 ]] && continue
+
+  flags_file="$other_dir/flags.json"
+  [[ -f "$flags_file" ]] || echo '[]' >"$flags_file"
+  tmp="$(mktemp)"
+  jq --argjson new "$new_flags" '. + $new' "$flags_file" >"$tmp" && mv "$tmp" "$flags_file"
+  echo "propagate: flagged $other_id ($n_new entr$([ "$n_new" -eq 1 ] && echo y || echo ies), severity=$severity)"
+
+  "$(dirname "${BASH_SOURCE[0]}")/registry-sync" "$other_id" --project "$project" \
+    --message "spine: propagate — $other_id flagged by $source_id" || \
+    echo "propagate: WARNING — registry-sync failed for $other_id, flag is local-only until resolved" >&2
+
+  flagged_count=$((flagged_count + n_new))
+done
+
+if [[ "$flagged_count" -eq 0 ]]; then
+  echo "propagate: no open task grounds on what changed — nothing flagged"
+else
+  echo "propagate: $flagged_count flag(s) written across the open-task registry"
+fi
+exit 0

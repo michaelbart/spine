@@ -9,6 +9,86 @@ You are running `/ship` for task ID and optional `--bypass <reason>` from
 `$ARGUMENTS`. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`,
 templates at `${CLAUDE_SKILL_DIR}/../../templates/<name>`.
 
+## 0. Ship-time re-grounding (Extension C §2.4)
+
+The window between plan approval and ship is unguarded otherwise — a
+neighbor's task can merge and invalidate this task's grounding after
+`check-stale` already passed at plan time. Two re-runs, both recorded in
+the ledger so their cost is measured, not guessed (build prompt's own
+instruction):
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md
+```
+
+If STALE: this is a real deviation, not a soft warning — append a
+`work/<task-id>/deviations.md` record, tier `halt` (grounding drifted
+since this was last verified, the same halt-tier build prompt §2.4
+already assigns to schema/contract/auth surprises), and **it counts
+toward the circuit breaker** (`core/skills/task/SKILL.md`'s existing
+three-deviation rule) — decided and defended here, not left as an open
+question: neighbor-caused drift isn't this plan's own fault, but the
+circuit breaker's actual trigger condition is "the research this plan
+stands on is no longer trustworthy," which is exactly as true when a
+neighbor invalidated it as when the original research was simply wrong.
+Treating it differently would need a second, parallel invalidation
+channel this system doesn't have and shouldn't grow one just for this.
+`ledger set <task-id> ship_time_regrounding "check-stale: stale"` (or
+`"ok"`) before proceeding — proceeding means going back to
+`core/skills/task/SKILL.md` step 2 (research), not continuing here.
+
+If ok: `git pull --rebase` onto the current mainline (single-repo: this
+project; multi-repo: the workspace root, then each repo in `## Ship
+order`), then re-run the floor:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/floor <class> --task <task-id> \
+  --out work/<task-id>/artifacts/floor-result-postrebase.json
+```
+
+The second merger always re-verifies against the first's reality — this
+is what makes that literally true instead of aspirational. If this
+post-rebase floor fails, that's a real merge-gate failure (§1 below), not
+a deviation — the diff itself now conflicts with what actually landed.
+`ledger set <task-id> ship_time_regrounding "floor: pass"` (or `"fail:
+<capability>"`).
+
+**Third re-grounding check: the real diff against other open tasks'
+claims** (Phase D self-red-team finding — narrow-claims verification).
+The plan-time `claims-check` (`task/SKILL.md` §3) only ever sees this
+task's own *declared* `predicted_touch` — a task that under-declared its
+claims to dodge a real conflict was invisible to it by construction. This
+closes that specific hole against the diff that actually exists now:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/claims-check <task-id> --project <project root> --diff <base-ref>
+```
+
+(multi-repo: once per repo in `## Ship order`, `--project <repo-path>`,
+`<base-ref>` that repo's own pre-task sha). Any `[UNDECLARED]`-tagged
+result is the defeat itself, caught, not a hypothetical — append a
+`deviations.md` record, tier `halt`, same as a stale `check-stale` result
+above, and it counts toward the circuit breaker the same way. A
+`[DECLARED]`-tagged hit means the plan-time check should have caught this
+already and didn't — most likely the colliding task's own claims changed
+after this one's plan was approved without `propagate` reaching this
+task; record it the same way, but note the distinction in the deviation
+record rather than treating both as the identical failure mode.
+`ledger set <task-id> ship_time_regrounding_claims "clear"` (or
+`"undeclared: <n>"` / `"declared: <n>"`) — a third, distinct field from
+the two above, so `/costs` can eventually tell which of the three
+re-grounding checks is actually catching things.
+
+**Honest limit, stated plainly rather than implied by silence**: this is
+discovered late (ship time, code already written) and is not as strong as
+plan-time prevention — reverting a real diff costs more than declining to
+approve a plan. It is real, mechanical, and specific (names the exact
+undeclared path and the exact colliding task), which is the distinction
+that matters — before this check existed, the identical defeat surfaced
+only as a generic `conformance` precision drop with no link back to which
+other task it endangered, indistinguishable from an ordinary, harmless
+scope change.
+
 ## 1. The merge gate — unless `--bypass`
 
 Two deterministic checks, both must pass:
@@ -36,11 +116,29 @@ the consumer before the producer, an additive change is never safe in
 that direction" — same non-negotiable framing as the floor/deviation
 checks above, not a soft warning.
 
-**`--bypass <reason>`** skips both checks — loudly, never silently. Record
-the bypass in the ledger (`ledger set <task-id> bypass "<reason>"`) and give
-it its own visible section in the briefing (§4). Bypass is for a genuine
-emergency (production down, the fix touches auth) that can't wait on the
-harness — it is not a way to route around a check you disagree with.
+**Class 2 — a third check, second approver (Extension C §2.6):**
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/second-approver-check <task-id> --project <project root>
+```
+
+Exit 1 halts here, verbatim message. Exit 0: read its stdout — an
+`override` result is not a quiet pass, `ledger set <task-id>
+second_approver "override: <reason>"` and it gets its own unconditional
+line in the briefing (§4), same visibility standard as `--bypass`. A real
+second-approver result: `ledger set <task-id> second_approver "<approver
+identity>"` and proceed normally — expected, non-remarkable, still
+recorded for `/costs`' per-engineer view but not called out as loudly in
+the briefing.
+
+**`--bypass <reason>`** skips every check above (floor/deviations, ship
+order, second-approver) — loudly, never silently. Record the bypass in the
+ledger (`ledger set <task-id> bypass "<reason>"`) and give it its own
+visible section in the briefing (§4). Bypass is for a genuine emergency
+(production down, the fix touches auth) that can't wait on the harness —
+it is not a way to route around a check you disagree with. `--bypass` does
+not skip §0's ship-time re-grounding — that runs first, unconditionally;
+what it skips is acting on a stale result as a hard halt.
 
 ## 2. Decisions
 
@@ -138,9 +236,16 @@ finding the falsifier's cross-repo mandate kept (build prompt §2:
 "registry coverage made visible, so neglect is loud" — a touched contract
 with zero findings and zero gaps is still worth its one line here, a clean
 bill is not the same as an omitted section). If this ship used `--bypass`,
-its own section here is not optional. The "what you'd want to know in six
-months" line is the one line most worth spending real thought on — don't
-let it default to a restatement of "what changed."
+its own section here is not optional. **Ship-time re-grounding** (Extension
+C §2.4): one line, quoted from what §0 recorded — "check-stale: ok,
+floor re-run: pass" is the unremarkable case, still shown. **Second
+approver** (Extension C §2.6, Class 2 only): the approver's identity,
+always shown for a Class 2 task; if `.override == true`, its own
+un-omittable subsection with the override reason, same visibility
+standard as the bypass section — never folded into a single "approvals"
+line that could bury it. The "what you'd want to know in six months" line
+is the one line most worth spending real thought on — don't let it
+default to a restatement of "what changed."
 
 ## 5. Ledger and commit
 
@@ -202,6 +307,24 @@ one. Never omit both — that's the untracked-commit ratio
 per repo (`core/ADAPTER-CONTRACT.md §6`), so a repo whose commit is missing
 the trailer is caught independently of its siblings having it.
 
+**Propagate** (Extension C §2.5) — this task's own commit(s) just changed
+files (and possibly decisions/contracts) other open tasks may ground on:
+
+```
+git diff --name-only <base>..HEAD -- . | \
+  ${CLAUDE_SKILL_DIR}/../../scripts/propagate <task-id> --project <project root> \
+    --decisions <comma-list from plan.md's ## Grounds on decisions, if any> \
+    --contracts <comma-list from verify.md's Contract conformance section, if any>
+```
+
+Multi-repo: run once per repo actually committed in `## Ship order`
+(`--project <repo-path>`, changed paths repo-qualified to match
+`claims.json`'s own convention), plus once at the workspace root for its
+own commit. This never blocks the ship — it's informational at ship time,
+the same way `contract-touch` is; what it writes (flags in *other* tasks'
+folders) is what later blocks *their* phase advance, via
+`core/skills/task/SKILL.md`'s flag-blocked-advance check, not this one.
+
 Do not push, in either case. Committing locally is this skill's job;
 pushing or opening a PR is the human's call, made after reading the
 briefing.
@@ -211,7 +334,12 @@ briefing.
 Write `work/<task-id>/state` = `done` (this is the transition out of
 `shipping (n of n)` for a multi-repo task — every repo's commit from §5
 must have actually landed before this write, never write `done` while a
-repo in `## Ship order` is still pending). Remove `.spine/current-task`
+repo in `## Ship order` is still pending). `registry-sync <task-id>` —
+this task's own final registry write; a `done` task no longer participates
+in `claims-check`/`propagate`/`/tasks`' open-task scan (all three skip
+by `state`), so this is what actually removes it from the shared
+registry's live view, not just from this machine's local one. Remove
+`.spine/current-task`
 (the task is no longer active — a subsequent trivial edit should default
 back to Class 0, not stay phase-gated against a finished task; for a
 multi-repo task this file lives at the workspace root only — member repos

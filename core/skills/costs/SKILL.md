@@ -47,6 +47,28 @@ it only counts gaps that got recorded; see `docs/tradeoffs.md`'s Auto Mode
 classifier wall section for the residual case where even the recording
 mechanism (`ledger`) was the thing that failed.
 
+**Per-engineer view (Extension C §2.7), when more than one distinct
+`engineer` appears in the aggregate above:**
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/ledger aggregate --by-engineer [--since <date>]
+```
+
+Report it as a table, one row per engineer. **Frame this as an
+instrument, not a leaderboard** — say so explicitly if presenting it —
+its only purpose is surfacing drift early (one person's work sliding
+toward Class 0, bypass, or repeated `claims_conflicts`), the same way the
+untracked-commit ratio surfaces it in aggregate. A metric read as a
+leaderboard gets gamed into uselessness; don't rank engineers against each
+other in your own summary, report the numbers and let the team decide what
+they mean. `claims_conflicts` here is `core/scripts/claims-check`'s own
+blocking-conflict count for that engineer's tasks — a rising count across
+one person's tasks specifically (not the team total, already visible
+above) is worth naming plainly, same standard as a rising bypass count.
+Skip this whole subsection on a solo project (one engineer, or every
+`ledger.json` predates Extension C and carries `engineer: null`) — nothing
+to compare.
+
 Don't editorialize with targets or thresholds this skill doesn't have —
 Layer 1 calibration (build prompt §0) intentionally sets no budget cap by
 default and expects `/costs` data, not guesses, to justify one later. If the

@@ -52,11 +52,13 @@ judgment.
 
 ## Install → first task, in one sitting
 
-**1. Clone this repo once, anywhere stable.** Its path is load-bearing: the
-install mechanism symlinks a project's `.claude/{skills,agents,rules}` and
-`.claude/hooks` to real paths inside this checkout (`docs/tradeoffs.md`
-states the cost — moving this checkout after installing breaks every
-project that references it).
+**1. Clone this repo once per machine, anywhere stable.** Its path is
+load-bearing: the install mechanism symlinks a project's
+`.claude/{skills,agents,rules}` and `.claude/hooks` to real paths inside
+this checkout. Those symlinks are generated locally, on every machine —
+never committed (`docs/tradeoffs.md` states the cost: moving this checkout
+after installing means re-running `core/scripts/setup`, once, on that
+machine — see step 2 and "Staying installed" below).
 
 **2. From a session in *this* repo, install into a project:**
 
@@ -77,6 +79,35 @@ and edit it), and `docs/map.md`.
 **3. Start a fresh session inside the installed project.** Hook and skill
 wiring doesn't take effect mid-session — this is the one unavoidable
 restart in the whole flow.
+
+**A second engineer joining an already-installed project** clones the
+project (its `.claude/skills/`, `.claude/agents/`, `.claude/rules/`,
+`.claude/hooks` are gitignored — nothing to clone there), clones this repo
+once on their own machine, then runs the one per-machine step:
+
+```
+/path/to/spine/core/scripts/setup --project /path/to/project
+```
+
+Idempotent — safe to re-run any time symlinks look wrong, or after moving
+this checkout. Reports a core-version-skew warning if this machine's spine
+is ahead or behind the project's recorded pin (see "Staying installed"
+below); otherwise silent success.
+
+**Before that first `setup` run, every Edit/Write/Bash is denied outright
+— on purpose, confirmed empirically, not assumed.** A committed
+`.claude/settings.json` wiring a hook at a path that doesn't exist yet
+(`.claude/hooks/<name>`, gitignored, generated only by `setup`) is
+*silently skipped* by Claude Code's own hook runner, not blocked — tested
+directly: a fresh clone with no `setup` run let a real `Write` through
+with no denial and no warning. `.claude/settings.json` therefore routes
+every hook through a small, always-committed `.claude/hook-guard` instead
+of the generated path directly — it exists on the very first clone, checks
+whether the real hook is present, and fails loudly (denying the tool call,
+with the fix command in the message) if it isn't. Re-tested the same fresh
+clone with the guard in place: the write was correctly denied, with the
+exact remediation shown. The pre-`setup` state is meant to be unusable,
+loudly — never silently unenforced.
 
 **4. Run your first task:**
 
@@ -99,17 +130,79 @@ for every addition with a deletion. `/costs` reports what this is actually
 costing, untracked-commit ratio first, so calibration can be revised from
 data instead of guesses.
 
+**Version pin, for a team of engineers each on their own local spine
+checkout (Extension C §2.1).** Every installed project carries
+`.spine/core-pin.json` — `{"sha": "<core commit>", "mode": "warn|strict"}`
+— committed, ordinary project state, the same as `.spine/capabilities.json`.
+`core/scripts/setup --check` (cheap, called at the start of every `/task`)
+compares this machine's resolved spine `HEAD` against the pin: a match is
+silent; a mismatch prints loudly under `warn`, blocks under `strict` — one
+engineer's hooks silently enforcing something a colleague's don't is the
+same "manufactures confidence" failure shape as a hook that doesn't fire at
+all, arriving through the update channel instead of a broken symlink.
+
+**Upgrade workflow:** a maintainer tests the new core for real —
+`adapter-conformance --all` against a real install, the throwaway-hook
+fire-test, one trivial task through the full research→ship loop — then
+bumps `.spine/core-pin.json`'s `sha` in an ordinary commit to the project's
+shared mainline. Every other engineer's next `/task` (or `setup --check`)
+announces the mismatch; they resolve it with `git pull` in their own spine
+checkout, then `core/scripts/setup --project <project>` to confirm. Nothing
+about a project's own files — `.spine/adapters/`, `.spine/capabilities.json`,
+`.spine/protected-paths.conf`, `docs/charter.md` — ever requires a pin
+bump; those update through the project's normal commits like any other
+file, independent of which core commit the project is pinned to. The pin
+only ever tracks `spine/`'s own `core/` — the shared enforcement layer,
+not project-owned state.
+
+**`.claude/hook-guard` maintenance — the one piece of core that's
+committed, not generated, and how it stays in sync.** Everything else
+under `.claude/` (skills, agents, rules, hooks) is gitignored and always
+resolves live to whatever spine core this machine has checked out;
+`hook-guard` exists specifically so a pre-`setup` state still enforces
+(see the fresh-clone section above), which requires it to be committed —
+and a committed file doesn't refresh itself the way a symlink does. It's
+regenerated verbatim from `core/templates/hook-guard` every time `setup`
+runs (never hand-edited — if it needs to change, that change happens in
+the template, in this repo, like everything else). `setup --check`
+compares the committed copy's actual bytes against this machine's
+resolved template on every run, **independent of pin match** — a pin
+match only proves `.claude/hooks`' generated content would resolve
+correctly, it says nothing about whether the committed `hook-guard` file
+itself is current, since nothing regenerates a committed file just
+because the pin says the core version matches. A stale or hand-edited
+guard is caught by this comparison and reported the same way a pin
+mismatch is: loud, with the fix command, never silent.
+
 ## Layout
 
 ```
 core/scripts/    the deterministic layer — q, floor, conformance, ledger, ...
 core/hooks/      the three PreToolUse gates (phase, protected-path, dependency)
 core/rules/      path-scoped discipline (currently: migrations)
-core/skills/     /bootstrap /adopt /task /verify /ship /ratchet /remap /costs
+core/skills/     /bootstrap /adopt /task /verify /ship /ratchet /remap /costs /tasks
 core/agents/     researcher, falsifier, security — fresh-context, read-only
 core/templates/  every artifact format the skills above produce
 work/.build/     this build's own phase handoffs — the install's decision record
 ```
+
+## Working with other engineers (2–4, on the same project)
+
+`/task` opens a task by committing and pushing its folder to the shared
+mainline immediately — before any code is written, not at ship time — so
+`/tasks` (read-only, lists every open task's owner/class/phase/claims/
+flags) shows the same picture to everyone. Two mechanisms catch what git
+alone can't: `claims-check` blocks plan approval on a real write conflict
+with another open task (a shared *read* only warns — two people reading
+the same file is normal); `propagate` flags a task when something it
+grounds on changes underfoot, and that task can't advance phase until the
+flag is acknowledged. Class 2 needs a second approver — a different git
+identity than the task's owner — with a loud, ledger-visible override for
+the genuine solo/on-call case. `/costs` reports all of this per engineer,
+framed as an instrument for spotting drift early, not a leaderboard —
+`docs/tradeoffs.md`'s Extension C section has the full accounting,
+including what's still enforced by an agent following instructions rather
+than a hook, and what breaks past about 4 engineers.
 
 ## If something feels like it's fighting you
 

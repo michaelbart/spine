@@ -27,7 +27,7 @@
 #   ledger set       <task-id> <key> <value> [--project <path>]
 #   ledger note-gap  <task-id> <script> <consequence> [--project <path>]
 #   ledger scan-untracked-ratio [--since <git-date>] [--project <path>]
-#   ledger aggregate [--since <git-date>] [--project <path>]
+#   ledger aggregate [--since <git-date>] [--by-engineer] [--project <path>]
 set -uo pipefail
 
 usage() {
@@ -61,8 +61,11 @@ case "$cmd" in
       echo "ok: ledger already initialized for $task_id"
       exit 0
     fi
-    jq -n --arg task_id "$task_id" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      '{task_id:$task_id, created_at:$ts, phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null, hand_tracked:false, tooling_gaps:[]}' \
+    engineer_name="$(git -C "$project" config user.name 2>/dev/null || true)"
+    engineer_email="$(git -C "$project" config user.email 2>/dev/null || true)"
+    engineer="${engineer_name:+$engineer_name}${engineer_email:+ <$engineer_email>}"
+    jq -n --arg task_id "$task_id" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg eng "$engineer" \
+      '{task_id:$task_id, created_at:$ts, engineer:(if $eng == "" then null else $eng end), phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null, hand_tracked:false, tooling_gaps:[], claims_conflicts:0, ship_time_regrounding:null, ship_time_regrounding_claims:null, second_approver:null}' \
       >"$lp"
     echo "ok: initialized $lp"
     ;;
@@ -163,27 +166,49 @@ case "$cmd" in
 
   aggregate)
     since=""
+    by_engineer=0
     while [[ $# -gt 0 ]]; do
-      case "$1" in --since) since="$2"; shift 2;; --project) project="$2"; shift 2;; *) usage;; esac
+      case "$1" in --since) since="$2"; shift 2;; --project) project="$2"; shift 2;; --by-engineer) by_engineer=1; shift;; *) usage;; esac
     done
     files=("$project"/work/*/ledger.json)
     if [[ ! -e "${files[0]}" ]]; then
       echo "ledger: no work/*/ledger.json found under $project"
       exit 0
     fi
-    jq -s --arg since "${since:-}" '
-      (if $since != "" then map(select(.created_at >= $since)) else . end) as $entries |
-      {
-        task_count: ($entries | length),
-        total_tokens: ($entries | map(.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0})
-            | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
-        avg_deviation_count: ($entries | map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
-        class_escalation_count: ($entries | map(select(.class_escalated==true)) | length),
-        bypass_count: ($entries | map(select(.bypass != null)) | length),
-        tooling_gap_count: ($entries | map(.tooling_gaps // [] | length) | add // 0),
-        hand_tracked_task_count: ($entries | map(select(.hand_tracked==true)) | length)
-      }
-    ' "${files[@]}"
+    if [[ "$by_engineer" -eq 1 ]]; then
+      # Per-engineer view (Extension C §2.7): an instrument for spotting
+      # one person's work sliding toward Class 0 / bypass / conflicts
+      # early, never framed as a leaderboard (docs/tradeoffs.md, /costs's
+      # own header). A ledger.json predating this field has engineer:null
+      # and groups under "unknown" — never silently dropped.
+      jq -s --arg since "${since:-}" '
+        (if $since != "" then map(select(.created_at >= $since)) else . end) as $entries |
+        ($entries | group_by(.engineer // "unknown") | map({
+          engineer: (.[0].engineer // "unknown"),
+          task_count: length,
+          class_escalation_count: (map(select(.class_escalated==true)) | length),
+          bypass_count: (map(select(.bypass != null)) | length),
+          tooling_gap_count: (map(.tooling_gaps // [] | length) | add // 0),
+          claims_conflicts: (map(.claims_conflicts // 0) | add // 0),
+          avg_deviation_count: (map(.deviation_count // 0) | (if length>0 then add/length else 0 end))
+        }))
+      ' "${files[@]}"
+    else
+      jq -s --arg since "${since:-}" '
+        (if $since != "" then map(select(.created_at >= $since)) else . end) as $entries |
+        {
+          task_count: ($entries | length),
+          total_tokens: ($entries | map(.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0})
+              | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
+          avg_deviation_count: ($entries | map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
+          class_escalation_count: ($entries | map(select(.class_escalated==true)) | length),
+          bypass_count: ($entries | map(select(.bypass != null)) | length),
+          tooling_gap_count: ($entries | map(.tooling_gaps // [] | length) | add // 0),
+          hand_tracked_task_count: ($entries | map(select(.hand_tracked==true)) | length),
+          claims_conflicts_total: ($entries | map(.claims_conflicts // 0) | add // 0)
+        }
+      ' "${files[@]}"
+    fi
     ;;
 
   *) usage ;;

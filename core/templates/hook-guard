@@ -1,0 +1,56 @@
+#!/bin/bash
+# .claude/hook-guard — committed to the project, repo-relative, requires
+# no per-machine setup to exist. Wired directly into .claude/settings.json
+# (`${CLAUDE_PROJECT_DIR}/.claude/hook-guard <hook-name>`, one invocation
+# per hook, in place of pointing at `.claude/hooks/<name>` directly) for
+# one specific, empirically-confirmed reason (Extension C Phase C, fresh-
+# clone enforcement-state test, work/.build/ext-c-phase-C-handoff.md):
+# a PreToolUse `command` pointing at a path that doesn't exist is silently
+# skipped by Claude Code's own hook runner — not blocked, not warned,
+# skipped. Since `.claude/hooks` is generated locally by
+# `core/scripts/setup` and deliberately gitignored (Extension C §2.1),
+# every committed project has exactly this shape on a machine that hasn't
+# run `setup` yet: real, matching PreToolUse entries, pointing at nothing.
+# Fail-open there is precisely the "manufactures confidence" failure shape
+# build prompt §1 exists to prevent — a hook that doesn't fire is spine's
+# worst failure shape, worse than no hook, because nothing about the
+# experience of editing a file looks any different from a fully-enforced
+# session.
+#
+# This file's entire job is to always exist (committed, never a symlink,
+# never gitignored, regenerated verbatim by `core/scripts/setup` on every
+# run so a stale copy from an older spine core doesn't linger) so that
+# "the real hook is missing" is a loud, mechanical denial instead of
+# silence. It carries zero spine logic of its own — it locates the real
+# hook, execs straight into it (stdin passes through untouched) when
+# present, or fails closed with the fix command when absent, using the
+# same exit-2-denies convention every real hook already uses
+# (core/hooks/phase-gate and siblings).
+#
+# Usage (from .claude/settings.json): hook-guard <hook-name>
+set -uo pipefail
+
+name="${1:-}"
+[[ -n "$name" ]] || { echo "hook-guard: no hook name given" >&2; exit 2; }
+
+project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+real="$project/.claude/hooks/$name"
+
+if [[ ! -x "$real" ]]; then
+  cat >&2 <<EOF
+BLOCKED: spine's '$name' hook is not installed on this machine yet.
+.claude/hooks/ is generated locally by core/scripts/setup and is
+deliberately gitignored, never committed — this machine hasn't run it, or
+ran it against a project this isn't. Every Edit/Write/Bash is denied until
+it has, on purpose: an unenforced write here would otherwise be silently
+indistinguishable from an approved one.
+
+Fix: from a session in your spine checkout, run
+  <spine-checkout>/core/scripts/setup --project $project
+then start a fresh session in $project — hook wiring doesn't hot-reload
+mid-session.
+EOF
+  exit 2
+fi
+
+exec "$real"

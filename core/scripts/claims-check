@@ -1,0 +1,189 @@
+#!/bin/bash
+# claims-check — intersects a submitting task's declared claims against
+# every other open task's own claims.json (build prompt Extension C §2.3).
+# Deterministic, cheap (declared-surface intersection, not semantic
+# analysis — core/rules/... has no "meaning" layer to check against; a
+# collision in undeclared territory is a residual this script does not and
+# cannot catch, same disclosed limit every other declared-surface
+# mechanism in this system already carries).
+#
+# The asymmetry (get this right — it's the whole reason this is usable in
+# a real codebase, not just theoretically sound):
+#   - write/write  (predicted_touch ∩ predicted_touch)                → BLOCK
+#   - write/read   (predicted_touch ∩ the OTHER task's grounding_files,
+#                    either direction)                                → BLOCK
+#   - read/read    (grounding_files ∩ grounding_files, nothing above
+#                    already caught it)                                → WARN
+#   - shared grounding_decisions or contracts (informational — neither
+#     task's own plan "writes" a decision or contract; /ship's own
+#     distillation does that, later, and propagate is what watches for a
+#     change landing under a live citation)                            → WARN
+# Blocking on shared reads would make this unusable in a real codebase —
+# two tasks reading the same module is normal; two tasks about to write
+# the same file, or one about to rewrite what the other is grounded on
+# reading, is the actual collision.
+#
+# --diff <base-ref> (Phase D, build prompt Extension C self-red-team —
+# "verify the narrow-claims linkage"): the plan-time run above intersects
+# *declared* claims only, by design (build prompt's own "declared surfaces,
+# not meaning"). That leaves a real, named gap: a task that under-declares
+# its own predicted_touch to dodge a real conflict, then actually touches
+# the undeclared surface anyway, was previously caught (if at all) only as
+# generic conformance drift — a low precision/recall score with no link
+# back to *which other task* that undeclared surface collides with. --diff
+# closes that specific hole: it ignores this task's own declared
+# predicted_touch as the "self" set and substitutes the *real* diff
+# (`git diff --name-only <base>..HEAD` plus untracked new files, same
+# convention core/scripts/conformance already uses), re-running the exact
+# same write/write and write/read intersection against every other open
+# task's claims. Any hit is tagged UNDECLARED if the colliding path was
+# never in this task's own original predicted_touch (the defeat case),
+# or DECLARED if it was (should already have been caught at plan time —
+# a hit here means a colliding task's own claims changed *after* this
+# one's plan-time check ran without propagate reaching this task, worth
+# surfacing but not this script's own residual to explain away).
+# Never a hard block by itself at this call site — build prompt's own
+# framing of ship-time checks is "surface loudly," and by ship time the
+# code already exists; core/skills/ship/SKILL.md §0 decides what to do
+# with an UNDECLARED result (a real halt-tier deviation, same tier as a
+# stale check-stale result — see that skill's own comment for why).
+#
+# Usage: claims-check <task-id> --project <path> [--out <json-path>] [--no-pull]
+#        claims-check <task-id> --project <path> --diff <base-ref> [--out <json-path>] [--no-pull]
+# Exit: 0 clear (warnings may still print). 1 blocking conflict found
+# (plan-time mode) or at least one UNDECLARED collision found (--diff
+# mode). 2 usage/setup error.
+set -uo pipefail
+
+usage() { echo "usage: claims-check <task-id> --project <path> [--diff <base-ref>] [--out <json-path>] [--no-pull]" >&2; exit 2; }
+
+[[ $# -ge 1 ]] || usage
+self_id="$1"; shift
+project=""
+out_path=""
+do_pull=1
+diff_base=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --out) out_path="$2"; shift 2 ;;
+    --no-pull) do_pull=0; shift ;;
+    --diff) diff_base="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$project" ]] || usage
+self_claims="$project/work/$self_id/claims.json"
+[[ -f "$self_claims" ]] || { echo "claims-check: $self_claims not found" >&2; exit 2; }
+
+# Registry-reading operations pull first (build prompt §2.2) — narrows,
+# does not close, the race named in open question 7; /ship's own
+# ship-time re-grounding is the documented backstop for what's left.
+if [[ "$do_pull" -eq 1 ]] && git -C "$project" rev-parse --git-dir >/dev/null 2>&1; then
+  git -C "$project" pull --rebase --quiet 2>/dev/null || \
+    echo "claims-check: warning — could not pull the shared mainline, checking against last-known state" >&2
+fi
+
+jarr() { jq -c "$1 // [] | .[]" "$2" 2>/dev/null | sed 's/^"//; s/"$//'; }
+
+declared_touch="$(jarr '.predicted_touch' "$self_claims")"
+if [[ -n "$diff_base" ]]; then
+  self_touch="$( (cd "$project" && { git diff --name-only "$diff_base" -- .; git ls-files --others --exclude-standard -- .; } | sort -u) )"
+else
+  self_touch="$declared_touch"
+fi
+self_ground="$(jarr '.grounding_files' "$self_claims")"
+self_dec="$(jarr '.grounding_decisions' "$self_claims")"
+self_contracts="$(jarr '.contracts' "$self_claims")"
+
+blocking=()
+warnings=()
+
+for other_dir in "$project"/work/*/; do
+  other_id="$(basename "$other_dir")"
+  [[ "$other_id" == "$self_id" ]] && continue
+  state_file="$other_dir/state"
+  [[ -f "$state_file" ]] || continue
+  [[ "$(cat "$state_file")" == "done" ]] && continue
+  other_claims="$other_dir/claims.json"
+  [[ -f "$other_claims" ]] || continue
+
+  other_touch="$(jarr '.predicted_touch' "$other_claims")"
+  other_ground="$(jarr '.grounding_files' "$other_claims")"
+  other_dec="$(jarr '.grounding_decisions' "$other_claims")"
+  other_contracts="$(jarr '.contracts' "$other_claims")"
+
+  ww="$(comm -12 <(sort -u <<<"$self_touch") <(sort -u <<<"$other_touch") 2>/dev/null | sed '/^$/d')"
+  wr1="$(comm -12 <(sort -u <<<"$self_touch") <(sort -u <<<"$other_ground") 2>/dev/null | sed '/^$/d')"
+  wr2="$(comm -12 <(sort -u <<<"$other_touch") <(sort -u <<<"$self_ground") 2>/dev/null | sed '/^$/d')"
+  rr="$(comm -12 <(sort -u <<<"$self_ground") <(sort -u <<<"$other_ground") 2>/dev/null | sed '/^$/d')"
+  dd="$(comm -12 <(sort -u <<<"$self_dec") <(sort -u <<<"$other_dec") 2>/dev/null | sed '/^$/d')"
+  cc="$(comm -12 <(sort -u <<<"$self_contracts") <(sort -u <<<"$other_contracts") 2>/dev/null | sed '/^$/d')"
+  owner="$(cat "$other_dir/owner" 2>/dev/null || echo "unknown owner")"
+
+  tag_undeclared() {
+    # In --diff mode only: was $1 in this task's own *original* declared
+    # predicted_touch, or is this the under-declared-claims defeat case?
+    [[ -z "$diff_base" ]] && { echo ""; return; }
+    grep -qxF "$1" <<<"$declared_touch" && echo " [DECLARED]" || echo " [UNDECLARED — not in this task's own claims.json]"
+  }
+
+  if [[ -n "$ww" ]]; then
+    while IFS= read -r p; do
+      blocking+=("write/write with $other_id ($owner): both predict touching '$p'$(tag_undeclared "$p")")
+    done <<<"$ww"
+  fi
+  if [[ -n "$wr1" ]]; then
+    while IFS= read -r p; do
+      blocking+=("write/read with $other_id ($owner): this task predicts touching '$p', which $other_id's research grounds on$(tag_undeclared "$p")")
+    done <<<"$wr1"
+  fi
+  if [[ -n "$wr2" ]]; then
+    while IFS= read -r p; do
+      blocking+=("write/read with $other_id ($owner): $other_id predicts touching '$p', which this task's research grounds on")
+    done <<<"$wr2"
+  fi
+  if [[ -n "$rr" ]]; then
+    while IFS= read -r p; do
+      warnings+=("read/read with $other_id ($owner): both ground on '$p' — no write conflict, informational")
+    done <<<"$rr"
+  fi
+  if [[ -n "$dd" ]]; then
+    while IFS= read -r d; do
+      warnings+=("shared decision grounding with $other_id ($owner): both cite $d")
+    done <<<"$dd"
+  fi
+  if [[ -n "$cc" ]]; then
+    while IFS= read -r c; do
+      warnings+=("shared contract with $other_id ($owner): both touch '$c'")
+    done <<<"$cc"
+  fi
+done
+
+if [[ -n "$out_path" ]]; then
+  jq -n --arg self "$self_id" \
+    --argjson blocking "$(printf '%s\n' "${blocking[@]+"${blocking[@]}"}" | jq -R . | jq -s .)" \
+    --argjson warnings "$(printf '%s\n' "${warnings[@]+"${warnings[@]}"}" | jq -R . | jq -s .)" \
+    '{task_id:$self, blocking:$blocking, warnings:$warnings}' >"$out_path"
+fi
+
+if [[ ${#warnings[@]} -gt 0 ]]; then
+  echo "claims-check: ${#warnings[@]} warning(s) (read/read or shared grounding — not blocking):"
+  printf '  - %s\n' "${warnings[@]}"
+fi
+
+if [[ ${#blocking[@]} -gt 0 ]]; then
+  if [[ -n "$diff_base" ]]; then
+    echo "claims-check --diff: ${#blocking[@]} real-diff collision(s) with another open task:"
+    printf '  - %s\n' "${blocking[@]}"
+    echo "claims-check --diff: any [UNDECLARED] entry above is the narrow-claims defeat caught late — this task's real diff touched a surface it never declared, and that surface collides with another open task. core/skills/ship/SKILL.md §0 treats this as a halt-tier deviation, same as a stale check-stale result."
+  else
+    echo "claims-check: BLOCKED — ${#blocking[@]} conflict(s):"
+    printf '  - %s\n' "${blocking[@]}"
+    echo "claims-check: resolve by waiting, renegotiating scope (revise the plan, re-run this check), or an explicit --override (recorded in both tasks' folders and both eventual briefings, same trust model as /ship --bypass)."
+  fi
+  exit 1
+fi
+
+echo "claims-check: clear — no write/write or write/read conflicts with any other open task"
+exit 0

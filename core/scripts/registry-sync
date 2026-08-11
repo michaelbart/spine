@@ -1,0 +1,104 @@
+#!/bin/bash
+# registry-sync — commits and pushes one task's own work/<task-id>/ folder,
+# build prompt (Extension C) §2.2: "the registry must be shared state ...
+# task folders are committed and pushed to it at task creation" and every
+# subsequent state-affecting write. Single source of truth for this
+# sequence — core/skills/task/SKILL.md, core/scripts/claims-check, and
+# core/scripts/propagate all call this rather than each hand-rolling their
+# own add/commit/push/retry.
+#
+# Shared mainline decision (work/.build/ext-c-phase-B-handoff.md): the
+# registry is *not* a separate branch. core/hooks/phase-gate and friends
+# read work/<task-id>/state etc. as plain files relative to
+# $CLAUDE_PROJECT_DIR — whatever branch the engineer's own working tree is
+# checked out to. A registry entry only becomes visible to those hooks (and
+# to a colleague's claims-check) by existing in that same tree, so it can
+# only ever commit to whatever branch is currently checked out — "the
+# project's own default branch, engineers work directly on it for task-
+# folder bookkeeping" (same trunk-based shape /ship's own direct commits
+# already assume; no feature-branch-per-task convention exists anywhere in
+# this system to hook into instead).
+#
+# Scope discipline: stages *only* work/<task-id>/ — never -A, never the
+# rest of the working tree. During research/plan this is a non-issue
+# (phase-gate already restricts writes to that path); during implement it
+# is the only thing that keeps a registry sync (owner/claims/flags
+# bookkeeping) from accidentally committing an engineer's in-progress,
+# unreviewed code changes sitting elsewhere in the same working tree.
+#
+# Open question 6 (concurrent writes to the shared mainline): pull
+# --rebase, retry once. Real stakes are low (this stages one task's own
+# folder; a genuine conflict inside a single task's own state — e.g.
+# propagate flagging a task the instant its owner advances phase — is a
+# real git conflict git itself will refuse to auto-resolve past one
+# rebase retry; this script fails loud in that case rather than
+# guessing a resolution, per "wrong context beats missing" applied to
+# git merges too).
+#
+# Usage: registry-sync <task-id> --project <path> [--message <msg>]
+# Exit: 0 synced (including "nothing changed" and "no remote configured" —
+#   both legitimate no-ops, not failures). 1 push failed after one
+#   pull --rebase retry — a real conflict, surface as a tooling gap
+#   (core/skills/task/SKILL.md's existing could-not-run discipline).
+#   2 usage error.
+set -uo pipefail
+
+usage() { echo "usage: registry-sync <task-id> --project <path> [--message <msg>]" >&2; exit 2; }
+
+[[ $# -ge 1 ]] || usage
+task_id="$1"; shift
+project=""
+message=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --message) message="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$project" ]] || usage
+[[ -d "$project/work/$task_id" ]] || { echo "registry-sync: $project/work/$task_id not found" >&2; exit 2; }
+[[ -n "$message" ]] || message="spine: registry sync — $task_id"
+
+git -C "$project" rev-parse --git-dir >/dev/null 2>&1 || {
+  echo "registry-sync: $project is not a git repo — nothing to sync" >&2
+  exit 2
+}
+
+git -C "$project" add -- "work/$task_id/"
+
+if git -C "$project" diff --cached --quiet -- "work/$task_id/"; then
+  echo "registry-sync: no changes to work/$task_id/ — nothing to commit"
+  exit 0
+fi
+
+if ! git -C "$project" commit --quiet -m "$message"; then
+  echo "registry-sync: commit failed for $task_id" >&2
+  exit 1
+fi
+echo "registry-sync: committed $task_id"
+
+branch="$(git -C "$project" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+remote="$(git -C "$project" config "branch.$branch.remote" 2>/dev/null || true)"
+if [[ -z "$remote" ]]; then
+  echo "registry-sync: no remote configured for $branch — committed locally only, this is a solo/single-machine project or the first push hasn't happened yet"
+  exit 0
+fi
+
+if git -C "$project" push --quiet "$remote" "$branch" 2>/dev/null; then
+  echo "registry-sync: pushed $task_id to $remote/$branch"
+  exit 0
+fi
+
+echo "registry-sync: push rejected, pulling --rebase and retrying once"
+if ! git -C "$project" pull --rebase --quiet "$remote" "$branch" 2>/dev/null; then
+  echo "registry-sync: pull --rebase failed — a real conflict, resolve by hand (git status in $project)" >&2
+  exit 1
+fi
+if git -C "$project" push --quiet "$remote" "$branch" 2>/dev/null; then
+  echo "registry-sync: pushed $task_id to $remote/$branch after rebase"
+  exit 0
+fi
+
+echo "registry-sync: push still rejected after one rebase retry — resolve by hand" >&2
+exit 1

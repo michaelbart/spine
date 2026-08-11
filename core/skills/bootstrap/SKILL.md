@@ -97,21 +97,38 @@ no-ops without it, and its Edit/Write manifest-tag check is unaffected.
 
 ## 5. Wire the install
 
-Create these symlinks inside `<project>` (absolute paths to this spine
-checkout — confirmed mechanism, `phase-A-handoff.md` §4):
-
-```
-.claude/skills/<name>  -> <spine>/core/skills/<name>   (one per skill)
-.claude/agents/<name>.md -> <spine>/core/agents/<name>.md  (one per agent)
-.claude/rules/<name>.md  -> <spine>/core/rules/<name>.md   (one per rule)
-.claude/hooks -> <spine>/core/hooks   (whole-directory symlink)
-```
-
 Write `<project>/.claude/settings.json` (committed, team-shared) wiring the
-three hooks by `${CLAUDE_PROJECT_DIR}/.claude/hooks/<name>` path — matcher
-`Edit|Write|Bash` for all three (`phase-gate`, `path-escalate`, `dep-gate`
-each resolve Bash file-mutation targets themselves; see each hook's own
-header comment in `core/hooks/` and `core/hooks/_bash-write-targets`).
+three hooks by `${CLAUDE_PROJECT_DIR}/.claude/hook-guard <name>` — **not**
+`.claude/hooks/<name>` directly (Extension C Phase C: a PreToolUse command
+pointing at a path that doesn't exist yet is silently *skipped*, not
+blocked, by Claude Code's own hook runner — confirmed empirically, see
+`core/templates/hook-guard`'s own header — so every committed
+`settings.json` must route through the guard, which does exist from the
+first commit onward, or a fresh clone before its first `setup` run is
+silently unenforced). Matcher `Edit|Write|Bash` for all three (`phase-gate`,
+`path-escalate`, `dep-gate` each resolve Bash file-mutation targets
+themselves; see each hook's own header comment in `core/hooks/` and
+`core/hooks/_bash-write-targets`). This file is portable as written —
+`${CLAUDE_PROJECT_DIR}`-relative, no absolute path in it.
+
+Then, instead of hand-symlinking (the pre-Extension-C mechanism, which
+committed machine-absolute symlink targets — the exact breakage
+`work/.build/ext-c-phase-A-handoff.md` §0.1 reproduced):
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/setup --project <project>
+```
+
+This creates every `.claude/skills/<name>`, `.claude/agents/<name>.md`,
+`.claude/rules/<name>.md`, `.claude/hooks` symlink (still one per skill/
+agent/rule, still pointing at this checkout — the *set* of names doesn't
+change, only how the pointer gets there and whether it's committed), adds
+them to `<project>/.gitignore` (generated locally on every machine from
+here on, never committed), merges the machine-local Bash-allow pattern into
+`<project>/.claude/settings.local.json`, and initializes
+`<project>/.spine/core-pin.json` at this checkout's current `HEAD` sha,
+mode `warn` (Extension C §2.1 — a maintainer bumps this deliberately after
+testing a newer core; see the README's "Staying installed" section).
 
 Write `<project>/CLAUDE.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/CLAUDE.md`, filled with this project's

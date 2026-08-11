@@ -1,0 +1,67 @@
+#!/bin/bash
+# second-approver-check — Class 2's second-approver gate (build prompt
+# Extension C §2.6), as a real executable with a real exit code, not just
+# skill prose describing the logic. Extracted during Phase D's self-red-
+# team ("populated but not gated" sweep): every other Extension C gate
+# (claims-check, propagate) has a script backing its check that a human
+# or a future automated caller (the build prompt's own named insertion
+# point: "every check here is a script CI could invoke") can run
+# independently and get a real answer from; this one didn't, until now —
+# it was jq logic embedded in ship/SKILL.md's prose, verified only by
+# hand-running matching commands. Same shape as claims-check now: one
+# script, one job, real exit codes.
+#
+# Usage: second-approver-check <task-id> --project <path>
+# Exit: 0 clear to proceed (stdout says whether it's a real second
+#   approver or a recorded, loud override — /ship's briefing/ledger
+#   steps read this distinction from the same JSON `--out` would write,
+#   or by re-reading approval.json directly, either is fine, this script
+#   doesn't gate that formatting). 1 halt — no approval.json, or
+#   self-approved without an override. 2 usage error.
+set -uo pipefail
+
+usage() { echo "usage: second-approver-check <task-id> --project <path>" >&2; exit 2; }
+
+[[ $# -ge 1 ]] || usage
+task_id="$1"; shift
+project=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$project" ]] || usage
+
+owner_file="$project/work/$task_id/owner"
+approval_file="$project/work/$task_id/approval.json"
+
+[[ -f "$owner_file" ]] || { echo "second-approver-check: $owner_file not found" >&2; exit 2; }
+
+if [[ ! -f "$approval_file" ]]; then
+  echo "second-approver-check: HALT — no approval.json for $task_id. Class 2 plan was never approved (see core/skills/task/SKILL.md §3)." >&2
+  exit 1
+fi
+
+owner="$(cat "$owner_file")"
+approver="$(jq -r '.approver // empty' "$approval_file")"
+override="$(jq -r '.override // false' "$approval_file")"
+reason="$(jq -r '.override_reason // empty' "$approval_file")"
+
+if [[ -z "$approver" ]]; then
+  echo "second-approver-check: HALT — approval.json has no 'approver' field for $task_id." >&2
+  exit 1
+fi
+
+if [[ "$approver" == "$owner" && "$override" != "true" ]]; then
+  echo "second-approver-check: HALT — approver ($approver) is the same identity as owner, and no override is recorded. Class 2 requires a different git identity to approve, or an explicit, reasoned override (see core/skills/task/SKILL.md §3)." >&2
+  exit 1
+fi
+
+if [[ "$override" == "true" ]]; then
+  echo "second-approver-check: PROCEED — self-approved override recorded. reason: ${reason:-<none given>}"
+  exit 0
+fi
+
+echo "second-approver-check: PROCEED — real second approver on record: $approver"
+exit 0

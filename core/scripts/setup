@@ -1,0 +1,311 @@
+#!/bin/bash
+# setup — the one per-machine step the portable install mechanism needs
+# (build prompt §2.1, Extension C). Idempotent: safe to re-run on every
+# machine, including the first, including a machine that already ran it.
+#
+# What "machine-absolute" broke, reproduced before this script existed
+# (work/.build/ext-c-phase-A-handoff.md §0.1): core/skills/bootstrap and
+# core/skills/adopt used to *commit* `.claude/skills/<name>`,
+# `.claude/agents/<name>.md`, `.claude/rules/<name>.md`, `.claude/hooks`
+# as symlinks whose target is this checkout's absolute path, plus a
+# `permissions.allow` entry in the committed `.claude/settings.json`
+# naming that same absolute path. A second engineer cloning the project
+# gets dangling symlinks and a Bash-allow pattern that matches nothing —
+# every hook and skill silently fails to resolve. This script is what
+# replaces "commit the machine-specific answer" with "compute it locally,
+# every machine, from a stable manifest."
+#
+# What's still committed (the manifest side): the *set* of skill/agent/
+# rule names a project needs never changes per-machine, so it stays
+# ordinary project state this script reads, not something this script
+# invents. Concretely: this script always mirrors spine's own full
+# core/skills, core/agents, core/rules directories — the same "install
+# everything, a project uses what it uses" convention
+# core/skills/bootstrap/SKILL.md §5 already documented; nothing here
+# narrows that per-project.
+#
+# What becomes machine-local (never committed) after this script exists:
+#   .claude/skills/*, .claude/agents/*, .claude/rules/*, .claude/hooks
+#     — regenerated symlinks, added to the project's own .gitignore by
+#       this script the first time it runs against a project that still
+#       has them tracked (git rm --cached, working-tree files untouched).
+#   .claude/settings.local.json — gains the Bash-allow pattern for this
+#       machine's resolved spine location, merged in via jq (never
+#       overwrites an engineer's own pre-existing local entries).
+# .claude/settings.json keeps only what already was portable: the three
+# ${CLAUDE_PROJECT_DIR}-relative hook paths and the .spine/adapters/*
+# allow patterns — both already project-relative, confirmed by direct
+# inspection in Phase A, untouched by this script.
+#
+# Version pin (build prompt Phase A review, 2.1 addition): $project/
+# .spine/core-pin.json — {"sha": "<spine HEAD this project is calibrated
+# against>", "mode": "warn|strict"} — IS committed, ordinary project
+# state, bumped only by a maintainer who has actually re-run conformance
+# against the new core (README's "Staying installed" section documents
+# the workflow). This script initializes it on a project's first setup
+# run and, on every run thereafter, only ever *compares* against it,
+# never silently rewrites it — the whole point of a pin is that only a
+# deliberate act moves it.
+#
+# Usage:
+#   setup --project <path> [--spine <path>] [--pin-mode warn|strict] [--check]
+#
+# --check: read-only. No symlink/.gitignore/.claude writes, no pin
+#   initialization. Just resolves spine's location and compares it
+#   against the pin. This is the "cheap session-start check" the build
+#   prompt asks for — wired into core/skills/task/SKILL.md's new step 0
+#   and core/skills/tasks/SKILL.md, not a new hook (the deliverable
+#   manifest forbids one; see docs/tradeoffs.md's Phase B note for why a
+#   SessionStart-shaped hook was rejected in favor of this).
+#
+# Exit codes: 0 ok (or pin mismatch under warn — printed loudly, not
+# blocking). 1 pin mismatch under strict mode — repair (if not --check)
+# still happened, but the caller should treat this as a halt. 2 usage or
+# hard failure (spine checkout not found, project not installed yet).
+set -uo pipefail
+
+usage() {
+  echo "usage: setup --project <path> [--spine <path>] [--pin-mode warn|strict] [--check]" >&2
+  exit 2
+}
+
+project=""
+spine_override=""
+pin_mode_override=""
+check_only=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --spine) spine_override="$2"; shift 2 ;;
+    --pin-mode) pin_mode_override="$2"; shift 2 ;;
+    --check) check_only=1; shift ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$project" ]] || usage
+[[ -d "$project" ]] || { echo "setup: project $project does not exist" >&2; exit 2; }
+project="$(cd "$project" && pwd)"
+
+# Self-location: this script lives at <spine>/core/scripts/setup. Same
+# ${BASH_SOURCE[0]} trick core/hooks/* already use — confirmed the one
+# portable way to find "where am I really" regardless of how this project
+# reached this script (a symlink resolution, an absolute invocation, a
+# relative one from a different cwd).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+resolved_spine="${spine_override:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+[[ -d "$resolved_spine/core/skills" ]] || {
+  echo "setup: $resolved_spine does not look like a spine checkout (no core/skills)" >&2
+  exit 2
+}
+[[ -d "$resolved_spine/.git" ]] || {
+  echo "setup: $resolved_spine has no .git — cannot resolve a HEAD sha to pin against" >&2
+  exit 2
+}
+spine_sha="$(git -C "$resolved_spine" rev-parse HEAD)"
+
+pin_file="$project/.spine/core-pin.json"
+
+report_pin() {
+  # Sets PIN_STATUS to ok|mismatch-warn|mismatch-strict|unpinned.
+  if [[ ! -f "$pin_file" ]]; then
+    PIN_STATUS="unpinned"
+    return 0
+  fi
+  local pinned_sha pinned_mode
+  pinned_sha="$(jq -r '.sha // empty' "$pin_file" 2>/dev/null)"
+  pinned_mode="$(jq -r '.mode // "warn"' "$pin_file" 2>/dev/null)"
+  if [[ -z "$pinned_sha" ]]; then
+    PIN_STATUS="unpinned"
+    return 0
+  fi
+  if [[ "$pinned_sha" == "$spine_sha" ]]; then
+    PIN_STATUS="ok"
+    return 0
+  fi
+  if [[ "$pinned_mode" == "strict" ]]; then
+    PIN_STATUS="mismatch-strict"
+  else
+    PIN_STATUS="mismatch-warn"
+  fi
+  PINNED_SHA="$pinned_sha"
+}
+
+print_pin_result() {
+  case "$PIN_STATUS" in
+    ok)
+      echo "setup: core pin ok — $project is calibrated against $spine_sha" ;;
+    unpinned)
+      echo "setup: no pin recorded at $pin_file yet" ;;
+    mismatch-warn)
+      echo "setup: CORE VERSION SKEW (warn) — $project is pinned to $PINNED_SHA," \
+           "this machine's spine resolves to $spine_sha. Hooks/gates on this" \
+           "machine may enforce differently than what this project was last" \
+           "calibrated against. Run 'git -C $resolved_spine log $PINNED_SHA..$spine_sha'" \
+           "to see what changed, then have a maintainer bump the pin once the" \
+           "new core has been tested (README: Staying installed)." ;;
+    mismatch-strict)
+      echo "setup: CORE VERSION SKEW (strict) — $project is pinned to $PINNED_SHA," \
+           "this machine's spine resolves to $spine_sha. Blocking per this" \
+           "project's strict pin mode. Pull this machine's spine checkout to" \
+           "$PINNED_SHA, or have a maintainer bump the pin after testing the" \
+           "newer core, before continuing." >&2 ;;
+  esac
+}
+
+check_hook_guard_staleness() {
+  # hook-guard maintenance (Phase D self-red-team — "who updates it and
+  # how does it interact with the pin"): the guard is committed project
+  # content, not generated/gitignored like .claude/hooks itself, so a pin
+  # match alone does NOT prove the guard is current — someone could have
+  # hand-edited it, or it could predate Extension C's own addition of it
+  # entirely. Check its actual bytes against this machine's resolved
+  # spine template regardless of pin status, so drift in this one
+  # committed file can't hide behind an otherwise-matching pin.
+  local guard="$project/.claude/hook-guard"
+  local template="$resolved_spine/core/templates/hook-guard"
+  [[ -f "$template" ]] || return 0
+  if [[ ! -f "$guard" ]]; then
+    echo "setup: $project has no .claude/hook-guard yet — every Edit/Write/Bash is" \
+         "unenforced until a full 'setup' run (not --check) writes it." >&2
+    return 0
+  fi
+  if ! cmp -s "$guard" "$template"; then
+    echo "setup: .claude/hook-guard in $project differs from this machine's spine" \
+         "template — stale (or hand-edited). Run 'setup' (not --check) to refresh it," \
+         "then commit the change; it will not update itself."
+  fi
+}
+
+if [[ "$check_only" -eq 1 ]]; then
+  report_pin
+  print_pin_result
+  check_hook_guard_staleness
+  [[ "$PIN_STATUS" == "mismatch-strict" ]] && exit 1
+  exit 0
+fi
+
+[[ -f "$project/.spine/capabilities.json" ]] || {
+  echo "setup: $project/.spine/capabilities.json not found — this project isn't" \
+       "spine-installed yet (run /bootstrap or /adopt first, from a session in" \
+       "$resolved_spine)" >&2
+  exit 2
+}
+
+mkdir -p "$project/.claude/skills" "$project/.claude/agents" "$project/.claude/rules"
+
+sync_symlink() {
+  # sync_symlink <link-path> <target-path>
+  local link="$1" target="$2"
+  if [[ -L "$link" ]]; then
+    [[ "$(readlink "$link")" == "$target" ]] && return 0
+    rm -f "$link"
+  elif [[ -e "$link" ]]; then
+    echo "setup: $link exists and is not a symlink — refusing to overwrite, remove it by hand" >&2
+    return 1
+  fi
+  ln -s "$target" "$link"
+}
+
+fail=0
+for dir in "$resolved_spine"/core/skills/*/; do
+  name="$(basename "$dir")"
+  sync_symlink "$project/.claude/skills/$name" "$resolved_spine/core/skills/$name" || fail=1
+done
+for f in "$resolved_spine"/core/agents/*.md; do
+  [[ -e "$f" ]] || continue
+  name="$(basename "$f")"
+  sync_symlink "$project/.claude/agents/$name" "$f" || fail=1
+done
+for f in "$resolved_spine"/core/rules/*.md; do
+  [[ -e "$f" ]] || continue
+  name="$(basename "$f")"
+  sync_symlink "$project/.claude/rules/$name" "$f" || fail=1
+done
+sync_symlink "$project/.claude/hooks" "$resolved_spine/core/hooks" || fail=1
+[[ "$fail" -eq 0 ]] || { echo "setup: symlink sync failed, see above" >&2; exit 2; }
+
+# Strip any absolute-path Bash-allow entry a pre-Extension-C install left
+# in the *committed* settings.json — that's the exact residue this script
+# exists to eliminate; the machine-local equivalent now lives in
+# settings.local.json instead (below). A relative entry (.spine/adapters/*
+# and friends) is left untouched — those were always portable.
+committed_settings="$project/.claude/settings.json"
+if [[ -f "$committed_settings" ]]; then
+  tmp="$(mktemp)"
+  jq '.permissions.allow |= (map(select(test("^Bash\\(/") | not)))' \
+    "$committed_settings" >"$tmp" && mv "$tmp" "$committed_settings"
+fi
+
+# hook-guard (Extension C Phase C, fresh-clone enforcement-state finding):
+# a PreToolUse command pointing at a not-yet-generated .claude/hooks/<name>
+# is silently *skipped*, not blocked, by Claude Code's own hook runner —
+# confirmed empirically, see core/templates/hook-guard's own header. Always
+# rewrite the committed guard file (deterministic content, safe to
+# overwrite every run) and route settings.json's hook commands through it.
+cp "$resolved_spine/core/templates/hook-guard" "$project/.claude/hook-guard"
+chmod +x "$project/.claude/hook-guard"
+if [[ -f "$committed_settings" ]]; then
+  tmp="$(mktemp)"
+  jq '
+    .hooks.PreToolUse = [{
+      matcher: "Edit|Write|Bash",
+      hooks: [
+        {type:"command", command:"${CLAUDE_PROJECT_DIR}/.claude/hook-guard phase-gate"},
+        {type:"command", command:"${CLAUDE_PROJECT_DIR}/.claude/hook-guard path-escalate"},
+        {type:"command", command:"${CLAUDE_PROJECT_DIR}/.claude/hook-guard dep-gate"}
+      ]
+    }]
+  ' "$committed_settings" >"$tmp" && mv "$tmp" "$committed_settings"
+fi
+
+# Untrack any of these paths a pre-Extension-C install committed as real
+# symlinks (working-tree files are left exactly as sync_symlink just made
+# them — this only removes them from the git index).
+if [[ -d "$project/.git" ]] || git -C "$project" rev-parse --git-dir >/dev/null 2>&1; then
+  tracked=()
+  while IFS= read -r p; do tracked+=("$p"); done < <(
+    cd "$project" && git ls-files .claude/skills .claude/agents .claude/rules .claude/hooks 2>/dev/null
+  )
+  if [[ ${#tracked[@]} -gt 0 ]]; then
+    (cd "$project" && git rm -r --cached --quiet -- .claude/skills .claude/agents .claude/rules .claude/hooks) \
+      || echo "setup: warning — could not untrack pre-existing committed symlinks, remove them from git by hand" >&2
+    echo "setup: untracked ${#tracked[@]} pre-existing committed symlink path(s) — commit this to finish the migration"
+  fi
+
+  gitignore="$project/.gitignore"
+  touch "$gitignore"
+  for pattern in ".claude/skills/" ".claude/agents/" ".claude/rules/" ".claude/hooks" ".claude/settings.local.json"; do
+    grep -qxF "$pattern" "$gitignore" || echo "$pattern" >>"$gitignore"
+  done
+fi
+
+# .claude/settings.local.json: merge, never overwrite an engineer's own
+# pre-existing local entries (§2.1's known cost — this file is genuinely
+# machine-local, this is the one thing this script legitimately owns a
+# slice of rather than the whole file).
+settings_local="$project/.claude/settings.local.json"
+[[ -f "$settings_local" ]] || echo '{"permissions":{"allow":[]}}' >"$settings_local"
+allow_pattern="Bash($resolved_spine/core/scripts/*:*)"
+tmp="$(mktemp)"
+jq --arg p "$allow_pattern" '
+  .permissions //= {} | .permissions.allow //= [] |
+  if (.permissions.allow | index($p)) then . else .permissions.allow += [$p] end
+' "$settings_local" >"$tmp" && mv "$tmp" "$settings_local"
+
+# Pin: initialize on first run only, never silently rewrite an existing one.
+mkdir -p "$project/.spine"
+if [[ ! -f "$pin_file" ]]; then
+  jq -n --arg sha "$spine_sha" --arg mode "${pin_mode_override:-warn}" \
+    '{sha:$sha, mode:$mode}' >"$pin_file"
+  echo "setup: initialized $pin_file at $spine_sha (mode: ${pin_mode_override:-warn})"
+elif [[ -n "$pin_mode_override" ]]; then
+  tmp="$(mktemp)"
+  jq --arg mode "$pin_mode_override" '.mode = $mode' "$pin_file" >"$tmp" && mv "$tmp" "$pin_file"
+  echo "setup: pin mode set to $pin_mode_override (sha left unchanged — only a maintainer bumps that)"
+fi
+
+report_pin
+print_pin_result
+echo "setup: ok — $project's hooks/skills/agents/rules resolve to $resolved_spine"
+[[ "$PIN_STATUS" == "mismatch-strict" ]] && exit 1
+exit 0

@@ -1,0 +1,11 @@
+{
+  "task_id": "20260811-billing-fee-calc",
+  "predicted_touch": [
+    "src/lib/billing.ts"
+  ],
+  "grounding_files": [
+    "src/lib/auth.ts"
+  ],
+  "grounding_decisions": [],
+  "contracts": []
+}

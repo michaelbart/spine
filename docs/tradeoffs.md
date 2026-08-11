@@ -1290,6 +1290,214 @@ worked example finds defects a design session alone would not:**
   class of gap the adversary layer exists to catch that a floor run alone
   would not.
 
+## Extension C — team support for 2–4 engineers in parallel
+
+Everything below was added by a third build (`work/.build/ext-c-phase-
+{A..D}-handoff.md`, dated 2026-08-11), against Extensions A and B above,
+already installed. It adds no new harness primitive — no hooks, no
+agents, no capabilities — on purpose (build prompt §3): files, git, and
+scripts only. The whole claim to safety is that it composes what already
+existed: the open-task registry is `work/`, made shared instead of local;
+`claims-check`/`propagate` are new scripts in the existing
+`core/scripts/` shape; the flag-blocked-advance check is a new rule
+inside the existing `/task` skill, not a new gate mechanism.
+
+### What this costs
+
+Measured from the real two-engineer demo (`docs/example/ext-c-two-
+engineer-demo/`), not estimated: one `claims-check` at plan approval (a
+few seconds — file-set intersection, no adversary involved), one
+`registry-sync` per phase transition (a commit + push, network-latency
+bound, sub-second locally), two re-grounding checks at ship
+(`check-stale` + a full floor re-run — the floor re-run's cost is
+whatever the project's own floor already costs, unchanged by this
+extension; `check-stale` itself is sub-second), and — Class 2 only — the
+wall-clock cost of a second human actually reading a plan, which this
+system cannot measure and does not pretend to. The demo's own three tasks
+ran the full loop (open → claims-check → plan → flag → ack → re-ground →
+ship) in well under a minute of *script* time; the human-latency pieces
+(a colleague reading a plan, deciding to approve) are the same order of
+magnitude as the existing Class 2 estimate (10–20 minutes) and not
+separately re-derived here.
+
+### Claims coarseness — declared surfaces, not meaning
+
+Stated plainly, not left implicit: `claims-check`'s plan-time run only
+ever sees what a plan *declares* (`## Predicted touch`, research's
+grounding files). A collision in undeclared territory is invisible to it
+by construction — this is the same "declared surfaces, not meaning" limit
+every other conformance-style mechanism in this system already carries
+(`core/scripts/conformance` has the identical shape: it scores a plan
+against the *real* diff, but only after the fact). **Phase D closed the
+most important instance of this gap with a real mechanism, not just a
+disclosure**: `claims-check --diff` (`core/skills/ship/SKILL.md` §0)
+re-runs the same write/write and write/read intersection against the
+*actual* diff at ship time, tagging any hit that wasn't in the task's own
+original `claims.json` as `[UNDECLARED]`. Demonstrated for real, not
+hypothetically: a task that declared only `src/lib/safe.ts` but actually
+touched `src/lib/auth.ts` (colliding with a second open task that
+honestly declared it) was caught, by name, at ship time:
+
+```
+claims-check --diff: 1 real-diff collision(s) with another open task:
+  - write/write with task-2 (Engineer B <b@x.com>): both predict touching
+    'src/lib/auth.ts' [UNDECLARED — not in this task's own claims.json]
+```
+
+Before this existed, the identical defeat surfaced only as a generic
+`conformance` precision drop, with no link back to *which* other task it
+endangered — indistinguishable from an ordinary, harmless scope change.
+This is real, mechanical, and specific — and still **discovered late**:
+by ship time the code already exists, so this is a halt-tier deviation
+(the same tier a stale `check-stale` result gets), not a plan-time
+refusal. Reverting a real diff costs more than declining to approve a
+plan; that asymmetry is inherent to catching something after the fact and
+isn't something this mechanism can close further without moving the
+check earlier, which would require re-running it continuously during
+implementation — out of scope, not attempted.
+
+### The approval race lands in ship-time re-grounding, by design
+
+Open question 7 (build prompt §5.7): two plans with overlapping claims
+approved near-simultaneously, on machines that haven't pulled each
+other's task yet. `claims-check` pulls before reading (§2.2), which
+narrows the window but — as the build prompt itself predicted — cannot
+close it: two engineers who both open and get approval within the same
+few-second pull window can both pass a claims-check that's individually
+correct against stale information. **The backstop is not a new
+mechanism** — it's ship-time re-grounding, already built for a different
+reason (neighbor-caused staleness), catching this case for free: whichever
+of the two ships second will find `claims-check --diff` (or plain
+`check-stale`, if the collision is a grounding-file one rather than a
+predicted-touch one) reporting a real conflict against the first one's
+now-landed change, exactly as it would for any other post-approval drift.
+This is the "existing net" the build prompt suggested rather than a
+purpose-built race detector — confirmed to actually work this way by
+construction (both checks run unconditionally at ship time, regardless of
+*why* something drifted), not separately re-tested as a distinct race
+scenario beyond what (b) in the two-engineer demo already exercises.
+
+### Identity trust model
+
+Stated once, plainly, per the build prompt's own instruction: **git
+identity is a coordination primitive among colleagues, not an audit log
+against adversaries.** `git config user.name`/`user.email` is trivially
+settable to anything — `owner`, `approver`, and `engineer` throughout this
+extension are exactly as trustworthy as the commit author field already
+was before this extension existed, no more, no less. Nothing here adds
+authentication; nothing here should be read as one. The override
+mechanisms (`claims-check`'s conflict override, `approval.json`'s
+self-approval override, `/ship --bypass`) all use the same trust
+posture: loud and recorded beats silent and enforced, for a tool whose
+users are colleagues who could always have just talked to each other
+instead.
+
+### Enforcement tier — the "populated but not gated" sweep (self-red-team)
+
+The single most valuable finding of this build (per review) was that
+`claims.json` got populated correctly but nothing actually gated on it —
+`claims-check` was never invoked at the one call site that mattered,
+caught and fixed during Phase C, not by a separate review pass. Generalizing
+that into a standing check across every mechanism this extension shipped,
+each named with its enforcement point and where its refusal was
+demonstrated live:
+
+| Mechanism | Enforcement point | Refusal demonstrated live | Hook-backed? |
+|---|---|---|---|
+| `hook-guard` | Claude Code's own PreToolUse runner | Real `claude -p` write, fail-open before / fail-closed after, both confirmed via `!` passthrough (Phase C) | **Yes** — the one mechanism here the agent cannot choose to skip |
+| `claims-check` (plan-time) | `core/skills/task/SKILL.md` §3, before presenting the plan | Real write/write + write/read blocks, real renegotiation clearing them (Phase C, re-confirmed in the two-engineer demo, scenario a) | No — script computes a real answer; acting on it is skill prose |
+| `claims-check --diff` (ship-time) | `core/skills/ship/SKILL.md` §0 | Real narrow-claims defeat caught and tagged `[UNDECLARED]` (Phase D) | No |
+| flag-blocked advance (`propagate`'s output) | `core/skills/task/SKILL.md`, every phase transition | Full real loop: refuse → acknowledge → advance, across two independent checkouts (Phase C, demo scenario b) | No — **empirically confirmed unbacked**: a direct `Write` to `work/<task-id>/state` with an unacknowledged flag present passes `phase-gate`/`path-escalate`/`dep-gate` with exit 0 every time (tested directly, Phase D) |
+| ship-time re-grounding (`check-stale` + floor re-run) | `core/skills/ship/SKILL.md` §0 | Real `STALE` detection after a simulated neighbor merge (Phase C); real independent catch after flag acknowledgment (Phase D, demo scenario b) | No — detection is mechanical, the "stop shipping" action is prose |
+| `second-approver-check` | `core/skills/ship/SKILL.md` §1 | All four real branches via the actual script (Phase D — promoted from hand-verified jq logic after the sweep found it had no script backing at all); real second-approver run in the two-engineer demo (scenario c) | No |
+| `setup --check` (pin) | `core/skills/task/SKILL.md` step 0 | Real warn/strict exit codes (Phase B); the `/task`-level "actually halt on strict" action itself is prose, not independently re-tested end-to-end in a live `/task` session (the classifier wall — see above — prevents driving a real session from this build's own tooling) | No |
+
+**Honest reading of this table**: exactly one mechanism in this entire
+extension is enforced at a tier the agent cannot simply choose to ignore.
+Every other gate — including every one carried over from the base system
+before this extension (the merge gate's floor/deviations check, the
+deviation circuit breaker) — is a real script producing a real, correct
+answer, acted on by an agent following skill instructions. This is not a
+regression this extension introduced: `core/hooks/phase-gate` was read
+directly and confirmed to contain zero logic referencing `deviations.md`,
+`verify.md`, or now `flags.json`/`claims.json`/`approval.json` — the
+*existing* merge gate has always been prose-enforced too. What Extension
+C adds is five more checks at that same tier, not a new, weaker tier. The
+build prompt's explicit "no new hooks" constraint is precisely what makes
+this true rather than an oversight: a hook-backed version of any of these
+would require inspecting `flags.json`/`claims.json` content from inside
+`phase-gate`, which is exactly the kind of new-primitive risk §0 warns
+against building on a hunch. Recorded here as the honest boundary, not
+smoothed over: **an adversarial or careless agent session can bypass
+every check in this extension except `hook-guard` by writing the target
+file directly instead of following the skill's prose.** The mitigating
+fact is the same one that governs the rest of this system — a human reads
+the plan, the briefing, and (now) `/costs`' per-engineer view, and those
+three touchpoints are where a pattern of silent bypass would surface, the
+same way a pattern of `--bypass` abuse would.
+
+### Laziest defeat of each new gate — where it's visible
+
+- **Narrow claims to dodge `claims-check`.** Caught late, not blind:
+  `claims-check --diff` at ship time, tagged `[UNDECLARED]` (above).
+  Visible in: the ship-time deviation record, `/costs`' `claims_conflicts`
+  count if it also blocked a colleague.
+  Not caught: a narrowing that happens to touch nothing any other open
+  task cares about — indistinguishable from an honest, narrow task,
+  because at that point it *is* one.
+- **Rubber-stamp second approval** (approve without reading). No
+  mechanism distinguishes a real review from a reflexive one — `git
+  config user.name` proves a different identity touched the file, nothing
+  proves they read anything. Visible in: nothing mechanical; this is the
+  same "the human has to actually engage" bet the whole system has always
+  made (the plan-approval touchpoint itself has the identical property
+  for a solo engineer). Named, not solved.
+- **Blind flag acknowledgment** (ack without acting on it). Same shape:
+  `acknowledged: true` proves a write happened, not that the engineer
+  changed course. Visible in: the flag's own `acknowledged_by`/
+  `acknowledged_at` are permanent, append-only record — a pattern of
+  acknowledging and never adjusting research/plan afterward would be
+  visible to someone reading `work/<task-id>/flags.json` history, but
+  nothing surfaces that pattern automatically today. Named as a v2-shelf
+  metric (a "flags acknowledged vs. research regenerated after" ratio),
+  not built.
+- **Override-as-habit** (routine use of `claims-check --override`,
+  `approval.json`'s self-approval override, or `--bypass`). Visible in:
+  `/costs`' per-engineer view — `claims_conflicts` and `bypass_count` are
+  both per-engineer already; a `second_approver` override isn't yet its
+  own counted field (it's a ledger *string*, `"override: <reason>"`, not
+  a boolean `/costs` currently tallies) — **named gap, not closed**: a
+  future `/costs` pass should count override frequency the same way it
+  counts bypass frequency, per the same "a metric read as a leaderboard
+  gets gamed, but an absent metric can't be read at all" reasoning.
+
+### The 2–4 engineer limit, and what breaks at 8
+
+This extension was built and demonstrated for 2 engineers (the demo) and
+reasoned about for up to 4 (the build prompt's own scope). Named,
+concretely, what stops scaling past that, not just asserted:
+
+- **Informal override culture.** At 2–4, an override is a rare enough
+  event that a colleague reading the briefing notices it. At 8, the
+  volume of Class 2 ships and claims conflicts rises with team size while
+  the "one human reads `/costs`" bandwidth doesn't — overrides become
+  background noise, the exact failure mode named in the laziest-defeats
+  section above, faster.
+- **`claims-check` conflict frequency.** The intersection is O(open
+  tasks) per check — cheap per call (confirmed: the demo's 2-3-task scan
+  was sub-second), but the *rate* of real conflicts rises faster than
+  linearly with engineer count on a codebase whose file count doesn't
+  grow with the team, since more people are predicting touches into the
+  same fixed surface area. Untested at 8 — no data, named as the
+  mechanism that would need real measurement first.
+- **Briefing volume.** Every ship still produces one briefing; at 8
+  engineers shipping in parallel, the volume of briefings one person
+  would need to skim to keep the team-wide picture (not just their own
+  work) rises linearly with ship frequency, with nothing in this build
+  aggregating across briefings the way `/costs` aggregates across
+  ledgers. Named as the next thing to build if this ever needs to scale
+  past 4, not attempted here.
+
 ## `spine/work/.build/` — keep it
 
 Recommend keeping this directory as install history, per the build

@@ -99,13 +99,18 @@ additionalDirectories`, and a pointer to `workspace.json` and
 
 ## 2. Wire the install — same mechanism as `/bootstrap` §5, plus one line
 
-Symlink exactly as `core/skills/bootstrap/SKILL.md` §5 describes
-(`.claude/skills/<name>`, `.claude/agents/<name>.md`,
-`.claude/rules/<name>.md` per-entry, `.claude/hooks -> <spine>/core/hooks`
-whole-directory) — the workspace root is a spine-consuming session like any
+```
+${CLAUDE_SKILL_DIR}/../../scripts/setup --project <root>
+```
+
+(Extension C §2.1 — this is the same per-machine step `/bootstrap`/`/adopt`
+now delegate to; the workspace root is a spine-consuming session like any
 other, primitive §0.4 (skills/agents resolve from the *session's own*
 startup directory, not from added directories) is exactly why it needs its
-own copy of this wiring rather than inheriting a member repo's.
+own copy of this wiring rather than inheriting a member repo's. `setup`
+also initializes this workspace root's own `.spine/core-pin.json` and adds
+`.claude/skills/`, `.claude/agents/`, `.claude/rules/`, `.claude/hooks` to
+`<root>/.gitignore` — they're generated locally now, never committed.)
 
 Write `<root>/.claude/settings.json`: the same three-hook `PreToolUse`
 wiring `/bootstrap` writes, **plus**:

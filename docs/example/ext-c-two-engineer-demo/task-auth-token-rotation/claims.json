@@ -1,0 +1,9 @@
+{
+  "task_id": "20260811-auth-token-rotation",
+  "predicted_touch": [
+    "src/lib/auth.ts"
+  ],
+  "grounding_files": [],
+  "grounding_decisions": [],
+  "contracts": []
+}

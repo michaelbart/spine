@@ -1,0 +1,22 @@
+{
+  "_comment": "One per task, at work/<task-id>/claims.json — this task's declared surfaces, per build prompt (Extension C) §2.2/§2.3. Written at plan approval by core/skills/task/SKILL.md's plan step (initial empty skeleton at task creation, populated for real once a plan exists), re-checked by core/scripts/claims-check against every other open task's own claims.json before this plan can be approved. Declared surfaces, not meaning — a collision in undeclared territory isn't caught by this file, same residual as every other declared-surface mechanism in this system (docs/tradeoffs.md's self-red-team names this explicitly, don't let it drift into an implied stronger guarantee than it is).",
+
+  "task_id": "<task-id>",
+  "updated_at": "<iso8601, set on every write>",
+
+  "predicted_touch": [
+    "_comment: from plan.md's own ## Predicted touch section, verbatim paths, repo-qualified (<repo-name>:<path>) in a multi-repo task exactly like plan.md's own convention — never reformatted, never re-derived from the plan by parsing prose."
+  ],
+
+  "grounding_files": [
+    "_comment: from research.md's spine:research header 'files:' list, same repo-qualification convention check-stale already reads."
+  ],
+
+  "grounding_decisions": [
+    "_comment: from research.md's 'grounding-decisions:' header (D-<seq>@<hash> entries, hash stripped here — claims-check only needs the id to intersect against another task's own writes to that same decision's Implementing paths, not the staleness hash check-stale already owns) plus plan.md's own ## Grounds on decisions section, deduplicated."
+  ],
+
+  "contracts": [
+    "_comment: contract names this task's own ## Contract change section (plan.md) or a prior contract-touch.json run names — empty for a single-repo task or a multi-repo task that touches no declared contract. Extension B only; always [] when workspace.json is absent."
+  ]
+}
