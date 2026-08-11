@@ -187,12 +187,48 @@ mismatch is: loud, with the fix command, never silent.
 ```
 core/scripts/    the deterministic layer — q, floor, conformance, ledger, ...
 core/hooks/      the three PreToolUse gates (phase, protected-path, dependency)
-core/rules/      path-scoped discipline (currently: migrations)
-core/skills/     /bootstrap /adopt /task /verify /ship /ratchet /remap /costs /tasks
+core/rules/      path-scoped discipline (currently: migrations, contracts)
+core/skills/     /bootstrap /adopt /design /workspace /task /verify /ship
+                 /ratchet /remap /costs /tasks
 core/agents/     researcher, falsifier, security — fresh-context, read-only
 core/templates/  every artifact format the skills above produce
 work/.build/     this build's own phase handoffs — the install's decision record
 ```
+
+## Command reference
+
+Every command below is a skill under `core/skills/`, resolved live from
+whatever this machine's spine checkout has — nothing here is copied into
+an installed project. Most take `disable-model-invocation: true`, meaning
+you type them; the model doesn't reach for one on its own.
+
+**Install & design — run once, from a session in the spine repo itself
+(or per the "second engineer" flow in a project that's already installed)**
+
+| Command | Args | What it does |
+|---|---|---|
+| `/bootstrap` | `--project <path>` | Install spine into a brand-new, near-empty project — charter first, then calibration, adapter generation, and your first `/task`. |
+| `/adopt` | `--project <path>` | Install spine into an existing repo with real code — calibration, adapter generation, a bounded survey, and a charter draft you edit. Re-running it later recalibrates rather than reinstalling. |
+| `/design` | `[--project <path>]` | Optional, greenfield-first design stage: a facilitated session turning a confirmed charter into foundational decisions, a walking-skeleton milestone, and a reviewed stopping point *before* feature code exists. |
+| `/workspace` | `--root <path> [--repo <name>=<path> ...] [--from-design <path>]` | Multi-repo only. Initializes or extends a workspace root that coordinates several repositories through declared contracts. Run once per workspace, never per task. |
+
+**The daily loop — inside an installed project, per task**
+
+| Command | Args | What it does |
+|---|---|---|
+| `/task` | `<description> [--milestone <id>]` | The default way any non-trivial change gets made: classify → research → plan (you approve it) → implement → verify → ship. This is the one you actually type most days. |
+| `/verify` | `<task-id>` | Runs the deterministic floor plus the adversary agents (falsifier, and security per class/ceremony) and assembles `verify.md`. Invoked automatically by `/task` at the verify phase — you rarely call it directly. |
+| `/ship` | `<task-id> [--bypass <reason>]` | Gates (floor passed, no open deviations, second approver if Class 2), commits, and writes the delta briefing for a task that's passed verification. Invoked by `/task`, or directly with `--bypass` for a genuine emergency that can't wait — loud and recorded, never silent. |
+
+**Maintenance & visibility — not part of any one task**
+
+| Command | Args | What it does |
+|---|---|---|
+| `/tasks` | *(none)* | Lists every open task in the registry — owner, class, phase, claims, flags. Read-only; exists so a human sees the same picture `claims-check`/`propagate` do. |
+| `/costs` | `[--since <git-date>]` | Reports cost instrumentation: untracked-commit ratio first, then per-task/per-engineer ledger aggregates. An instrument for spotting drift early, not a leaderboard. |
+| `/ratchet` | `<description of the recurring finding>` | Converts a finding that's genuinely recurred twice (two deviations, two adversary verdicts, two relayed review comments) into a deterministic check, deleting the prose rule it supersedes. The only command allowed to grow `CLAUDE.md` or the rules directory. |
+| `/remap` | *(none)* | Regenerates `docs/map.md` from the current repository's real state, stamped with the current commit SHA. Runs isolated from the calling conversation. |
+
 
 ## Working with other engineers (2–4, on the same project)
 
