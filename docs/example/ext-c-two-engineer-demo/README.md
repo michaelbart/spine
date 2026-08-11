@@ -103,12 +103,32 @@ Bob's row correctly carries the two blocking `claims-check` hits from (a)
 and the one deviation from (b) — Alice's doesn't. This is the instrument
 build prompt §2.7 describes: visible, per-person, not a ranking.
 
-## (e) Pin skew — see `../` build handoffs
+## (e) Pin skew, real commits both sides
 
-Scenario (e) (engineer 2's core deliberately behind the pin) needed a real
-committed spine core to be genuine — run separately, after this build's
-own delivery commit, documented in
-`work/.build/ext-c-phase-D-handoff.md` rather than duplicated here.
+Run after this build's own delivery commit (`87f3e6d`) landed, against
+the prior real commit (`91e041b`) — not simulated shas. Alice (maintainer)
+tests the new core, bumps the pin to `87f3e6d` in `strict` mode, pushes.
+Bob's container still has spine checked out at `91e041b`:
+
+```
+setup: CORE VERSION SKEW (strict) — /home/bob/proj/demo is pinned to
+  87f3e6dc..., this machine's spine resolves to 91e041b9.... Blocking
+  per this project's strict pin mode. Pull this machine's spine checkout
+  to 87f3e6dc..., or have a maintainer bump the pin after testing the
+  newer core, before continuing.
+exit: 1
+```
+
+Bob pulls spine to `87f3e6d`, re-runs `setup --check`:
+
+```
+setup: core pin ok — /home/bob/proj/demo is calibrated against 87f3e6dc...
+exit: 0
+```
+
+Full `setup` (not `--check`) re-confirms his hooks still resolve
+correctly post-upgrade. Resolved entirely by "pull + setup," exactly the
+README's documented workflow, exercised for real rather than assumed.
 
 ## What's *not* in this demo
 

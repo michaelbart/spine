@@ -84,13 +84,16 @@ indistinguishable from.
 
 ## Scenario (e) and delivery
 
-Run after this phase's own commit lands (below), against the real
-pre-commit sha and the real post-commit sha, in a fresh container —
-recorded here once both exist:
-
-```
-<filled in after the commit below>
-```
+Delivery commit: `87f3e6d` ("Extension C: team support for 2-4 engineers
+in parallel"). Scenario (e) run immediately after, against the real prior
+commit `91e041b` and the real new commit `87f3e6d` — not simulated shas:
+Alice bumps the demo project's pin to `87f3e6d` in `strict` mode and
+pushes; Bob's container (still resolving spine at `91e041b`) hits a real
+`CORE VERSION SKEW (strict)` block, exit 1, with the exact remediation
+text; Bob pulls spine to `87f3e6d`, `setup --check` reports `ok`, exit 0;
+a full `setup` re-run confirms his hooks still resolve post-upgrade. Full
+transcript in `docs/example/ext-c-two-engineer-demo/README.md`'s own
+"(e)" section.
 
 ## What's left, named rather than hidden
 
