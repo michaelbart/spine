@@ -251,6 +251,33 @@ wall.** Two things changed:
    the common case" and "would anyone notice" — now have real answers
    instead of open questions.
 
+**Extension build, Phase A: the wall is broader than "headless sessions"
+— it also blocks nesting a `claude` process inside another session's Bash
+tool, attended or not.** The confirmation directly above verified the wall
+doesn't hit an *ordinary attended session driving its own tools directly*.
+The extension build found a narrower, real, distinct case: an ordinary,
+attended, top-level session's own Bash tool still cannot invoke the
+`claude` binary itself (`claude -p ...`, even bare `claude --version`),
+regardless of `--dangerously-skip-permissions` or explicit
+`permissions.allow` entries — confirmed by testing all three
+independently, none suppressed it. This is a different claim than the one
+verified above, because every prior fire-test in this document launched
+its `-p` subprocess from a plain terminal, never from inside another live
+`claude` session's own Bash tool. **Practical consequence, confirmed
+across every phase of the extension build**: any session that needs to
+fire-test a hook or skill via a nested `claude -p` subprocess (which every
+phase of this extension build did, to watch its own new hooks/agents fire
+for real) hits this wall directly via its own Bash tool and cannot work
+around it internally. The only working mitigation found: hand the exact
+command to the engineer to run via Claude Code's own `!` passthrough,
+which executes outside the classifier's scope entirely, then read the
+resulting file/state changes directly (plain Read/Bash `cat` of the result
+is unaffected — only invoking `claude` itself is blocked). This restates
+the wall's scope precisely: **specific to headless sessions, or to nested
+`claude` invocation from within any session, headless or not** — not, as
+the language directly above could be misread to imply, specific to
+headless sessions alone.
+
 ## v2 shelf (forbidden in v1, insertion points noted)
 
 | Deferred | Insertion point |
@@ -264,6 +291,16 @@ wall.** Two things changed:
 | Scheduled consolidation of pre-existing duplication | `clone-scan` only runs against the changed-file set — it prevents new duplication, never sweeps existing debt. horizon's real codebase is presumably carrying pre-existing duplication `clone-scan` will never surface, symmetrically with the lint-debt finding below |
 | Product-spec layer | `docs/charter.md` deliberately stays at non-negotiables/constraints, not a spec |
 | Concurrency/stress lane | The `smoke-*` capability names are the insertion point — `smoke-run` could grow a concurrent-load mode |
+| `contract-scan` (deterministic undeclared-coupling detection) | The falsifier's design-mode/cross-repo mandate is the only thing that currently hunts undeclared coupling — a mechanical, scriptable version was deliberately not built (build prompt §2: "the registry lookup carries the value at near-zero cost") |
+| Baseline failure attribution for affected-but-not-edited repos | `contract-check` gates every affected repo unconditionally; nothing yet distinguishes a pre-existing consumer failure from one this task caused — the edited-vs-affected floor split is the insertion point |
+| Decision-drift metrics in `/costs` | `check-stale`'s decision-quarantine branch is real and fires; nothing yet aggregates how often decisions drift/supersede into a `/costs`-visible metric the way bypass count already is |
+| Per-repo charters in a workspace | One system charter at the workspace root only; member repos don't get their own — `docs/charter.md`'s existing single-document shape is the insertion point if this is ever needed |
+| Auto-generated cross-repo topology maps | `workspace.json` + the contract registry *is* the topology today, hand-authored/skill-written; nothing renders or derives a map from it |
+| Brownfield `/design` worked flow | `/design` explicitly supports running on brownfield to make implicit architecture explicit (build prompt §2), but this build's only real worked example was greenfield — brownfield `/design` is unexercised, not unbuilt |
+| Multi-workspace (a repo belonging to more than one workspace) | `workspace.json`'s repo list assumes one workspace per member repo; nothing prevents authoring a second workspace pointing at the same repo, but nothing coordinates the two either |
+| Anything depending on `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` | Explicitly out of scope per build prompt §0.3 — per-repo context reaches sessions through skills reading files instead, deliberately not through this env flag |
+| Full `/costs` aggregation across a workspace and its member repos' independent task histories | Open question 6 (above) — mechanism named (`loop over workspace.json`'s repos + workspace root, sum `ledger aggregate`), zero code written |
+| Design-mode adversary cost tiers | Open question 7 (above) — left unresolved through both Phase C and Phase E; no tiering exists, every design review pays full adversary ceremony regardless of decision-set size |
 
 ## The seven open questions (build prompt §5), answered and defended
 
@@ -619,6 +656,347 @@ Full artifacts — `research.md`, `plan.md`, `verify.md`, the ledger (partial,
 hand-tracked), the delta briefing — live under
 `horizon/work/20260808-fix-building-group-delete-orphans-units/`.
 
+## Extension Build — the design stage and multi-repo coordination
+
+Everything below this heading was added by a second build (`spine/work/
+.build/build-prompt-extensions.md`, Phases A–E, dated 2026-08-08 through
+2026-08-10), against the system already described above. It adds two
+things: **Extension A**, a `/design` stage that lets a greenfield project's
+first session produce a reviewed decision set instead of skipping straight
+to code; and **Extension B**, coordination across multiple repositories
+through a workspace root and first-class contracts. Both are additive —
+the single-repo, no-`/design` flow described everywhere above this heading
+is unchanged and was directly regression-tested (see "Single-repo
+regression demonstration" below).
+
+### What the design stage costs
+
+Not yet measurable from real `/costs` data — no design-mode session has
+run through `ledger`'s token-harvesting path with results reviewed, so this
+is, like the original build's own cost section, an estimate to be replaced.
+The one real data point: `~/bookmarks`'s `/design` session walked all six
+foundational categories (one, search implementation, legitimately
+deferred), ran both adversaries once in design mode (9/10 falsifier
+verdicts kept, 5/5 security), and resolved every kept finding by
+supersession — three decisions superseded before `design-gate` passed
+clean. By analogy to the existing Class 2 estimate (10–20 human minutes:
+confirm class, review a plan, resolve a deviation) — a `/design` session is
+structurally closer to a milestone-sized interactive review than a single
+task: six category decisions plus two real adversary reports to read is
+more reading than any single Class 2 touchpoint, so **20–40 human minutes**
+for a project of this size is a reasonable estimate, not a measurement.
+Larger or more contested category sets (the auth-model decision here was a
+real three-way `AskUserQuestion`, not inferred) would cost more; a project
+that defers aggressively would cost less. This should be one of the first
+things `/costs` reports on once a second `/design` session exists to
+compare against.
+
+### What multi-repo coordination costs
+
+Marginal cost over an equivalent single-repo task, estimated from the one
+real data point (the additive `title_length` task across `bookmarks` +
+`bookmarks-cli` + `bookmarks-workspace`): a second full floor run (bookmarks-
+cli's own 5/5 applicable capabilities), one `contract-touch` invocation
+(cheap — a diff-vs-registry check, not a new adversary pass), `contract-
+check` in both directions (two lightweight adapter runs), and a staged
+ship with two extra commit boundaries (`shipping (1 of 3)` →
+`(3 of 3)`) instead of one. Both adversaries ran once, not once per repo —
+the design keeps human/adversary review at one-per-task regardless of repo
+count, which is the point of "one plan, one approval." The floor and
+`contract-check` costs scale with repo count; the review cost does not.
+Genuinely unmeasured beyond this single data point.
+
+### The maximal-ceremony hazard — named by the build prompt, not fully exercised by this build's own evidence
+
+The build prompt names the specific risk of design-stage ceremony plus
+workspace-init ceremony plus skeleton-milestone ceremony compounding before
+anything runs, on a *new* multi-repo greenfield project's very first day.
+**This build's two worked examples never actually composed that way**,
+and that gap is disclosed here rather than glossed over: Phase C ran
+`/design` and shipped a skeleton milestone against `~/bookmarks` as a
+single, standalone repo — no workspace existed yet. Phase D then built
+`~/bookmarks-workspace` around `bookmarks` (already skeleton-shipped, one
+milestone already `done`) plus a freshly bootstrapped `bookmarks-cli` that
+went through `/bootstrap` directly, **not** `/design` — it never walked the
+six foundational categories or produced its own decision set. So the
+specific sequence the build prompt is worried about — a brand-new,
+multi-repo greenfield project where `/design` decides topology, `/workspace`
+builds it, and milestone 0 is the first thing that runs, *all* before any
+code exists anywhere — was never run end to end. What was proven instead
+is each half separately: `/design` → skeleton on one repo (Phase C), and
+`/workspace` → contract → staged ship on repos that mostly already existed
+(Phase D). The mitigation the build prompt names (skeleton first, design
+cap bounds the delay) is architecturally in place but has exactly zero
+real-worked-example evidence behind the *composed* case. Flagged here as a
+real, disclosed gap in this build's own proof, not a claim the hazard
+doesn't exist.
+
+### Residual risks conceded by design (Extension A + B)
+
+- **Registry-neglect risk.** Contract coverage is only as good as the
+  registry staying current, and the only thing surfacing that to a human is
+  one new line in the delta briefing when a ship touches a contract. This
+  is the same engagement bet every other "the human has to actually read
+  the artifact" mechanism in this system already makes (see the circuit
+  breaker's own honor-system caveat, above) — nothing new architecturally,
+  but worth naming as its own instance rather than assuming the general
+  disclaimer covers it implicitly.
+- **The inconsistency window staged ship bounds but cannot eliminate.**
+  Real evidence, not hypothetical: the `title_length` ship spent real wall-
+  clock time between `bookmarks`' commit and `bookmarks-workspace`'s final
+  commit, during which `bookmarks-cli` had already merged its tolerant
+  `.get()`-based read but `bookmarks` hadn't yet merged the field addition
+  in one ordering, and the reverse tolerance in the other — `work/<task-
+  id>/state` read `shipping (k of n)` the entire time. The window is real,
+  visible, and — because the declared order guarantees every intermediate
+  state is contract-compatible by construction (the whole point of
+  choosing additive-safe orderings) — never unsafe. It is not zero, and
+  nothing claims it is.
+- **The affected-repo residual is real but untested by this build's own
+  worked examples**, disclosed plainly: `contract-check` is supposed to be
+  the floor for a repo that's merely *affected* by a contract change
+  without being *edited* — full floor eligibility and `contract-check`
+  eligibility are deliberately separate (§3 of the Phase B/D design
+  decisions, below). But in the one real multi-repo task this build ran,
+  `bookmarks-cli` was itself edited (the `.get()` tolerance change), so it
+  always received a full floor too — the "affected-only, not edited, and
+  gated on `contract-check` alone" branch was never actually exercised
+  against a repo carrying pre-existing, unrelated baseline failures. The
+  mechanism is built and the code path exists; a real demonstration of it
+  masking pre-existing consumer breakage (or not) does not exist yet.
+- **The decision-store residual** — a decision nothing ever cites again can
+  sit at `adopted` indefinitely, the same "uncollided section can rot
+  undetected" property `docs/charter.md` already concedes above. No
+  concrete instance of this exists yet in `bookmarks`'s real decision store
+  (every decision there was either implemented or superseded across the
+  two real tasks that ran) — named as an inherited, structural risk, not
+  an observed failure.
+
+### The greenfield worked example — `~/bookmarks` through the design stage
+
+A genuine small bookmark/note manager: real SQLite persistence, a real
+contested auth-model decision, real state. `/bootstrap` (charter human-
+confirmed, four code-independent adapters written and conformant) then
+`/design`, walking all six categories — five decided directly, the auth
+model put to the human as a real three-way choice (API-key-gates-
+everything vs. writes-only vs. session-cookie), search implementation
+legitimately deferred with a real trigger.
+
+**Design review, both adversaries, real, in design mode**: 9/10 falsifier
+verdicts kept (the one drop was a real citation error — a quote that
+actually lived in `DEFERRED.md`, cited against `D-2` — `verdict-filter`
+correctly refused it without the underlying point being wrong), 5/5
+security verdicts kept. Both adversaries independently converged on real
+defects from different angles: the repository-module boundary had no home
+for a new `config` table, and the auth model never specified how the owner
+obtains the plaintext key on first run and had picked argon2 (deliberately
+slow, wrong for a high-entropy generated key) as its hash. Resolved by
+superseding three decisions, not by override — the override mechanism
+exists (open question 5, below) but was never exercised here.
+
+**Milestone 0, real**: Class 2 (touches `migrations/**` and `src/auth/**`),
+two real halt-tier deviations, both human-confirmed, neither routed around
+— a `supertest` devDependency addition, and a real driver swap
+(`better-sqlite3` segfaulted on this machine, reproduced standalone and
+independent of the sandbox; switched to Node's built-in `node:sqlite`,
+`D-9` superseded by `D-10` disclosing the experimental-API tradeoff).
+**Real floor, all 12 applicable capabilities pass** — the most complete
+floor this build produced across all real installs (horizon 8/13, bgr
+8/13, bookmarks 12/13). Adversarial review (normal mode, not design mode)
+found and fixed three more real bugs before shipping, including both
+adversaries independently catching the same defect (`requireApiKey`
+mounted before `express.static`, making the UI's own key-entry page
+unreachable). **Shipped for real**, milestone done-definition genuinely
+met — `test`/`smoke-seed`/`smoke-run`/`smoke-golden` all flipped to
+`implemented`, verified via a real `adapter-conformance --all` pass. This
+is the first time in this build's history the smoke lane reached
+`implemented` for real — horizon and bgr never had it (`unavailable`
+outright, no local emulator/DB service configured).
+
+**A second, post-skeleton feature task** (`created_after`/`created_before`
+filtering, Class 1, grounded on three already-`implemented` decisions) shipped
+separately, exercising `/ship`'s decision-lifecycle step appending *more*
+implementing paths onto decisions a prior task had already flipped to
+`implemented` — correct, append-only, not a bug. The falsifier found a
+real correctness bug here too (an unconstrained `datetime()` precision
+mismatch causing lexicographic-comparison errors at second boundaries),
+fixed and regression-tested.
+
+### The multi-repo worked example — `bookmarks` / `bookmarks-cli` / `bookmarks-workspace`
+
+Reused `bookmarks` (already skeleton-shipped) as the producer, plus a
+genuinely new Python `bookmarks-cli` (deliberately a different stack —
+`requests`+`argparse`, full independent bootstrap: venv, `mypy --strict`,
+`ruff`, `pytest`, five applicable adapters, real `adapter-conformance
+--all` pass), coordinated through `~/bookmarks-workspace` with one
+declared contract (`items-api`), spec written field-for-field from the
+already-shipped API, not invented.
+
+**Additive change, real, end to end**: `title_length` added to the
+contract. Real multi-repo research (citing a real pre-existing decision
+across repos, `bookmarks:D-7` — this citation is what surfaced the first
+real cross-repo bug, see the self-red-team section below), Class 2 plan
+(auto-escalated, both `contracts/items-api/spec.md` and
+`bookmarks-cli:src/bookmarks_cli/client.py` protected), human-approved.
+**Real floor, both repos, PASS. Real `contract-touch`: 1 contract touched,
+correctly classified `additive`, matching the plan's own declaration. Real
+`contract-check`, both directions, both pass.** Both adversaries
+independently found the *same* real high/low-severity bug from different
+angles — `title_length` computed as JS's UTF-16 code-unit count, wrong for
+any title with a character outside the Basic Multilingual Plane — fixed
+(Unicode code-point count, disclosed residual: still not grapheme-cluster-
+accurate), regression-tested in both repos, verified live against a
+running server (`😀😀` → `2`, was `4`). **Real staged ship**, three
+repos in declared order, `work/<task-id>/state` reading `shipping (1 of
+3)` through `(3 of 3)`.
+
+**Breaking change, real, correctly refused as a single task**: a second
+task deliberately mis-declared a real breaking rename (`title` →
+`heading`) as `## Contract change: additive` — the direct test of self-
+red-team question 1 (below). `contract-touch`'s diff-based classifier
+correctly reported `spec_change: "breaking"` regardless of the plan's own
+claim, and `/verify`'s breaking-change gate refused the task outright.
+**A second, independent signal, real**: `bookmarks-cli`'s own `contract-
+check`, run against the actual renamed spec, separately failed on its own
+merits — while `bookmarks`' producer-side `contract-check` passed, since
+its own interface and the spec were renamed together and internally self-
+consistent. This is the concrete proof that a per-repo check alone cannot
+see a cross-repo break; only the registry-driven blast-radius check can.
+Never shipped; all code reverted; the real `research.md`/`plan.md`/
+`verify.md`/`ledger.json`/`contract-touch.json` trail is preserved in
+`docs/example/breaking-rename-refused/`.
+
+**A real expand leg followed**, decomposing the honest version of the same
+rename across a milestone (`work/M1/milestone.md`): `heading` added
+alongside unchanged `title`, real floor PASS, `contract-touch` correctly
+classifying this leg `additive` — the honest case of the same check that
+caught the dishonest one — real staged ship, `bookmarks-cli`'s `contract-
+check` confirmed unaffected (expand's whole point is that no consumer needs
+to change yet). The `migrate` and `contract` legs are real, disclosed
+`TBD`s in `milestone.md` — not yet run, named explicitly rather than hidden.
+
+### Single-repo regression demonstration
+
+Per the build prompt's own explicit requirement (§3): confirmed, twice.
+**Code-level**: `core/hooks/_workspace-route`'s non-workspace branch is,
+line for line, the identical rel-path computation every hook already did
+pre-Extension-B — `WSR_OWNER_NAME` is the empty string in that branch
+specifically so no repo-qualification prefix appears in any message,
+matching pre-Extension-B stderr text byte-for-byte, not just allow/deny
+parity. **Live-fire**: `path-escalate`, `dep-gate`, and `phase-gate` run
+against a plain single-repo fixture with no `workspace.json` reproduced
+identical stderr and exit codes to the pre-Extension-B behavior.
+`check-stale` run against `~/horizon`'s own real, currently-in-progress
+research.md (no `workspace.json` at horizon's root) correctly reported it
+`STALE` against the engineer's own real uncommitted changes, using the
+identical single-repo code path — a genuine finding on a real file, not a
+synthetic fixture, incidentally also writing the standard quarantine
+banner into that real file (disclosed at the time, not swept under a
+"regression test" label). **Real floor re-runs on the other two installs**:
+`~/bgr` hit a real, pre-existing `secret-scan` failure — its own self-test
+fixture's fake AWS key, hit because a zero-diff floor invocation feeds
+`secret-scan` an empty changed-set, which per its own documented
+convention falls back to a full-tree scan and finds its own fixture. This
+is not caused by Extension B (`floor` itself is unmodified by it, by
+design) and is fully reproducible by the pre-existing `floor`/`secret-scan`
+pairing alone — it is the same full-tree-fallback shape "Two-stack
+validation" (above) already named, now confirmed to recur on a genuinely
+zero-diff floor call rather than only in the synthetic-project demonstration.
+This is a real, disclosed, still-open gap in the original build's own
+scope (not this extension's), recorded here because this is the pass that
+actually ran the check and found it recurring, not because Extension B
+caused it; `~/horizon` failed at `test` for
+reasons fully unrelated to this build (a stale counter-app fixture, a
+`file_picker` version conflict) — confirms no catastrophic new failure was
+introduced, though the regression check could not be driven all the way to
+a clean `secret-scan` result on horizon within this pass, for reasons
+unrelated to Extension B.
+
+**A real, previously-undocumented primitive finding, found while running
+this exact regression check**: a workspace root needs the ordinary one-
+time interactive Claude Code trust dialog accepted (or
+`hasTrustDialogAccepted: true` set for its path in `~/.claude.json`)
+*before* `permissions.additionalDirectories` takes effect at all. The
+first attempt at the cross-directory hook-routing live-fire test (workspace
+root never previously opened interactively) was inconclusive for this
+exact reason — Claude Code's project-trust layer silently dropped both
+`permissions.allow` and `permissions.additionalDirectories`, and every edit
+was blocked by a "workspace not trusted" denial before any hook ever ran,
+which looks identical to a hook denial unless you know to check for it.
+This is a general Claude Code property, not something Extension B
+introduces — but a fresh workspace root is exactly the case that hits it
+on day one, so `/workspace`'s own hand-off step should say so explicitly
+(currently does not). After the trust dialog was accepted once,
+interactively, the re-run was clean and correct: two protected-path edits
+blocked (each by its own repo's `protected-paths.conf`, resolved via the
+one workspace-loaded hook), one unprotected edit succeeded, confirmed via
+`git diff --stat` in both member repos.
+
+### The seven extension open questions (build prompt §5), answered and defended
+
+1. **Decision content hashing.** `sha256` of the file's full content minus
+   the `- Status:` line (`core/scripts/decision-hash`, single source of
+   truth, both `check-stale` and any future skill must shell out to it
+   rather than reimplement). Verified for real, twice, isolating the two
+   independent failure branches: a content edit to `D-1`'s body drifted a
+   citing `research.md` (`STALE — content hash changed`); reverting the
+   body and instead flipping only `- Status: adopted` → `implemented` on a
+   *fresh* citation left `check-stale` reporting clean — the status flip
+   was correctly invisible to the hash. A separate `superseded`-status
+   branch fires independently of content drift (tested on a different
+   decision to isolate it from the hash test) — either branch alone is
+   sufficient to quarantine.
+2. **Milestone ID scheme.** `M0`, `M1`, ... — deliberately distinct in
+   shape from task IDs (`<YYYYMMDD>-<slug>`) so `ledger scan-untracked-
+   ratio`'s commit-trailer grep is never confused by a milestone folder;
+   milestones never commit, only their member tasks do, each with its own
+   ordinary `Spine-Task:` trailer. Proven against a real milestone with a
+   real completing ship (`bookmarks`' M0), not just a synthetic
+   demonstration.
+3. **`contract-touch` inputs and registry staleness.** Producer paths are
+   declared per contract as a glob, with a `producer_paths_match_count`
+   recorded at registration time. If the current match count is zero but
+   the registered count was nonzero, the contract is treated as touched
+   **regardless of whether a real diff match fired** — registry staleness
+   fails safe to "gate anyway," never to "silently skip." Verified for
+   real: a producer path deliberately moved entirely out of its registered
+   glob's directory still correctly flagged `registry_stale: true` and
+   still put the consumer in blast radius, despite the diff-based check
+   alone being unable to see the real change.
+4. **Ship-order derivation.** Declared in the plan (`## Ship order`),
+   validated by `/ship` against the registry's own producer/consumer
+   direction — the recommended option, implemented as recommended, not
+   re-litigated. One builder addition beyond the open question itself: a
+   reserved `workspace` name in `## Ship order` for the workspace root's
+   own commit position, in the same "declared, validated, never silently
+   derived" spirit as the rest of the mechanism.
+5. **Design-review disagreement.** The recorded-override mechanism (same
+   trust model as `/ship --bypass`, visible in the briefing) is built but
+   **genuinely untested end to end** — every kept verdict in the one real
+   design review this build ran was resolved by revision/supersession,
+   zero by override. Flagged, not resolved by evidence, for whoever next
+   runs `/design` somewhere the human disagrees with a finding.
+6. **Workspace-level ledger.** No code change was needed — `ledger init`/
+   `mark`/`set` already accept `--project`, and a multi-repo task's
+   `work/<task-id>/ledger.json` simply lives at the workspace root because
+   that's where the one task folder is. Verified for real (`ledger init`
+   against `~/bookmarks-workspace` worked unmodified). **What is not
+   built**: full `/costs` aggregation across a workspace *and* its member
+   repos' own independent single-repo task histories — out of this build's
+   manifest, on the v2 shelf below, with the mechanical shape already
+   obvious enough not to need further design work: loop over
+   `workspace.json`'s repos plus the workspace root, sum `ledger aggregate`
+   per location.
+7. **Design-mode adversary cost tiers.** Left unresolved, same as it was
+   after Phase C — not in this build's deliverable manifest either. The
+   one real data point argues neither for nor against a tiered cost: the
+   `bookmarks` design review (six decisions, all real) ran both adversaries
+   at full, untiered ceremony, with cost unmeasured pending real `/costs`
+   data. A design review over a much smaller decision set (per the build
+   prompt's own "a 4-decision design should not pay a 12-decision review"
+   framing) has not been run, so there is no real evidence either that
+   flat-cost review is disproportionate for small designs or that it isn't.
+
 ## Self-red-team
 
 Per build prompt §8, attacking this build's own gates before delivery.
@@ -776,6 +1154,141 @@ trail (`ledger note-gap`, the `hand_tracked` stamp, `verify.md`/
 future recurrence — headless or not — leaves a visible trace instead of
 looking identical to a clean run. See "Phase E: made the degradation loud"
 above for the full account.
+
+### Extension A + B — self-red-team
+
+Per build prompt §8, attacking the new gates the same way the original
+seven were attacked above.
+
+- **Classifying a breaking contract change as additive — what catches it?**
+  Tested directly, not hypothetically (the multi-repo worked example's
+  second task, above): a real plan deliberately declared a real breaking
+  rename `## Contract change: additive`. `contract-touch`'s classifier
+  (diff-based — scans the unified diff after the first `@@` hunk header for
+  any `-`-prefixed line, not the plan's own self-report) correctly reported
+  `spec_change: "breaking"` regardless of the plan's claim, and `/verify`'s
+  breaking-change gate refused the task outright. A second, independent
+  signal fired too: the consumer's own `contract-check`, run against the
+  actual renamed spec, separately failed on its own merits — while the
+  producer's own `contract-check` passed, since its interface and the spec
+  were renamed together and internally self-consistent. **This is real
+  proof a per-repo check alone cannot catch this class of break; only the
+  registry-driven blast-radius check can** — and real proof the mechanical
+  classifier does not trust the plan's own declaration, which is the
+  entire point of it existing independently. The classifier's one disclosed
+  gap (from Phase D's own build): a newly-*required* field is diff-
+  identical to a newly-*optional* one, pure addition either way — this
+  stack-blind check cannot and does not claim to catch that class of break
+  (`core/rules/contracts.md`).
+- **Grounding research on a decision while ignoring its quarantine flag —
+  what happens?** Nothing mechanically stops it, and this is disclosed
+  plainly rather than assumed away: a quarantined decision citation gets
+  the same banner-in-file, non-blocking treatment file-based staleness
+  already gets above — `check-stale` reports `STALE` and writes a banner
+  into the citing `research.md`, but nothing hook-enforced prevents a plan
+  from being written against that research.md anyway if a human or model
+  proceeds past the banner. This is the same "wrong context beats missing,
+  but the invalidation channel is advisory, not enforced" property the
+  charter's own uncollided-section risk already concedes above — not a new
+  category of gap, but worth naming as its own instance at the design
+  tier, since it's a new grounding source this build added.
+- **A `contract-check` adapter that validates too little while passing
+  conformance — real evidence, not hypothetical.** The multi-repo worked
+  example's additive task is the concrete proof: `title_length` computed
+  as `title.length` (JS UTF-16 code units, wrong for non-BMP characters)
+  shipped with **both** `contract-check` adapters passing cleanly, because
+  both are structurally field-*name*-only and cannot see a correctly-named,
+  incorrectly-*computed* field. Confirmed directly, not assumed: both
+  adapters were re-run against the still-buggy code after the fact and both
+  reported clean. Only the adversary layer caught it (both falsifier and
+  security, independently, from different angles). There is nothing
+  stack-blind and mechanical to fix here — this is a real, permanent
+  residual of a field-name-matching contract check, disclosed rather than
+  patched over.
+- **The design cap gamed by cramming multiple decisions into one record —
+  untested, disclosed gap.** `design-gate` check 4 counts adopted decision
+  *records* (files), not the number of distinct decisions a record's prose
+  actually contains. Nothing stops an implementer from writing one
+  `D-<n>-*.md` that bundles several real architectural choices under one
+  ID to stay under the cap while still deciding as much as an uncapped
+  session would have. Not exercised for real in either worked example —
+  named here because the self-red-team asks for it explicitly, not because
+  evidence of it happening exists.
+- **Registry staleness gamed** (a variant of the same class): the fail-safe
+  ("gate anyway" when the registered match count goes to zero — open
+  question 3, above) was tested for the specific case of a producer path
+  moving out of its glob. A producer path that *stays* inside the glob but
+  is edited in a way `contract-touch`'s diff scan doesn't recognize as
+  spec-relevant would not be caught by this fail-safe, since the fail-safe
+  only fires on a match-count mismatch, not on every possible drift shape.
+  Not tested; named as a residual of the same mechanism.
+- **Any hook change not watched firing in the workspace topology — must be
+  none.** Confirmed: the cross-directory hook-routing test (above, "Single-
+  repo regression demonstration") watched all three hooks fire correctly
+  through `_workspace-route` against real member-repo paths, in addition to
+  the single-repo regression fire-tests. The first attempt was inconclusive
+  for the project-trust reason disclosed above, not a hook defect — the
+  re-run after accepting the trust dialog was clean and correctly
+  attributed each denial to the owning repo's own `protected-paths.conf`.
+- **Any capability marked `implemented` without a passing conformance run —
+  none**, including the new #14, `contract-check` — both `bookmarks`' and
+  `bookmarks-cli`'s `contract-check` adapters passed `adapter-conformance
+  --all` before being marked `implemented`, in both the additive and (for
+  `bookmarks`'s producer-side check) breaking-change scenarios.
+- **The single-repo regression check (§3) — passed and shown.** See "Single-
+  repo regression demonstration," above; not repeated here.
+
+**Real bugs found and fixed while running the extension build against real
+repos, none anticipated by planning, all evidence the pressure of a real
+worked example finds defects a design session alone would not:**
+
+- `check-stale`'s `grounding-decisions:` bash-array expansion crashed under
+  this machine's default `/bin/bash` 3.2.57 (a pre-4.4 empty-array-under-
+  `set -u` limitation) whenever the array was empty — the *mainline* case
+  for any research.md citing only files, not decisions. Fixed with the
+  portable `${decisions[@]+"${decisions[@]}"}` idiom.
+- `conformance`'s `actual=()` computation only ever saw tracked-file
+  changes (`git diff --name-only` alone), silently missing every genuinely
+  new file a real task creates — precision measured `0.07` before the fix
+  (`git ls-files --others --exclude-standard` added), `1.00` after, on the
+  identical real task.
+- `contract-touch`'s first breaking/additive classifier excluded diff lines
+  matching `^-[^-]` to skip the `--- a/path` git header — wrong the moment
+  a real spec used `-` as its own markdown bullet character, misclassifying
+  a genuine breaking rename as `additive`. Fixed by scanning only lines
+  after the first `@@` hunk header instead of pattern-matching the leading
+  character.
+- `floor`'s capability dispatch grouped `secret-scan` under `run_simple`
+  (no stdin), contradicting `ADAPTER-CONTRACT.md §3`'s own documented
+  changed-file-set convention — every floor run therefore invoked
+  `secret-scan` in its full-tree fallback mode, which is exactly the
+  configuration that makes it flag its own self-test fixture (see "Two-
+  stack validation," above, and the regression re-confirmation, above).
+  Fixed by moving it to `run_with_stdin`, matching `clone-scan`'s existing
+  precedent.
+- `grounding-decisions:` citations had no repo-qualification convention
+  until the first real multi-repo research cited a member repo's own
+  pre-existing decision and `check-stale` (correctly, if unhelpfully)
+  reported it unresolvable — `check-stale` only ever looked in the
+  workspace root's own `docs/decisions/`. Fixed by extending the same
+  `<repo-name>:<path>` qualification convention `files:` already carried to
+  decision citations too, across `check-stale`, the templates, and
+  `researcher.md`.
+- `verify/SKILL.md`'s first draft conflated `contract-check` eligibility
+  with floor eligibility ("only gate a consumer not in the edited set") —
+  would have meant `contract-check` silently never running for the
+  additive task's own consumer, since it *was* edited. Corrected before
+  the worked example ran: `contract-check` gates the producer and every
+  consumer regardless of edited status; floor eligibility is a separate,
+  narrower question.
+- Two bookmarks-specific project adapters (not core, but the same defect
+  classes are worth naming): `lint` crashed on a real deleted file in a
+  real diff (didn't filter deletions before handing the changed-set to
+  eslint); `callers` carried the identical bash-3.2 empty-array bug as
+  `check-stale`, in two separate places — found by the falsifier's
+  adversarial review, not this build's own testing, which is exactly the
+  class of gap the adversary layer exists to catch that a floor run alone
+  would not.
 
 ## `spine/work/.build/` — keep it
 
