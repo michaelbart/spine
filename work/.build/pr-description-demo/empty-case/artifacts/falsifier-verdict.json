@@ -1,0 +1,9 @@
+{
+  "agent": "falsifier",
+  "task_id": "synthetic-empty-case-demo",
+  "attacked": [
+    "(a) Drove formatCurrency with adversarial inputs: negative cents, zero, non-integer, very large values",
+    "(b) Stub-out probe: reverted to a naive implementation, confirmed the new tests fail against it"
+  ],
+  "verdicts": []
+}

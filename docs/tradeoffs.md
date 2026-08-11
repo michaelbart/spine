@@ -1519,7 +1519,12 @@ than closed silently:
   on these templates is the actual test. Per the README's own feedback
   rule ("when a plan or briefing confuses an engineer, that is a template
   defect"), any awkwardness surfacing there gets fixed at the template,
-  not patched around in the instance.
+  not patched around in the instance. **Joined by the PR-description
+  patch's own multi-repo section** (`pr-description.md`'s `**Contracts**`
+  section, and the one-shared-description-per-task decision behind it,
+  `work/.build/pr-patch-phase-A-handoff.md` §3) — same reason, same
+  environment gap, same resolution: the first real multi-repo task is the
+  test for all of it at once, not a separate watch item per patch.
 
 - **Backtick-wrapped predicted-touch paths — caught once, prose-guarded,
   pre-loaded ratchet trigger.** During this patch's own demonstration,
@@ -1538,6 +1543,120 @@ than closed silently:
   apparent reason): that's instance two, and the ratchet response is
   already decided — a one-line normalization or validation added to
   `core/scripts/conformance` itself, not another comment.
+
+## PR-description patch — self-red-team
+
+`/ship` gains §4a: assembles `work/<task-id>/pr-description.md` from the
+task's own verified artifacts (`work/.build/pr-patch-phase-A/B-handoff.md`)
+— a computed "review this at the plan level" plus a mechanically-unioned
+"where to look" list, never a re-read-the-diff summary. No new hooks,
+agents, or capabilities; one real bug fix rode in the same commit
+(`core/scripts/conformance`'s bookkeeping-noise exclusion, below). Five
+items carried forward:
+
+- **The reviewer who reads only the description and approves.** This
+  patch cannot prevent that, and the description doesn't claim to — its
+  honest claim is narrower: every sentence in it traces to a verified
+  artifact, which makes rubber-stamping it strictly less dangerous than
+  rubber-stamping a generated summary (a summary's confident, unverified
+  claims are exactly what a rushed reviewer has no way to catch; a
+  traced claim at least has a real record behind it if anyone ever checks).
+  It is still rubber-stamping. The real counterweights are upstream of
+  this patch and unchanged by it: Class 2's second approver
+  (`ship/SKILL.md` §1) and plan approval itself (`task/SKILL.md` §3) are
+  where a human's actual judgment is load-bearing; this patch only makes
+  what they're reviewing easier to review well, it doesn't replace them.
+
+- **Where-to-look drifting editorial over time.** The failure mode is
+  concrete: a future skill edit adds "and anything else that seems worth
+  a look," and the post-hoc-summary door this whole patch exists to close
+  reopens through the one section built to prevent it. Guarded by putting
+  the four-unions rule in `core/templates/pr-description.md`'s own header
+  comment, not only in this file or in `ship/SKILL.md` — the constraint
+  travels with the artifact a future editor is actually looking at. Named
+  here as a ratchet candidate: if an editorial addition to this section
+  ever ships, that's the recurring-finding trigger, and the ratchet
+  response is deleting the addition and re-reading the four-unions rule,
+  not accepting the drift as an improvement.
+
+- **Deviation-file extraction — a real heuristic, not a parser, pre-loaded
+  ratchet trigger.** `deviations.md` has no structured file field, so
+  union (1) of the four ("every file cited in a deviation") extracts
+  backtick-wrapped, path-shaped tokens from the record's prose. Checked
+  against the real `20260811-extract-slugify-helper` deviation record
+  (`~/bgr`) during this patch's own demonstration: it correctly pulled
+  `` `src/lib/slug.test.ts` `` and `` `work/20260811-.../plan.md` `` while
+  correctly skipping quoted test-input tokens in the same record
+  (`` `"!!!"` ``, `` `""` ``) — and it also surfaced a real near-duplicate
+  (`` `slug.test.ts` `` and `` `src/lib/slug.test.ts` `` both matching in
+  the same record), resolved with a same-record suffix-collapse tiebreaker
+  now written into the template. Accepted for v1. **Armed trigger**: the
+  first time this heuristic demonstrably *misses* a real file a deviation
+  cites — not a near-duplicate, an actual miss — the response is already
+  decided: a structured `- Files:` line added to `core/templates/
+  deviations.md` itself, not a bigger regex. This is instance zero (no
+  miss yet, only the near-duplicate, which was fixed at the heuristic
+  level since it's a false-positive-adjacent problem, not a miss); two
+  real misses is `/ratchet`-eligible per the standing two-instance rule
+  (same rule the backtick-predicted-touch trigger above already
+  documents) — recorded here so nobody has to remember whether this was
+  discussed before.
+
+- **Adversary findings without a file anchor — the completeness line, not
+  silence.** Union (2) ("every file:line in an adversary finding") can
+  only represent `evidence.kind == "file_line"` verdicts; a `command`-
+  evidence verdict has no file to point at, even at high severity — real
+  case, found during this patch's own demonstration against
+  `~/horizon/work/20260808-fix-building-group-delete-orphans-units/`: the
+  run's own single highest-severity finding (a `.claude/settings.json`
+  permission-escalation bleed-in) is `command`-evidence and does not get a
+  where-to-look entry. Silently dropping it from the list would imply a
+  completeness the list doesn't have, exactly over the finding most worth
+  seeing. Fixed structurally, not by prose discipline: the list's own
+  final line is computed — `"plus N finding(s) without file anchors — see
+  verify.md"` — whenever `N > 0`, and the finding itself is never lost
+  regardless, since it still appears in full under the floor-protected
+  "Adversaries" bullet above the list. A second real case during this same
+  demonstration (the same horizon record's plan predicting backtick-
+  wrapped touch entries) needed a parallel guard on union (4) — see
+  `core/templates/pr-description.md`'s own comment: a `predicted` entry
+  containing a backtick means a raw set-difference would falsely flag
+  every genuinely-predicted file as drift, so that union declares itself
+  unavailable rather than emit the wrong answer.
+
+- **Stale description after post-review changes.** v1's honest behavior,
+  stated rather than built around: `pr-description.md` reflects the record
+  as of ship time. A review comment that produces a new commit isn't
+  covered by a refresh this patch doesn't build — spine's answer to new
+  work is a new task, whose own `/ship` regenerates its own description
+  against its own record. No description-refresh machinery added on
+  spec; if this becomes real friction, that's a task for later, with real
+  friction to design against instead of a guess.
+
+**The conformance bug fix, and why it rode in this commit.**
+`core/scripts/conformance`'s `actual` set included every task's own
+`work/<task-id>/**` bookkeeping writes and `.spine/current-task`, which
+this patch's own union (4) would otherwise have had to filter at the
+display layer — but a corrupted plan-accuracy metric misleads every
+consumer of that score, not just this feature (every `/ship` briefing's
+"Plan accuracy" bullet, `/costs`' `conformance_score` trend, `ledger set
+... conformance_score`). Fixed at the source instead: `conformance` now
+excludes `work/**` and `.spine/current-task` from `actual` before scoring,
+and states the exclusion rule in its own output (`excluded`,
+`excluded_rules` fields; stdout line). **Regression-checked against the
+real, already-shipped `20260811-extract-slugify-helper` record**: its
+`conformance.json` went from `predicted=2 actual=14 precision=1.00
+recall=0.14 f1=0.25` (12 of the 14 "actual" files were the task's own
+bookkeeping) to `predicted=2 actual=2 precision=1.00 recall=1.00 f1=1.00`
+— the real signal (both predicted files, and only those, were touched)
+that was there all along, no longer buried under record-keeping noise.
+**Explicitly not comparable**: any `/costs` trend or per-task history that
+includes both pre-fix and post-fix `conformance_score` values is not
+measuring the same thing across that boundary — pre-fix scores were
+structurally deflated by bookkeeping noise in a way that had nothing to
+do with planning quality. Treat the fix's ship date as a hard discontinuity
+in that trend, not a real quality jump, if `/costs` is ever extended to
+plot it.
 
 ## `spine/work/.build/` — keep it
 

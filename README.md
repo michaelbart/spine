@@ -218,7 +218,7 @@ you type them; the model doesn't reach for one on its own.
 |---|---|---|
 | `/task` | `<description> [--milestone <id>]` | The default way any non-trivial change gets made: classify → research → plan (you approve it) → implement → verify → ship. This is the one you actually type most days. |
 | `/verify` | `<task-id>` | Runs the deterministic floor plus the adversary agents (falsifier, and security per class/ceremony) and assembles `verify.md`. Invoked automatically by `/task` at the verify phase — you rarely call it directly. |
-| `/ship` | `<task-id> [--bypass <reason>]` | Gates (floor passed, no open deviations, second approver if Class 2), commits, and writes the delta briefing for a task that's passed verification. Invoked by `/task`, or directly with `--bypass` for a genuine emergency that can't wait — loud and recorded, never silent. |
+| `/ship` | `<task-id> [--bypass <reason>]` | Gates (floor passed, no open deviations, second approver if Class 2), commits, and writes the delta briefing plus a PR description assembled from the task's own verified record for a task that's passed verification. Invoked by `/task`, or directly with `--bypass` for a genuine emergency that can't wait — loud and recorded, never silent. |
 
 **Maintenance & visibility — not part of any one task**
 

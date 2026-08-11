@@ -41,8 +41,27 @@ if [[ ${#predicted[@]} -eq 0 ]]; then
 fi
 
 actual=()
+excluded=()
+# Spine's own bookkeeping (the task folder tree, and the one-line active-task
+# pointer) is never reviewable code — every skill in core/ treats `work/` as
+# task-management state only (plan.md, verify.md, deviations.md, briefing.md,
+# artifacts/, ledger.json), never product source. Left in "actual," a task's
+# own record-keeping writes swamp precision/recall for exactly the small,
+# well-scoped tasks this score matters most for (real case: a 2-file plan
+# scored recall=0.14 because 12 of its 14 "actual" files were its own
+# work/<task-id>/** bookkeeping). Excluded at the source, not display-layer
+# filtered by a downstream consumer, so every reader of this score — /costs,
+# a briefing, a PR description — sees the same clean number.
+is_excluded() {
+  case "$1" in
+    work/*) return 0 ;;
+    .spine/current-task) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 while IFS= read -r line; do
-  [[ -n "$line" ]] && actual+=("$line")
+  [[ -n "$line" ]] || continue
+  if is_excluded "$line"; then excluded+=("$line"); else actual+=("$line"); fi
 done < <(cd "$project" && { git diff --name-only "$base" -- .; git ls-files --others --exclude-standard -- .; } | sort -u)
 # git diff --name-only alone only ever shows *tracked* file changes — a
 # task that creates genuinely new files (the common case) never gets
@@ -72,7 +91,7 @@ recall="0"
 [[ ${#actual[@]} -gt 0 ]] && recall=$(awk -v h="$actual_hit" -v n="${#actual[@]}" 'BEGIN{printf "%.2f", h/n}')
 score=$(awk -v p="$precision" -v r="$recall" 'BEGIN{ if (p+r==0) printf "0.00"; else printf "%.2f", 2*p*r/(p+r) }')
 
-echo "conformance: predicted=${#predicted[@]} actual=${#actual[@]} precision=$precision recall=$recall f1=$score"
+echo "conformance: predicted=${#predicted[@]} actual=${#actual[@]} precision=$precision recall=$recall f1=$score (excluded ${#excluded[@]} bookkeeping path(s) from actual: work/**, .spine/current-task)"
 
 to_json_array() {
   if [[ $# -eq 0 ]]; then echo "[]"; else printf '%s\n' "$@" | jq -R . | jq -s .; fi
@@ -80,12 +99,16 @@ to_json_array() {
 
 predicted_json="[]"; [[ ${#predicted[@]} -gt 0 ]] && predicted_json="$(to_json_array "${predicted[@]}")"
 actual_json="[]"; [[ ${#actual[@]} -gt 0 ]] && actual_json="$(to_json_array "${actual[@]}")"
+excluded_json="[]"; [[ ${#excluded[@]} -gt 0 ]] && excluded_json="$(to_json_array "${excluded[@]}")"
+excluded_rules_json='["work/**", ".spine/current-task"]'
 
 if [[ -n "$out_path" ]]; then
   jq -n --argjson predicted "$predicted_json" \
         --argjson actual "$actual_json" \
+        --argjson excluded "$excluded_json" \
+        --argjson excluded_rules "$excluded_rules_json" \
         --arg precision "$precision" --arg recall "$recall" --arg score "$score" \
-        '{predicted:$predicted, actual:$actual, precision:($precision|tonumber), recall:($recall|tonumber), f1:($score|tonumber)}' \
+        '{predicted:$predicted, actual:$actual, precision:($precision|tonumber), recall:($recall|tonumber), f1:($score|tonumber), excluded:$excluded, excluded_rules:$excluded_rules}' \
         >"$out_path"
 fi
 
