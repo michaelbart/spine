@@ -1,0 +1,33 @@
+{
+  "predicted": [
+    "lib/repositories/building_groups_repository.dart",
+    "lib/features/properties/building_groups/cubit/building_groups_cubit.dart",
+    "lib/features/properties/building_groups/view/building_groups_page.dart"
+  ],
+  "actual": [
+    ".claude/settings.json",
+    ".spine/adapters/callers",
+    ".spine/adapters/lint",
+    ".spine/adapters/typecheck",
+    ".spine/current-task",
+    "lib/features/properties/building_groups/cubit/building_groups_cubit.dart",
+    "lib/features/properties/building_groups/view/building_groups_page.dart",
+    "lib/repositories/building_groups_repository.dart",
+    "work/20260808-fix-building-group-delete-orphans-units/artifacts/.callers-input.txt",
+    "work/20260808-fix-building-group-delete-orphans-units/artifacts/callers.md",
+    "work/20260808-fix-building-group-delete-orphans-units/artifacts/dep-diff.md",
+    "work/20260808-fix-building-group-delete-orphans-units/artifacts/falsifier-verdict-raw.json",
+    "work/20260808-fix-building-group-delete-orphans-units/artifacts/security-verdict-raw.json",
+    "work/20260808-fix-building-group-delete-orphans-units/briefing.md",
+    "work/20260808-fix-building-group-delete-orphans-units/class",
+    "work/20260808-fix-building-group-delete-orphans-units/floor-result.json",
+    "work/20260808-fix-building-group-delete-orphans-units/notes.md",
+    "work/20260808-fix-building-group-delete-orphans-units/plan.md",
+    "work/20260808-fix-building-group-delete-orphans-units/research.md",
+    "work/20260808-fix-building-group-delete-orphans-units/state",
+    "work/20260808-fix-building-group-delete-orphans-units/verify.md"
+  ],
+  "precision": 1.00,
+  "recall": 0.14,
+  "f1": 0.25
+}

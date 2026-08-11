@@ -1498,6 +1498,47 @@ concretely, what stops scaling past that, not just asserted:
   ledgers. Named as the next thing to build if this ever needs to scale
   past 4, not attempted here.
 
+## Readability patch — self-red-team
+
+A maintainer patch restructuring `plan.md`/`briefing.md` for readability
+(`work/.build/readability-phase-A-handoff.md`,
+`readability-phase-B-handoff.md`) — no new mechanisms, hooks, agents, or
+capabilities, template/skill-prose only. Two items carried forward rather
+than closed silently:
+
+- **Multi-repo sections shipped undemonstrated against real data.**
+  `## Ship order`, `## Contract change` (`plan.md`) and `## Contracts`,
+  `## Milestone` (`briefing.md`) — every reachable source was checked
+  (spine's own `docs/example/`, both installed projects) and none has a
+  real `workspace.json`/multi-repo task to render-check the new structure
+  against; the two-engineer demo's own README says as much explicitly.
+  Heading text and bullet grammar are unchanged from the pre-patch
+  template, so this patch introduced no new risk to those sections, but
+  the readable restructuring itself is unverified against real multi-repo
+  content. Not a defect, a watch item: the first real multi-repo task run
+  on these templates is the actual test. Per the README's own feedback
+  rule ("when a plan or briefing confuses an engineer, that is a template
+  defect"), any awkwardness surfacing there gets fixed at the template,
+  not patched around in the instance.
+
+- **Backtick-wrapped predicted-touch paths — caught once, prose-guarded,
+  pre-loaded ratchet trigger.** During this patch's own demonstration,
+  wrapping a `## Predicted touch` path in Markdown backticks silently
+  zeroed `conformance`'s match for that entry — its `awk` keeps the string
+  byte-for-byte, and a real `git diff` path is never backtick-wrapped, so
+  a genuinely correct prediction still scored as a miss. Fixed in the one
+  instance caught; guarded going forward only by a template comment
+  (prose, not a mechanical check) telling whoever fills the section not to
+  Markdown-format the path. One instance — not yet `/ratchet`-eligible (it
+  requires two: two `deviations.md` records, two adversary verdicts, or
+  two relayed review comments citing the same fact). Recorded here as the
+  pre-loaded trigger, so nobody has to remember "didn't this happen
+  before?" if a second real instance turns up (a deviations.md record, an
+  adversary finding, or a plan whose conformance score looks wrong for no
+  apparent reason): that's instance two, and the ratchet response is
+  already decided — a one-line normalization or validation added to
+  `core/scripts/conformance` itself, not another comment.
+
 ## `spine/work/.build/` — keep it
 
 Recommend keeping this directory as install history, per the build

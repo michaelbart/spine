@@ -261,8 +261,13 @@ explicitly when you present the plan for approval so the human's review
 accounts for it.
 
 Write `work/<task-id>/plan.md` yourself, following
-`${CLAUDE_SKILL_DIR}/../../templates/plan.md`'s structure exactly — the
-`## Predicted touch` section is machine-parsed verbatim by
+`${CLAUDE_SKILL_DIR}/../../templates/plan.md`'s structure exactly, and
+its prose sections (the gist, what could go wrong, how we'll know it
+worked) per the writing mandate at
+`${CLAUDE_SKILL_DIR}/../../templates/writing-mandate.md` — plain
+language, bottom line first, nothing pushed below a section's first
+line. The `## Predicted touch` section (inside its own `<!-- MACHINE:
+predicted-touch -->` fence) is machine-parsed verbatim by
 `core/scripts/conformance`, don't reformat it (multi-repo: every entry
 repo-qualified, `<repo-name>:<path>`, per the template's own comment).
 **200-line hard cap, comments included** — `wc -l` it before presenting;
@@ -278,11 +283,11 @@ classification and this line disagree, so a wrong guess here is caught,
 never silently trusted. See `core/templates/plan.md`'s own comments and
 `core/rules/contracts.md` for what each value means. If
 this task belongs to a milestone (`work/<task-id>/milestone` set), the
-plan's `## Approach` must be consistent with that milestone's `##
+plan's `## The gist` must be consistent with that milestone's `##
 Inter-task contracts` — what a prior member task already left true is a
 real constraint on this plan, not optional context; if the plan needs to
 violate one, that's a deviation against the milestone itself and belongs
-in the plan's own rejected-alternatives reasoning, said explicitly, not
+in the gist's own rejected-alternative reasoning, said explicitly, not
 silently contradicted. If any decision from `/design` grounds this plan,
 add the `## Grounds on decisions` section per `core/templates/plan.md`.
 
@@ -379,20 +384,25 @@ during `research`/`plan`.
 
 Work the plan's steps directly (you have full tool access again; `phase-gate`
 no longer applies, `path-escalate`/`dep-gate` still do). For each decision
-you hit, use the plan's latitude table:
+you hit, match it against the plan's `## What I'll decide alone vs. stop
+and ask` section — its three lists carry the same fixed tier keywords
+`deviations.md`'s own `- Tier:` field uses (`decide-alone` /
+`record-and-proceed` / `halt`), so the match is literal, not judgment-call
+vocabulary translation:
 
-- **Decide-alone** — just decide, keep going, no record.
-- **Record-and-proceed** — append a record to `work/<task-id>/deviations.md`
-  (use `${CLAUDE_SKILL_DIR}/../../templates/deviations.md`'s shape; tier
+- **I'll just do** (`decide-alone`) — just decide, keep going, no record.
+- **I'll do and note** (`record-and-proceed`) — append a record to
+  `work/<task-id>/deviations.md` (use
+  `${CLAUDE_SKILL_DIR}/../../templates/deviations.md`'s shape; tier
   `record-and-proceed`, status `resolved` immediately since proceeding *is*
   the resolution), then keep going.
-- **Halt** — schema, public contracts, new dependencies, auth logic, or
-  anything protected-path (the hooks enforce the file-level cases
-  independently). Append a deviations.md record with status `open`, stop
-  implementing, and tell the human what you need resolved. This is a
-  legitimate non-recurring touchpoint (build prompt §2.7) — it does not
-  happen on every task, only when reality diverges from the plan in a
-  halt-tier way.
+- **I'll stop and ask before** (`halt`) — schema, public contracts, new
+  dependencies, auth logic, or anything protected-path (the hooks enforce
+  the file-level cases independently). Append a deviations.md record with
+  status `open`, stop implementing, and tell the human what you need
+  resolved. This is a legitimate non-recurring touchpoint (build prompt
+  §2.7) — it does not happen on every task, only when reality diverges
+  from the plan in a halt-tier way.
 
 **Circuit breaker:** count every deviations.md record regardless of tier.
 On the third for this task, the plan is invalidated — `git stash push -u -m

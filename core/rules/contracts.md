@@ -40,15 +40,15 @@ contract-touch` classifies every touched contract's spec diff as
 contains any removed or modified line — a modified line is a remove+add
 pair in a unified diff, so this catches in-place changes too, not just
 outright deletions). `/verify`'s aggregation fails a task outright if any
-touched contract classifies `breaking` unless that task's own
-`plan.md` declares `## Contract change: expand` or `## Contract change:
-contract` (i.e., it is knowingly one leg of a decomposed milestone, per
-above) — this is what makes "breaking contract changes are refused as a
-single task" a checked claim instead of a written-down intention, and it
-is independent of what the plan *claims* it's doing: a plan that calls
-itself additive while its own diff removes or rewrites a line still fails,
-because the classification comes from the diff, not the human's or the
-model's say-so.
+touched contract classifies `breaking` unless that task's own `plan.md`
+declares `expand` or `contract` in its `## Contract change` section (i.e.,
+it is knowingly one leg of a decomposed milestone, per above) — this is
+what makes "breaking contract changes are refused as a single task" a
+checked claim instead of a written-down intention, and it is independent
+of what the plan *claims* it's doing: a plan that calls itself additive
+while its own diff removes or rewrites a line still fails, because the
+classification comes from the diff, not the human's or the model's
+say-so.
 
 **Disclosed residual**: this mechanical check catches every
 removal-or-modification-shaped break. It does **not** catch an

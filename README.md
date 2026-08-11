@@ -121,6 +121,14 @@ one-page briefing when it ships. That's the entire recurring interaction
 this system asks of you — everything else (research, the deterministic
 floor, adversarial review) happens without you in the loop, by design.
 
+**When a plan or briefing confuses you, that's a template defect — say so,
+and fix the template, not the instance.** A one-off rewrite of a
+confusing plan evaporates the next time one ships; a fix to
+`core/templates/plan.md` or `briefing.md` (or the writing mandate both
+draw on) persists for every artifact after it — the same compounding
+`/ratchet` gives the rest of this system, applied to the two documents you
+actually read every task.
+
 ## Staying installed
 
 Updating the core is `git pull` in this checkout — zero commits in any

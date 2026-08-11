@@ -1,70 +1,96 @@
 <!--
-Written by /ship. ≤1 page — the human reads this once, at merge. This is
-the mental-alignment artifact (build prompt §1, failure mode 5, named first
-by the engineer): if reading this doesn't leave the engineer knowing what
-their product now does and why, it failed at its one job. Don't pad it to
-look thorough; cut anything without a reason to be here.
+Written by /ship. ≤1 page, hard — the human reads this once, at merge.
+This is the mental-alignment artifact (build prompt §1, failure mode 5,
+named first by the engineer): if reading this doesn't leave the engineer
+knowing what their product now does and why, it failed at its one job.
+Don't pad it to look thorough; cut anything without a reason to be here.
+
+Full detail already lives in the task's own record — `plan.md`,
+`verify.md`, `deviations.md`, the ledger, all pointed at by this file's
+own closing line. This document's rule is "nothing omitted, only
+ordered": everything material appears, headline-first, with a pointer
+into the record for depth — simplifying a section into silence is a
+defect here, same as burying its point three sentences down.
+
+**No script or skill reads a previously-written briefing.md back in**
+(verified against every consumer in `spine/work/.build/
+readability-phase-A-handoff.md` — this file is pure human output). The
+**bold-label** convention below (`**Floor:**`, `**Overrides & bypasses:**`,
+etc.) is kept anyway, and kept stable across tasks, on purpose: it costs
+nothing today and it's what makes this file `grep`-able the day something
+(`/costs`, most likely) starts reading briefings in aggregate instead of
+one at a time. Don't rename a label casually.
+
+**The two floors — never compressed below these, regardless of how tight
+the one-page budget gets:**
+- Adversary findings: count + max severity + one-line gist each, plus a
+  pointer into `verify.md`. If the page is overflowing, cut optional prose
+  elsewhere first — never this line.
+- Overrides/bypasses: never folded into a single line that could bury one,
+  never omitted when real, never summarized into "some overrides occurred."
+
+Multi-repo (Extension B) and milestone sections below are each explicitly
+optional — omit the whole section (not an empty one) when this task is
+single-repo, touches no declared contract, or isn't part of a milestone.
 -->
 
-# `<task-id>`: <one-line summary>
+# Shipped: `<task-id>` — <title in plain words>
 
-## What changed
+**What & why:** <One or two sentences — what is now true that wasn't, and
+the reason it was worth doing. Full step-by-step detail already lives in
+`plan.md`; this is the headline, not the changelog. Written for the
+engineer who wasn't in this task.>
 
-<!-- The actual behavior change, in product terms first, code terms second. -->
+**What surprised us:** <Deviations in human terms, one line per
+`deviations.md` record — what the plan assumed, what was actually true,
+how it was resolved. "Nothing — the plan held." if none. Never manufactured,
+never hidden.>
 
-## Why
+**Verification, honestly:**
+- Floor: <pass, or what failed and how it resolved>
+- Re-grounding: <ship-time re-check result — "check-stale: ok, floor
+  re-run: pass" is the unremarkable case, still shown verbatim>
+- Adversaries: <count + max severity + one-line gist each, with pointer:
+  "details: verify.md §n". Never paraphrased below count + severity +
+  pointer — see this file's own header note>
+- Capability gaps: <capabilities that degraded verification this task,
+  named plainly with their recorded reason, or "none">
+- Tooling gaps: <quoted verbatim from verify.md's own Tooling gaps section
+  — never re-derived — or "none">
+- Plan accuracy: <conformance in words: "diff landed where the plan said"
+  or "drifted: <where> — see verify.md">
+- Approver (Class 2 only): <second-approver identity — omit this bullet
+  entirely for Class 0/1, or when an override made it into "Overrides &
+  bypasses" below instead>
 
-<!-- The request this served — link the charter line or prior decision if
-     one drove it. -->
+<!-- Omit the whole "Contracts" section for a single-repo task, or a
+     multi-repo task whose contract-touch run found nothing touched. -->
 
-## Deviations taken
+**Contracts:** <Per touched contract: name, spec_change classification,
+which consumer repos entered blast radius, any [UNDECLARED] coupling the
+falsifier's cross-repo mandate found. A touched contract with zero findings
+is still worth its one line — a clean bill is not the same as an omitted
+section.>
 
-<!-- One line per deviations.md record, resolution included. "None" if none
-     occurred — don't manufacture one, don't hide one. -->
+<!-- Omit "Overrides & bypasses" entirely when none occurred this task —
+     never leave it present-but-empty. -->
 
-## Decisions made
+**Overrides & bypasses:** <Any `--bypass`, claims-check `--diff`
+[UNDECLARED] override, or second-approver self-approval override — each
+its own line, the recorded reason included, loud. Never folded into a
+single summarizing line.>
 
-<!-- Links into docs/decisions/ for anything distilled from this task's
-     deviations or escalations. -->
+<!-- Omit "Milestone" entirely when this task isn't part of one. -->
 
-## Contracts touched
+**Milestone:** <If this isn't the milestone's completing ship: one line
+noting which milestone and that member tasks remain. If it is: which
+milestone, and whether its Done-definition is actually met by real state
+right now — say so plainly if it isn't; a milestone reported done that
+silently isn't is exactly the failure mode this line exists to make loud.>
 
-<!-- Omit this whole section for a single-repo task, or a multi-repo task
-     whose contract-touch run found nothing touched. When present: each
-     touched contract, its spec_change classification, which consumer
-     repos were gated via contract-check (vs. edited directly and gated by
-     their own floor), and any undeclared coupling the falsifier's
-     cross-repo mandate surfaced — build prompt §2's "registry coverage
-     made visible, so neglect is loud." A registry_stale warning from
-     contract-touch belongs here too, not just in the raw artifact. -->
+**In six months you'll want to know:** <One sentence. The non-obvious
+thing — the constraint honored, the trap avoided, the decision that looks
+arbitrary but isn't. Often the sharpest line in the document; don't let it
+default to a restatement of "what changed.">
 
-## Milestone done-definition
-
-<!-- Omit this whole section if this task isn't part of a milestone, or is
-     part of one that isn't completing with this ship (core/skills/ship/
-     SKILL.md §3). When present: which milestone, and whether its
-     Done-definition is actually met by real state right now — say so
-     plainly if it isn't; a milestone reported "done" that silently isn't
-     is exactly the skeleton-skip failure mode this section exists to
-     make loud instead of quiet. -->
-
-## Capability gaps that degraded verification
-
-<!-- Pulled from verify.md's capability-gaps section. "None" if the floor
-     ran at full strength for this class. -->
-
-## Tooling gaps
-
-<!-- Quoted straight from verify.md's own "Tooling gaps" section — never
-     re-derived. This is about spine's own scripts being unreachable
-     during this task (ledger, check-stale, conformance, verdict-filter,
-     floor), distinct from the capability gaps above. "None" if genuinely
-     empty; a rising count of these across tasks (see /costs) means the
-     engineer is running a lighter version of this system than they think
-     they are. -->
-
-## What you'd want to know in six months
-
-<!-- The one thing a future engineer (possibly you) debugging this area
-     would wish this briefing had said. Often the sharpest line in the
-     document; don't skip it because the rest felt complete. -->
+Record: `work/<task-id>/` — plan, verify.md, deviations.md, ledger.

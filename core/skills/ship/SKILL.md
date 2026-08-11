@@ -221,31 +221,54 @@ automatic just because every member task individually shipped.
 ## 4. Write the delta briefing
 
 `work/<task-id>/briefing.md` from
-`${CLAUDE_SKILL_DIR}/../../templates/briefing.md`. ≤1 page. Pull capability
-gaps straight from `verify.md`, tooling gaps straight from `verify.md`'s own
-"Tooling gaps" section (never re-derive or re-summarize it — quote), deviations
-straight from `deviations.md`, decisions from what §2 just produced (or
-"none"), milestone done-definition result from §3 if this was a completing
-ship (omit the section entirely otherwise — not every task belongs to a
-milestone). **Multi-repo**: "Contracts touched" (omit entirely if
-`contract-touch.json` reported nothing touched) — quote, per touched
-contract, its `spec_change`/`registry_stale` and each gated consumer's
-`contract-check` result straight from `verify.md`'s own "Contract
-conformance" section (never re-derive), plus any undeclared-coupling
-finding the falsifier's cross-repo mandate kept (build prompt §2:
-"registry coverage made visible, so neglect is loud" — a touched contract
-with zero findings and zero gaps is still worth its one line here, a clean
-bill is not the same as an omitted section). If this ship used `--bypass`,
-its own section here is not optional. **Ship-time re-grounding** (Extension
-C §2.4): one line, quoted from what §0 recorded — "check-stale: ok,
-floor re-run: pass" is the unremarkable case, still shown. **Second
-approver** (Extension C §2.6, Class 2 only): the approver's identity,
-always shown for a Class 2 task; if `.override == true`, its own
-un-omittable subsection with the override reason, same visibility
-standard as the bypass section — never folded into a single "approvals"
-line that could bury it. The "what you'd want to know in six months" line
-is the one line most worth spending real thought on — don't let it
-default to a restatement of "what changed."
+`${CLAUDE_SKILL_DIR}/../../templates/briefing.md`, its prose per the
+writing mandate at
+`${CLAUDE_SKILL_DIR}/../../templates/writing-mandate.md`. ≤1 page, hard.
+Section by section, each sourced only from what's already been produced —
+this file quotes, it doesn't re-derive:
+
+- **What & why** / **What surprised us**: one or two sentences on what's
+  now true and why; deviations straight from `deviations.md`, one line
+  each, resolution included ("Nothing — the plan held." if none).
+- **Verification, honestly** bullets — `Floor` from `verify.md`'s floor
+  result; `Re-grounding` quoted from what §0 recorded ("check-stale: ok,
+  floor re-run: pass" is the unremarkable case, still shown); `Adversaries`
+  as count + max severity + one-line gist each, pointer to `verify.md`,
+  never compressed further (this file's own header note); `Capability
+  gaps` straight from `verify.md`; `Tooling gaps` straight from
+  `verify.md`'s own "Tooling gaps" section (never re-derive or
+  re-summarize — quote); `Plan accuracy` from `conformance.json`'s score,
+  in words. `Approver` (Class 2 only, omit for Class 0/1): the
+  second-approver identity from `second-approver-check`'s real-approver
+  result — omit this bullet (not the fact) when an override put it in
+  "Overrides & bypasses" instead.
+- **Contracts** (multi-repo only, omit entirely if `contract-touch.json`
+  reported nothing touched): per touched contract, its
+  `spec_change`/`registry_stale` and each gated consumer's `contract-check`
+  result straight from `verify.md`'s own "Contract conformance" section
+  (never re-derive), plus any undeclared-coupling finding the falsifier's
+  cross-repo mandate kept (build prompt §2: "registry coverage made
+  visible, so neglect is loud" — a touched contract with zero findings and
+  zero gaps is still worth its one line, a clean bill is not the same as
+  an omitted section).
+- **Overrides & bypasses** (omit entirely if none occurred): `--bypass`'s
+  own line is not optional when used; a plan-time claims-check override
+  (`work/<task-id>/deviations.md`'s own record of it, per
+  `core/skills/task/SKILL.md` §3) gets its own line here too; a
+  second-approver self-approval override (`.override == true` in
+  `approval.json`) gets its own line with the override reason, same
+  visibility standard as `--bypass` — never folded into a single
+  "approvals" line that could bury it. A ship-time `claims-check --diff`
+  `[UNDECLARED]` collision is a halt-tier deviation, not an override —
+  it belongs in "What surprised us," not here.
+- **Milestone** (omit entirely if this task isn't part of one): §3's
+  result — which milestone, and (only on the completing ship) whether its
+  Done-definition is actually met by real state, said plainly either way.
+- **In six months you'll want to know** is the one line most worth
+  spending real thought on — don't let it default to a restatement of
+  "What & why."
+- **Record**: `work/<task-id>/` — the pointer into the full artifacts this
+  briefing summarized, always present, last line.
 
 ## 5. Ledger and commit
 

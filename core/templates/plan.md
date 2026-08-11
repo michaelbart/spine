@@ -3,28 +3,46 @@ Hard cap: 200 lines, this comment block included. If it doesn't fit, the
 task splits — this is a forcing function, not a formality. Before proposing
 this plan for approval, count the lines.
 
-`## Predicted touch` below is machine-parsed verbatim by
-core/scripts/conformance: the heading text must be exactly that, each entry
-a `- path/to/file` bullet (single leading dash-space), and an optional
-` — trailing description` is allowed and stripped before scoring. Don't
-reformat that section.
+Two layers here, per the writing mandate
+(core/templates/writing-mandate.md): the prose sections (gist, risks,
+latitude, steps, how we'll know) are the human review surface — plain
+language, headline first, everything material present, nothing pushed
+below its section's first line. The `<!-- MACHINE: ... -->`-fenced
+sections are read verbatim by a script or a skill's own deterministic
+instructions, not by a human skimming — don't reformat what's inside a
+fence, and don't let the fenced content and the prose above it disagree
+about which files or decisions are in play.
 
-`## Grounds on decisions`, if present, is machine-parsed the same way by
-`/ship`'s decision-lifecycle step: exact heading, one `- D-<seq>` bullet
-per cited decision, same optional trailing-description convention. Omit
-the whole section (not an empty one) if this plan doesn't ground on any
-docs/decisions/ record.
+**Only `## Predicted touch` is read by a real script**
+(`core/scripts/conformance`, plain `awk`): a line matching
+`^## Predicted touch` opens capture, each following `^- ` line is kept
+(with the leading `- ` and anything from the first ` — ` onward
+stripped), capture closes at the next `^## ` heading or EOF. That heading
+text and single-dash-space bullet form must appear byte-for-byte inside
+the fence — see the fenced block below.
+
+**`## Grounds on decisions`, `## Ship order`, and `## Contract change`
+are read by `/task` and `/ship`'s own instructions**, not a compiled
+parser — but the heading text and bullet grammar are just as load-
+bearing, because those skills fail silently and partially on a
+malformed section, never loudly the way a script would. Keep them exact.
 
 **Multi-repo tasks (Extension B, one plan for the whole workspace task —
 build prompt §2, "one task folder at the workspace, one plan, one human
 approval"):** every `## Predicted touch` entry is repo-qualified,
 `<repo-name>:<path>` (e.g. `api:src/routes/items.ts`), even for a repo
-this plan only touches once — `core/scripts/conformance` and
-`core/scripts/contract-touch` both split on the first `:` to resolve which
-repo's own git tree a bare path belongs to; an unqualified entry in a
-multi-repo plan cannot be scored or diffed against anything. Two more
-sections apply only to a multi-repo plan, both omitted entirely (not left
-empty) for a single-repo one:
+this plan only touches once. `/verify` is what splits these apart per
+repo when it runs `conformance` and `contract-touch` (it writes a
+scratch, single-repo copy of the predicted-touch list before invoking
+either) — neither script itself parses the `<repo-name>:` prefix; both
+take one `--project` per invocation and resolve repos from
+`workspace.json`'s own `repos[]` list. An unqualified entry in a
+multi-repo plan still cannot be scored or diffed against anything, so
+the repo-qualification rule stands regardless of which script ends up
+doing the split.
+
+Two sections apply only to a multi-repo plan, both omitted entirely (not
+left empty) for a single-repo one:
 
 - `## Ship order` — required the moment `## Predicted touch` names more
   than one repo, or has any unqualified (workspace-native) entry alongside
@@ -48,16 +66,52 @@ empty) for a single-repo one:
   gates.
 -->
 
-# Plan: <task title>
+# Plan: `<task-id>` — <title in plain words>
 
-Task: `<task-id>` · Class: `<0|1|2>` · Research: `<research sha>`
-(`work/<task-id>/research.md`)
+<!-- MACHINE: header -->
+task: <task-id>   class: <0|1|2>   owner: <git identity>   milestone: <id|none>
+grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan grounds on any docs/decisions/ record, add>, decisions <D-id, D-id, ...>
+<!-- /MACHINE -->
 
-## Approach
+## The gist
 
-<!-- The shape of the change in a few sentences. Not step detail — that's
-     below. If there were real alternatives, name the one rejected and why
-     in one line; don't write a design-doc comparison here. -->
+<!-- One sentence: what this task makes true that isn't true now. Then two
+     to five sentences, plain words, no jargon beyond real code names: what
+     changes, where, and the shape of the approach. If there were real
+     alternatives, name the one rejected and why in one line — this is not
+     a design-doc comparison. A reader who stops here knows what they're
+     approving. -->
+
+## What could go wrong
+
+<!-- The two or three real risks, in human terms — the thing the research
+     flagged, the invariant being edged, the blast radius. Not boilerplate:
+     "edge cases may exist" is not a risk, it's a non-statement (see the
+     writing mandate). If the honest answer is "little", say that in one
+     line and stop. -->
+
+## What I'll decide alone vs. stop and ask
+
+<!-- build prompt §2.4. Every kind of decision this task might hit, sorted
+     into exactly one of the three tiers below. Each list's parenthetical
+     keyword is the literal `- Tier:` value `deviations.md` records against
+     it (core/templates/deviations.md) — keep the keyword even though the
+     heading text around it is free prose, so a real deviation can always
+     be traced back to the tier that predicted it. Halt is not negotiable
+     regardless of what's written here: schema, public contracts, new
+     dependencies, auth logic, and anything matching a protected-path glob
+     always halt — the hooks enforce the file-level cases independent of
+     this list. -->
+
+**I'll just do** (`decide-alone`):
+- Naming, private structure, test organization
+
+**I'll do and note** (`record-and-proceed`):
+- Unanticipated but inside declared boundaries — logged to `deviations.md`,
+  then I keep going
+
+**I'll stop and ask before** (`halt`):
+- Schema, public contracts, new dependencies, auth logic, protected paths
 
 ## Steps
 
@@ -68,31 +122,37 @@ Task: `<task-id>` · Class: `<0|1|2>` · Research: `<research sha>`
 1. <what> — **acceptance:** <check>
 2. <what> — **acceptance:** <check>
 
-## Latitude table
-
-<!-- build prompt §2.4. Every kind of decision this task might hit, sorted
-     into exactly one tier. Halt-tier is not negotiable regardless of what's
-     written here: schema, public contracts, new dependencies, auth logic,
-     and anything matching a protected-path glob always halt — the hooks
-     enforce the file-level cases independent of this table. -->
-
-| Tier | Covers |
-|---|---|
-| Decide-alone | Naming, private structure, test organization |
-| Record-and-proceed | Unanticipated but inside declared boundaries — log to `deviations.md`, keep going |
-| Halt | Schema, public contracts, new dependencies, auth logic, protected paths |
-
+<!-- MACHINE: predicted-touch -->
 ## Predicted touch
 
 <!-- Every file expected to change. This is what conformance.md scores
      against the real diff after implementation — a low score means this
      list was wrong, which means research or planning missed something.
      Be concrete; "various files in lib/" is not a predicted-touch entry.
-     Multi-repo: every entry is repo-qualified, `<repo-name>:<path>`. -->
+     Multi-repo: every entry is repo-qualified, `<repo-name>:<path>`.
+     Write the bare path, no backticks/code-fencing around it — conformance
+     compares this string byte-for-byte against real `git diff` output,
+     which is never backtick-wrapped; a Markdown-formatted path silently
+     scores as a miss even when the file matches (caught for real during
+     this patch's own demonstration re-render). -->
 
 - <path/to/file1> — <why>
 - <path/to/file2> — <why>
+<!-- /MACHINE -->
 
+## How we'll know it worked
+
+<!-- One short paragraph: what the floor, the adversaries, and (if
+     applicable) smoke will demonstrate. Then, plainly, anything
+     verification cannot show this time — name the absent capability, per
+     `.spine/capabilities.json`'s own reason, not something discovered
+     later and quietly absorbed. -->
+
+<!-- The two sections below are appendices, not part of the human review
+     narrative above — omit each entirely (not left empty) when it doesn't
+     apply, per this file's own header comment. -->
+
+<!-- MACHINE: grounds-on-decisions -->
 ## Grounds on decisions
 
 <!-- Optional — omit this whole section if this plan doesn't cite any
@@ -105,7 +165,9 @@ Task: `<task-id>` · Class: `<0|1|2>` · Research: `<research sha>`
 
 - D-<seq> — <why this plan grounds on it>
 - <repo-name>:D-<seq> — <why this plan grounds on it>
+<!-- /MACHINE -->
 
+<!-- MACHINE: ship-order -->
 ## Ship order
 
 <!-- Multi-repo only — omit entirely for a single-repo plan. Ordered list
@@ -115,12 +177,15 @@ Task: `<task-id>` · Class: `<0|1|2>` · Research: `<research sha>`
 
 1. <repo-name>
 2. <repo-name>
+<!-- /MACHINE -->
 
+<!-- MACHINE: contract-change -->
 ## Contract change
 
 <!-- Only when this task's diff touches a declared contract. One of:
      expand | migrate | contract | additive. See core/rules/contracts.md —
      a `breaking` diff classification on a plan that doesn't say `expand`
-     or `contract` here fails /verify outright, regardless of this line. -->
+     or `contract` here fails `/verify` outright, regardless of this line. -->
 
 <expand | migrate | contract | additive>
+<!-- /MACHINE -->
