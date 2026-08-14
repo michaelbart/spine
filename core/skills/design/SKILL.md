@@ -138,8 +138,28 @@ noticing even though the verdict itself never reaches the human).
 
 ## 6. Resolve findings — the human's call, every time
 
-For each kept verdict: present it to the human. Two outcomes, both real,
-neither silent:
+For each kept verdict: present it to the human — but the verdict's own
+claim/evidence text alone is not enough to present. A human triaging a
+stream of these is not re-reading the whole charter and design-review.md
+in parallel to reconstruct why a given finding matters; that
+reconstruction is your job, not theirs. Every finding you present must
+include, inline, in addition to the verdict itself:
+
+- **Which charter guarantee is actually at stake** — the specific
+  non-negotiable/hard-constraint line this finding threatens, quoted or
+  closely paraphrased, not just "see docs/charter.md."
+- **What breaks in practice if this stays as-is** — one concrete sentence:
+  a specific user action or scenario and its bad outcome, not a repeat of
+  the verdict's own abstract claim.
+
+Group related kept verdicts (e.g. a paired citation from the same
+scenario, or two adversaries independently flagging the same gap from
+different angles) into one presented finding rather than asking about
+each verdict line in isolation — the human is resolving *findings*, and a
+finding that took four verdict entries to state fully is still one
+decision for them to make.
+
+Two outcomes, both real, neither silent:
 
 - **Revise** — amend the cited decision (supersede it — append-only, per
   `docs/decisions/decision.md`'s own lifecycle rules; never edit an
@@ -171,6 +191,25 @@ several, or genuinely deferring some of it) and re-run. **Do not hand off
 while this fails** — this is the mechanical version of the build prompt's
 own "the skeleton-skip anti-pattern must be impossible, not discouraged."
 
+## 7.5. Write the design summary
+
+Write `docs/design-summary.md` from
+`${CLAUDE_SKILL_DIR}/../../templates/design-summary.md` — a plain-prose
+walkthrough of the charter's shape plus every adopted decision, written
+for a human engineer skimming once before their first milestone task, not
+for grep or citation resolution. This is genuinely a different document
+from `docs/decisions/D-*.md`: those are precise and machine-consumable
+(decision-hash, verdict-filter citations); this one exists because a
+human doesn't read eight of those start-to-end to get the gestalt of what
+was decided. Don't paraphrase a decision's full record into this file —
+one short paragraph per adopted decision (what it means practically, not
+its Context/Alternatives-rejected text) ending in a `(see D-<n>)` pointer
+back to the real record. Skip a foundational category entirely here if it
+has no adopted decision, only a `DEFERRED.md` entry — list those under
+this file's own "Open questions" section instead of padding the main
+walkthrough. Regenerate this file (never hand-patch it) if a later
+decision supersedes one it summarizes.
+
 ## 8. Commit and hand off
 
 One commit — same untrailered, setup-shaped precedent `/bootstrap`'s own
@@ -178,16 +217,17 @@ install commit already uses (this is design-stage setup, not a task; there
 is no `Spine-Task:` id to attach yet):
 
 ```
-git add -A -- docs/charter.md docs/decisions/ work/M0/ work/design/ \
-  .spine/capabilities.json .spine/adapters/
+git add -A -- docs/charter.md docs/design-summary.md docs/decisions/ \
+  work/M0/ work/design/ .spine/capabilities.json .spine/adapters/
 git commit -m "spine: design stage — <n> decisions adopted, milestone 0 defined"
 ```
 
 Tell the human: how many decisions were adopted (and the cap they're
 against, from `design-gate`'s own output), what's in `DEFERRED.md` and
-each item's trigger, and that `/task <description> --milestone M0` is the
-next real command — the first member task of the walking skeleton. This
-is a non-recurring event (per the build prompt's constraint that new
-touchpoints must not become recurring ones) — `/design` runs once per
-project (or once per brownfield adoption pass, not exercised by this
-build), never per task.
+each item's trigger, point at `docs/design-summary.md` as the one-page
+read before diving into decision records, and that
+`/task <description> --milestone M0` is the next real command — the first
+member task of the walking skeleton. This is a non-recurring event (per
+the build prompt's constraint that new touchpoints must not become
+recurring ones) — `/design` runs once per project (or once per brownfield
+adoption pass, not exercised by this build), never per task.

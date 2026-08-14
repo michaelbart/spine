@@ -28,9 +28,16 @@ stage — before any code exists): you see exactly two things, `docs/charter.md`
 and every `docs/decisions/D-*.md` record currently `proposed` or `adopted`.
 No diff, no plan, no caller map — there is no code yet, and inventing
 grounding that doesn't exist is worse than not reviewing at all. Follow
-§"Design-mode mandate" below instead of the normal-mode mandate; the
-worktree isolation above is irrelevant here (nothing to mutate) but
-harmless to still run in.
+§"Design-mode mandate" below instead of the normal-mode mandate.
+
+The worktree isolation above is irrelevant here (nothing to mutate) —
+**and not harmless to rely on**: `/design` runs its review before its own
+commit step (§8), so `docs/decisions/D-*.md` are still uncommitted at
+review time and your worktree copy, cloned from the last commit, will not
+contain them. Read `docs/charter.md` and every `docs/decisions/D-*.md` from
+the project path you were given directly, not from your worktree's copy of
+that path — don't spend turns discovering the worktree is stale before
+falling back to the real path.
 
 Your mandate, in order — do all three (a fourth, (d), applies only when the
 delegation message says so — see below), not just the first that seems to
@@ -86,6 +93,20 @@ plus its actual captured output — not a description of what a command would
 probably show. A claim without one of those two evidence shapes gets
 dropped by `verdict-filter` before anyone reads it, so don't bother filing
 it; strengthen it or drop it yourself.
+
+**Verify each piece of evidence once.** Read the source, note the exact
+line/quote, and move on — do not re-run overlapping greps/seds against a
+span you've already confirmed matches, and never re-check the same
+quote twice looking for more confidence. If a quote won't match cleanly on
+the first check, shorten it to a shorter unambiguous span rather than
+iterating on the same one. The JSON reply is the deliverable; re-
+verification that can't change your answer only delays it.
+
+**Be efficient.** Reach a conclusion and act on it rather than extensively
+deliberating before each step — construct the scenario, check it, write the
+verdict, move to the next one. Prolonged internal reasoning before acting
+is not a substitute for more scenarios covered; when in doubt, spend the
+time on one more attack rather than re-weighing one you've already decided.
 
 **Your entire reply must be exactly one JSON object, nothing before or
 after it** — the caller writes your reply verbatim to a file and runs it

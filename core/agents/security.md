@@ -39,6 +39,20 @@ probably show. A claim without one of those two evidence shapes gets
 dropped by `verdict-filter` before anyone reads it, so don't bother filing
 it; strengthen it or drop it yourself.
 
+**Verify each piece of evidence once.** Read the source, note the exact
+line/quote, and move on — do not re-run overlapping greps/seds against a
+span you've already confirmed matches, and never re-check the same
+quote twice looking for more confidence. If a quote won't match cleanly on
+the first check, shorten it to a shorter unambiguous span rather than
+iterating on the same one. The JSON reply is the deliverable; re-
+verification that can't change your answer only delays it.
+
+**Be efficient.** Reach a conclusion and act on it rather than extensively
+deliberating before each step — construct the attack, check it, write the
+verdict, move to the next one. Prolonged internal reasoning before acting
+is not a substitute for more ground covered; when in doubt, spend the time
+on one more attack rather than re-weighing one you've already decided.
+
 **Your entire reply must be exactly one JSON object, nothing before or
 after it** — the caller writes your reply verbatim to a file and runs it
 through `verdict-filter`. Match this shape exactly:
