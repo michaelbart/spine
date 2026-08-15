@@ -1662,14 +1662,15 @@ plot it.
 
 A separate project (`g1-tee-waitlist`) is being run through `/task` for
 real, live work — not a scratch repo built to exercise spine, an actual
-feature getting built. This surfaced eight real discrepancies between what
+feature getting built. This surfaced nine real discrepancies between what
 the skills/docs say happens and what the actual hooks/scripts do, found
-across two tasks' classify→research→plan→implement→verify runs
-(`20260814-login-view`, a login-view feature, findings 1–6; and
-`20260815-waitlist-status-view`, a waitlist-status view, findings 7–8).
-All eight are fixed here; this section is the disclosure the build
-prompt's own self-red-team practice calls for — problem stated plainly,
-root cause, the real fix.
+across three tasks' classify→research→plan→implement→verify runs
+(`20260814-login-view`, a login-view feature, findings 1–6;
+`20260815-waitlist-status-view`, a waitlist-status view, findings 7–8; and
+`20260815-ui-render-adapter`, building the reference `ui-render` adapter
+finding 8 itself added, finding 9). All nine are fixed here; this section
+is the disclosure the build prompt's own self-red-team practice calls
+for — problem stated plainly, root cause, the real fix.
 
 **1. `phase-gate` denied a bookkeeping edit `core/skills/task/SKILL.md`
 itself said was exempt.** The skill's `--milestone` header note said the
@@ -1919,6 +1920,39 @@ built and validated as the reference implementation (Playwright +
 headless Chromium, driving `/login` and `/waitlist-status` with a seeded
 session token) — see that task's own `work/` record for the adapter and
 the demonstration that it catches this exact bug class.
+
+**9. `callers` had no exemption for a root-level tool-convention config
+file, the third distinct instance of this exact bug class in this
+project.** Found while building `g1-tee-waitlist`'s own `ui-render`
+adapter (`20260815-ui-render-adapter`, same project as findings 5-8):
+`floor` failed `callers` on `vite.config.ts`, a file this task legitimately
+added a plugin to. Confirmed directly: nothing anywhere in the tree
+references the literal string `vite.config.ts` — it's loaded by the Vite
+CLI purely by filename convention, the same structural shape `main.ts`
+(loaded by `index.html`'s `<script src>`) and `App.vue` (a relative
+import the original heuristic couldn't match) already needed fixes for in
+finding 5's own login-view task, just one step further removed — `main.ts`
+at least has *a* literal string referencing it somewhere (`index.html`'s
+`<script src="/src/main.ts">`, itself outside `callers`' original `.ts`/
+`.vue`-only scan scope, fixed in finding 7's HTML-scan addition);
+`vite.config.ts` has no reference anywhere at all, by design, since the
+Vite CLI finds it by name rather than being told where it is. **Fix
+(this project's adapter only, not portable to core — the same scoping
+finding 7's rewrite already used)**: added an explicit exemption for
+root-level (`path != */*`) tool-convention config files (`*.config.ts`,
+`*.config.js`, `*.config.mjs`, `tsconfig*.json`) in both `find_callers`
+and the main symbol loop, scoped to the project root only so a real
+application file under `src/` that happens to end in `.config.ts` still
+gets the genuine check. `adapter-conformance callers` reconfirmed
+conformant against the updated self-test (unchanged — the existing pass/
+fail fixtures never touched this new branch, and re-running both modes
+after the fix still passed/failed correctly). This is the third time this
+project's own `callers` adapter has needed a new exemption for a distinct
+entry-point/convention shape (relative/aliased imports in finding 7,
+now toolchain-config-by-filename here) — worth watching whether a fourth
+instance means the heuristic's whole "search for a literal reference"
+approach has a more fundamental gap than exemption-by-exemption patching
+can keep up with, rather than revising the heuristic itself again here.
 
 ## `spine/work/.build/` — keep it
 
