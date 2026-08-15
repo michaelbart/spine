@@ -22,10 +22,21 @@
 # one. Every absolute path under any member repo is therefore already
 # "outside task_dir" under the plain containment check below, with zero
 # logic change — a workspace doesn't need its own containment rule, it
-# falls out of the one that already existed. The only thing workspace.json
-# adds here is a friendlier, repo-qualified name in the denial message
-# (_workspace-route, shared with path-escalate/dep-gate) — a disclosed,
-# deliberately minimal extension, not a second enforcement mechanism.
+# falls out of the one that already existed. Workspace.json also supplies
+# a friendlier, repo-qualified name in the denial message
+# (_workspace-route, shared with path-escalate/dep-gate).
+#
+# **Out-of-project allowance (disclosed fix, not part of the original
+# design)**: check_target now calls workspace_route first and allows
+# outright (return 0) when WSR_OWNER_ROOT comes back empty — a file_path
+# that resolves to nowhere under $project (or any registered member repo
+# in workspace mode) at all, e.g. a path in the user's home directory
+# unrelated to this project. This hook exists to restrict where a task's
+# own artifacts land *inside a project it's actively gating*; a location
+# outside that project entirely was never task_dir and was never meant to
+# be denied by this hook — the pre-fix behavior denied it anyway, purely
+# because _workspace-route's single-repo branch didn't yet distinguish
+# "under $project" from "anywhere" (see that file's own header comment).
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,8 +63,17 @@ esac
 task_dir="$project/work/$task_id"
 
 check_target() {
-  # check_target <file_path-as-given> — denies if outside task_dir
+  # check_target <file_path-as-given> — denies if outside task_dir, but
+  # first allows outright if the path isn't even inside the project
+  # (workspace_route's WSR_OWNER_ROOT empty — see its own header comment
+  # on the out-of-project fix): this hook only ever governs artifacts
+  # belonging to a project it recognizes, never arbitrary filesystem
+  # locations like a user's own notes directory outside any project tree.
   local file_path="$1" abs_path display
+
+  workspace_route "$project" "$file_path"
+  [[ -n "$WSR_OWNER_ROOT" ]] || return 0
+
   case "$file_path" in
     /*) abs_path="$file_path" ;;
     *) abs_path="$project/$file_path" ;;
@@ -61,7 +81,6 @@ check_target() {
   case "$abs_path" in
     "$task_dir"/*) return 0 ;;
     *)
-      workspace_route "$project" "$file_path"
       if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$WSR_REL"; else display="$file_path"; fi
       echo "phase-gate: '$display' is outside work/$task_id/. During the $phase phase, only artifacts inside the task folder may be written — implementation hasn't been approved yet." >&2
       return 1

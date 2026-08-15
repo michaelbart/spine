@@ -1658,6 +1658,141 @@ do with planning quality. Treat the fix's ship date as a hard discontinuity
 in that trend, not a real quality jump, if `/costs` is ever extended to
 plot it.
 
+## Real-world testbed findings — g1-tee-waitlist
+
+A separate project (`g1-tee-waitlist`) is being run through `/task` for
+real, live work — not a scratch repo built to exercise spine, an actual
+feature getting built. This surfaced four real discrepancies between what
+the skills/docs say happens and what the actual hooks/scripts do, found
+during one Class 2 task's classify→research→plan→implement→verify run
+(`20260814-login-view`, a login-view feature). All four are fixed here;
+this section is the disclosure the build prompt's own self-red-team
+practice calls for — problem stated plainly, root cause, the real fix.
+
+**1. `phase-gate` denied a bookkeeping edit `core/skills/task/SKILL.md`
+itself said was exempt.** The skill's `--milestone` header note said the
+milestone.md `TBD`-replacement edit happens "during step 1, before
+`phase-gate` would even apply" — but step 1's actual body wrote
+`work/<task-id>/state` = `research` *before* reaching that edit, so by the
+time the edit ran, `phase-gate`'s gating condition (`state` file exists,
+reads `research`/`plan`) was already true, and the hook correctly denied
+a write outside `work/<task-id>/`. The header's intent was right; the
+body's sequencing contradicted it. **Fix**: reordered step 1 so the
+milestone block runs immediately after `mkdir -p work/<task-id>` and
+before the `state` write — no hook change needed, since `phase-gate`
+already no-ops when no `state` file exists yet. This is a documentation/
+ordering bug, not a missing hook feature.
+
+**2. `phase-gate`'s containment check had no notion of "inside the
+project at all."** `_workspace-route`'s single-repo branch (no
+`workspace.json`) unconditionally set `WSR_OWNER_ROOT="$project"` for
+*any* `file_path`, even one nowhere under `$project` — asymmetric with its
+own workspace-mode branch, which already fell back to
+`WSR_OWNER_ROOT=""` for a genuinely unmatched path. `path-escalate` and
+`dep-gate` both already guard `[[ -n "$WSR_OWNER_ROOT" ]] || return 0`, so
+this asymmetry meant that guard could only ever fire in workspace mode —
+in single-repo mode it was permanently unreachable, and both hooks denied
+(or asked, for dep-gate) on paths entirely outside the project. `phase-
+gate` didn't even call `workspace_route` for its own allow/deny decision
+(only for the denial message's display text), so it denied unconditionally
+on `task_dir` non-containment with zero project-boundary concept anywhere
+in the path. Concretely: this blocked a real attempt, mid-task, to write
+this session's own memory files under `~/.claude/projects/.../memory/` —
+a location with no relationship to the g1-tee-waitlist project at all.
+**Fix, two parts**: (a) `_workspace-route`'s single-repo branch now checks
+containment the same way its workspace-mode branch already did,
+falling back to `WSR_OWNER_ROOT=""`/`WSR_OWNER_NAME="(unknown)"` for a
+path outside `$project` — this makes `path-escalate`/`dep-gate` correctly
+permissive on out-of-project paths in single-repo mode too, for free,
+since their own guards were already correct. (b) `phase-gate`'s
+`check_target` now calls `workspace_route` first and allows outright when
+`WSR_OWNER_ROOT` is empty, before checking `task_dir` containment.
+**Fire-tested** against a scratch project (fresh `.spine/current-task` +
+`work/<id>/state=research`): an out-of-project write now exits 0 (was
+exit 2); an in-project, outside-task-folder write still correctly exits 2;
+an in-task-folder write still exits 0. `path-escalate` and `dep-gate`
+regression-tested the same way — in-project protected-path denial and
+manifest-edit `ask` behavior both unchanged; out-of-project paths now
+correctly no-op in single-repo mode, matching their pre-existing
+workspace-mode behavior.
+
+**3. `check-stale` couldn't distinguish real grounding drift from a
+research doc correctly documenting decision history, and self-invalidated
+on its own task's mutable state.** Two independent bugs surfaced by the
+same research.md: (a) the grounding-decisions check compared a cited
+decision's *current* `- Status:` line against the literal string
+`superseded`, regardless of whether it was *already* superseded at the
+moment the citing research was written. A Class 2 task's researcher was
+correctly instructed to read every relevant decision including already-
+superseded ones, specifically to document *why* and *by what* they were
+superseded (`D-4 superseded by D-7`, `D-6 superseded by D-8`) — this is
+exactly the grounding-decisions header's own stated purpose. But citing an
+already-superseded decision this way permanently, unfixably quarantined
+the research: regenerating reproduces the identical citations and the
+identical "superseded" verdict forever, since D-4/D-6 will never stop
+being superseded. (b) the `files:` grounding list included the citing
+task's own `work/<task-id>/notes.md`, because the researcher agent
+correctly read it for task context — but `notes.md` (like
+`deviations.md`, `ledger.json`, `claims.json`, `flags.json`, `state`, and
+every other file under a task's own folder) is *expected* to change over
+that task's lifetime by design; the tooling-gap discipline requires
+appending to it. Any research.md that cites its own task's mutable
+bookkeeping as grounding self-invalidates the moment anything else in
+that folder is next written, with zero relation to whether the researched
+*subsystem* drifted. **Fix, two parts**: (a) the decision-status check now
+compares status *at the cited sha* (via `git show <sha>:<path>`, same
+resolution the hash check already does) against status *now* — a
+decision that was already superseded at citation time reads identically
+on both sides, forever, and correctly produces zero drift; a decision
+whose status genuinely changed *since* citation (e.g. `adopted` →
+`superseded`) still correctly flags, now with both values named in the
+message. (b) the `files:` loop now skips any entry that resolves under
+the *citing* research.md's own task folder (derived from `$doc`'s own
+path — `work/<task-id>/`, no new header field needed) — a path outside
+that task's own folder (e.g. citing a different task's research.md as
+inter-task context) is unaffected and stays fully driftable.
+**Regression-checked against the real, already-reproduced failing case**:
+re-running `check-stale` against `g1-tee-waitlist`'s actual
+`work/20260814-login-view/research.md` (which had gone genuinely stale
+under the pre-fix logic on D-4, D-6, and notes.md) now reports those three
+items clean, while still correctly flagging the *other* four grounding
+files that had genuinely changed since research was written
+(`work/M0/milestone.md`, `src/App.vue`, `src/main.ts`, `package.json`,
+all real edits made during this same task's implement phase) — the fix
+narrows false-positive drift without weakening real-drift detection.
+
+**4. `/task`'s own instructions told it to do something the harness
+categorically blocks.** `core/skills/task/SKILL.md` step 5 instructed
+`/task` to "invoke `/verify` (Skill tool) with the task ID" and, later,
+"invoke `/ship` (Skill tool) with the task ID." Every spine skill,
+including `verify` and `ship`, carries `disable-model-invocation: true` —
+this is not a per-project or per-hook setting spine controls, it's the
+Claude Code Skill tool's own contract, and it blocks *any*
+model-initiated call, unconditionally, regardless of who's asking or why.
+A running `/task` session attempting this call for real gets a hard
+refusal, not a degraded or partial result — confirmed directly, live,
+during the g1-tee-waitlist task this section is about. `README.md`'s own
+command table described `/verify` as "Invoked automatically by `/task` at
+the verify phase," which was never achievable under the harness's actual
+enforcement. **Decision**: fix the documentation and the handoff pattern,
+not the harness setting — `disable-model-invocation` on every skill in
+this system is a deliberate boundary (build prompt §2.7's "recurring
+human touchpoint" design: classify, plan approval, and now verify/ship are
+all meant to be points where a human is actually in the loop, not
+rubber-stamped by the same session that just finished implementing).
+Stripping the flag so `/task` could self-chain into `/verify`/`/ship`
+would silently convert every one of these into a non-touchpoint — exactly
+the kind of erosion the recurring-touchpoint design exists to prevent.
+**Fix**: `core/skills/task/SKILL.md` step 5 now tells the human plainly to
+run `/verify <task-id>` themselves, stops, and waits — the identical
+posture step 3 already uses for a Class 2 second approver. On resumption,
+it reads `work/<task-id>/verify.md`'s own `Result:` line directly (`PASS`/
+`FAIL`, `core/templates/verify.md`'s own format) rather than trusting a
+verbal summary, then repeats the same ask-and-wait pattern for `/ship`,
+confirming completion afterward by checking `.spine/current-task` was
+actually cleared and `work/<task-id>/briefing.md` actually exists.
+`README.md`'s command table reworded accordingly for both entries.
+
 ## `spine/work/.build/` — keep it
 
 Recommend keeping this directory as install history, per the build

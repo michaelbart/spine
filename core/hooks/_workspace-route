@@ -43,9 +43,11 @@
 #                      WSR_OWNER_ROOT is empty (nothing to make it relative
 #                      to).
 #
-# **Regression guarantee**: when $project/workspace.json does not exist,
-# this always sets WSR_OWNER_ROOT="$project", WSR_OWNER_NAME="(workspace)",
-# WSR_REL=<$file_path relative to $project> — i.e. it degenerates to
+# **Regression guarantee**: when $project/workspace.json does not exist
+# and $file_path resolves under $project, this always sets
+# WSR_OWNER_ROOT="$project", WSR_OWNER_NAME="" (the empty string — see
+# this function's own field-semantics comment above), WSR_REL=<$file_path
+# relative to $project> — i.e. it degenerates to
 # exactly the single-repo rel-path computation every hook already did
 # before workspace routing existed. A caller that routes every target
 # through this function instead of hand-rolling the rel computation gets
@@ -53,6 +55,20 @@
 # single-repo project sees zero behavioral change" a property of the
 # routing helper itself, not something each of the three call sites has to
 # separately get right.
+#
+# **Out-of-project paths, single-repo mode (disclosed behavior change,
+# not a silent regression):** a $file_path that does NOT resolve under
+# $project gets the same WSR_OWNER_ROOT="", WSR_OWNER_NAME="(unknown)"
+# treatment workspace mode already gave a genuinely-unmatched path (below)
+# — previously this branch unconditionally claimed ownership
+# (WSR_OWNER_ROOT="$project") for every path regardless of containment,
+# which meant a hook whose allow/deny logic checks
+# `[[ -n "$WSR_OWNER_ROOT" ]] || return 0` (path-escalate, dep-gate) could
+# never actually exercise that early-return in single-repo mode, only in
+# workspace mode. This symmetry fix means both hooks now correctly no-op
+# on a path outside $project in either mode, and a caller like phase-gate
+# that wasn't consulting this function's ownership result at all before
+# can now do so to add the same "outside my project entirely" allowance.
 workspace_route() {
   local project="$1" file_path="$2" abs_path ws_conf best_root="" best_name="" i n repo_path repo_name
 
@@ -63,12 +79,10 @@ workspace_route() {
 
   ws_conf="$project/workspace.json"
   if [[ ! -f "$ws_conf" ]]; then
-    WSR_OWNER_ROOT="$project"
-    WSR_OWNER_NAME=""
     case "$abs_path" in
-      "$project"/*) WSR_REL="${abs_path#"$project"/}" ;;
-      "$project") WSR_REL="." ;;
-      *) WSR_REL="$file_path" ;;
+      "$project"/*) WSR_OWNER_ROOT="$project"; WSR_OWNER_NAME=""; WSR_REL="${abs_path#"$project"/}" ;;
+      "$project") WSR_OWNER_ROOT="$project"; WSR_OWNER_NAME=""; WSR_REL="." ;;
+      *) WSR_OWNER_ROOT=""; WSR_OWNER_NAME="(unknown)"; WSR_REL="$file_path" ;;
     esac
     return 0
   fi

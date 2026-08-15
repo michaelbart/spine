@@ -22,14 +22,29 @@
 # this document stale two ways, either sufficient on its own:
 #   - its current content hash no longer matches the cited one (the
 #     decision's actual Context/Decision/Consequences changed since), or
-#   - its current `- Status:` line reads `superseded` (regardless of
-#     whether the content hash still matches — a superseded decision is
-#     stale grounding even if nobody has edited its body).
+#   - its `- Status:` line reads differently NOW than it did AT THE CITED
+#     `sha:` (real drift in the decision graph since this research was
+#     grounded) — **not** simply "current status is superseded," full
+#     stop. A decision that was *already* `superseded` at the cited sha
+#     (a task correctly reading it to document why it's superseded, and
+#     by what) produces zero drift on this axis, no matter how many times
+#     check-stale re-runs — the comparison is `status-at-cited-sha` vs
+#     `status-now`, and both sides read `superseded` forever in that case.
+#     This is a disclosed fix over check-stale's original design, which
+#     compared current status against the literal string `superseded`
+#     and so permanently, unfixably quarantined any research that
+#     correctly cited an already-superseded decision as supersession
+#     history — see docs/tradeoffs.md's g1-tee-waitlist testbed findings.
 # A decision's `- Status:` line flipping between any two of
-# proposed/adopted/implemented does NOT by itself count as drift —
-# decision-hash deliberately excludes that line (see its own header
-# comment) so a routine ship-time adopted->implemented flip never
-# spuriously quarantines every research.md that already cites it.
+# proposed/adopted/implemented (at the cited sha vs now) does NOT by
+# itself count as drift — decision-hash deliberately excludes that line
+# (see its own header comment) so a routine ship-time
+# adopted->implemented flip never spuriously quarantines every
+# research.md that already cites it; the status-drift check above only
+# fires on an actual difference between the two readings, and either
+# adopted/implemented reads identically to a citation written under the
+# other in the overwhelming common case (a citation made after the flip
+# already happened just cites the post-flip value on both sides).
 #
 # Multi-repo (Extension B): a `files:` entry may be repo-qualified,
 # `<repo-name>:<path>` — resolved via workspace.json (at --project, which
@@ -39,6 +54,21 @@
 # a single-repo research.md never has a `repos:` block or a qualified
 # `files:` entry, so this is purely additive; see core/templates/
 # research.md's own header comment for the full grammar).
+#
+# **Own-task-folder exemption (disclosed fix)**: a `files:` entry that
+# falls under the *citing* research.md's own task folder
+# (`work/<task-id>/` — derived from `$doc`'s own path, not a new header
+# field) is never checked for drift. Bookkeeping state under a task's own
+# folder (notes.md, deviations.md, ledger.json, claims.json, flags.json,
+# state, class, approval.json) is *expected* to change over that task's
+# lifetime by design — the tooling-gap discipline requires appending to
+# notes.md, for instance. A research.md that (correctly) lists one of its
+# own task's files as something the researcher read for context would
+# otherwise self-invalidate the moment anything else in that folder is
+# later written, with zero relation to whether the researched *subsystem*
+# actually drifted. A path outside the citing task's own folder (e.g.
+# citing a different task's research.md as inter-task context) is
+# unaffected and stays fully driftable.
 #
 # Usage: check-stale <research.md-path> [--project <path>]
 set -uo pipefail
@@ -58,6 +88,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -f "$doc" ]] || { echo "check-stale: $doc not found" >&2; exit 2; }
+
+# Own-task-folder exemption (see header comment): the citing document's
+# own task folder, resolved to an absolute path once. Empty if dirname
+# somehow can't resolve (doc's parent dir doesn't exist) — treated as "no
+# exemption applies" rather than an error, since $doc itself already
+# passed the -f check above.
+task_dir="$(cd "$(dirname "$doc")" 2>/dev/null && pwd)"
 
 header="$(awk '/<!-- spine:research/,/-->/' "$doc")"
 [[ -n "$header" ]] || { echo "check-stale: $doc has no spine:research header — cannot verify grounding" >&2; exit 2; }
@@ -132,6 +169,19 @@ for f in "${files[@]}"; do
     check_sha="$sha"
   fi
 
+  # Own-task-folder exemption: skip entirely if this file resolves under
+  # the citing document's own task_dir (see header comment) — its
+  # bookkeeping state is expected to change over the task's lifetime.
+  if [[ -n "$task_dir" ]]; then
+    check_root_abs="$(cd "$check_root" 2>/dev/null && pwd)"
+    if [[ -n "$check_root_abs" ]]; then
+      abs_check_path="$check_root_abs/$path"
+      case "$abs_check_path" in
+        "$task_dir"/*|"$task_dir") continue ;;
+      esac
+    fi
+  fi
+
   if ! (cd "$check_root" && git cat-file -e "$check_sha:$path" 2>/dev/null); then
     drifted+=("$f (did not exist at $check_sha, or path is wrong)")
     continue
@@ -179,9 +229,29 @@ for entry in ${decisions[@]+"${decisions[@]}"}; do
   fi
   decision_file="${matches[0]}"
 
+  # Decision sha at citation time: the repo-qualified entry's own repo
+  # sha from the header's repos: block, or the top-level sha: for an
+  # unqualified (workspace-native) entry — same split the files: loop
+  # above already uses.
+  if [[ "$did" != "$did_raw" ]]; then
+    decision_check_sha="$(repo_sha_for "$candidate_repo")"
+  else
+    decision_check_sha="$sha"
+  fi
+
   status="$(awk -F': ' '/^- Status: /{print $2; exit}' "$decision_file")"
-  if [[ "$status" == "superseded" ]]; then
-    drifted+=("$did_raw (status: superseded)")
+
+  # Status drift: compare status AT THE CITED SHA against status NOW —
+  # not "does current status read superseded" (see header comment). A
+  # decision already superseded at citation time produces identical
+  # readings on both sides, forever, and is correctly not drift.
+  decision_rel="${decision_file#"$decisions_root"/}"
+  status_at_citation="$(cd "$decisions_root" 2>/dev/null && git show "$decision_check_sha:$decision_rel" 2>/dev/null | awk -F': ' '/^- Status: /{print $2; exit}')"
+  if [[ -z "$status_at_citation" ]]; then
+    drifted+=("$did_raw (could not read status at cited sha $decision_check_sha — cannot verify status drift)")
+    continue
+  elif [[ "$status_at_citation" != "$status" ]]; then
+    drifted+=("$did_raw (status changed since citation: was '$status_at_citation', now '$status')")
     continue
   fi
 

@@ -47,12 +47,14 @@ re-verifying), and `## Capability targets` all become planning context for
 every phase below. Once this task's ID is generated (step 1), replace this
 milestone's first still-`TBD` member-task line with the real task ID
 (`Edit` on `work/<id>/milestone.md` — this is bookkeeping, not a phase
-artifact, so it's exempt from `phase-gate`'s task-folder restriction the
-same way any pre-approved administrative edit would need to be; do it
-during step 1, before `phase-gate` would even apply). Record
-`work/<task-id>/milestone` = `<id>`, one line, so `/ship` (final member
-task's own done-definition check) and a resumed session both know this
-task belongs to a milestone without re-parsing `$ARGUMENTS`.
+artifact). **Do this before writing `work/<task-id>/state` in step 1, not
+after** — `phase-gate` only restricts `Edit`/`Write` to a task's own
+`work/<task-id>/` once that task has a `state` file reading `research` or
+`plan`; with no `state` file written yet, this edit is simply outside the
+hook's gating window, not something the hook has to carve out a special
+case for. Record `work/<task-id>/milestone` = `<id>`, one line, so `/ship`
+(final member task's own done-definition check) and a resumed session both
+know this task belongs to a milestone without re-parsing `$ARGUMENTS`.
 
 State lives in three places, and every phase transition below updates them
 — they are not decoration, the hooks (`core/hooks/phase-gate`,
@@ -187,17 +189,22 @@ Every task gets a class, and the human confirms it — not the model alone
 Once confirmed, for Class 1/2: generate the task ID
 `<YYYYMMDD>-<kebab-slug>` (today's date, a short slug from the description),
 `mkdir -p work/<task-id>`, write `.spine/current-task`, write
-`work/<task-id>/class`, write `work/<task-id>/state` = `research`, then
+`work/<task-id>/class`. **If `--milestone <id>` was given, do this next
+step now, before writing `work/<task-id>/state`** — write
+`work/<task-id>/milestone` = `<id>` and replace this milestone's first
+still-`TBD` member-task entry with `<task-id>` in `work/<id>/milestone.md`,
+per this skill's own header note above (`phase-gate` only gates
+`Edit`/`Write` once a `state` file exists and reads `research`/`plan`; no
+`state` file yet means this edit is a genuine no-op for the hook to
+evaluate, not an exemption it has to special-case). Only after that: write
+`work/<task-id>/state` = `research`, then
 `${CLAUDE_SKILL_DIR}/../../scripts/ledger init <task-id>` and
 `ledger mark <task-id> classify`. If `ledger init` could not run at all,
 this is the ledger-itself-unreachable case in the tooling-gap discipline
 above — hand-author the `ledger.json` stub (`hand_tracked: true`) right
 now, at task creation, rather than waiting for a later phase to notice; a
 task that never gets a ledger.json at all is invisible to `/costs`, not
-just degraded. **If `--milestone <id>` was given**, also write
-`work/<task-id>/milestone` = `<id>` and replace this milestone's first
-still-`TBD` member-task entry with `<task-id>` in `work/<id>/milestone.md`
-now, per this skill's own header note.
+just degraded.
 
 **Registry init (Extension C §2.2), same step, before the first
 `registry-sync`:** resolve owner identity —
@@ -423,16 +430,36 @@ reaffirms it as-is, dated, and the deviations.md resolution records which.
 checks (from the plan) should already pass before you move on — check them
 yourself first; don't hand a known-broken diff to `/verify`. Then: `ledger
 mark <task-id> verify`, write `state` = `verify`, `registry-sync
-<task-id>`, invoke `/verify` (Skill tool) with the task ID.
+<task-id>`.
 
-If `/verify` reports the floor failed: fix it (back to implementation,
-same task, not a new deviation by itself unless the fix itself diverges
-from the plan) and re-run `/verify`. If it passed: write `state` = `ship`,
-`registry-sync <task-id>`, invoke `/ship` (Skill tool) with the task ID.
-`/ship` handles the merge gate, the commit trailer, the briefing, and
+**`/verify` and `/ship` both carry `disable-model-invocation: true` — this
+skill cannot call either one itself, via the Skill tool or any other
+means.** That setting blocks every model-initiated call unconditionally,
+including one this running `/task` session attempts on the human's own
+behalf; only the human literally typing `/verify <task-id>` (or `/ship
+<task-id>`) gets through. Tell the human plainly: implementation is ready,
+please run `/verify <task-id>` yourself. Then stop and wait — this session
+does not proceed to ship on an unverified diff, the same waiting posture
+step 3 already uses for a Class-2 second approver.
+
+When resumed, **read `work/<task-id>/verify.md` directly** to learn the
+outcome — don't infer it from the human's own summary of what happened.
+Its `Result:` line on the file's own second line reads `PASS` or `FAIL`
+verbatim (`core/templates/verify.md`'s own header format). If `FAIL`: fix
+it (back to implementation, same task, not a new deviation by itself
+unless the fix itself diverges from the plan), then ask the human to
+re-run `/verify <task-id>` and wait again. If `PASS`: write `state` =
+`ship`, `registry-sync <task-id>`, then tell the human plainly: verify
+passed, please run `/ship <task-id>` yourself, and stop and wait the same
+way. `/ship` handles the merge gate, the commit trailer, the briefing, and
 clearing `.spine/current-task` (Extension C additions to `/ship` itself —
 ship-time re-grounding, second-approver, its own final registry sync —
 land in Phase C, not here).
+
+When resumed after `/ship`, confirm it actually completed by checking that
+`.spine/current-task` no longer names this task (`/ship` clears it on
+success) and that `work/<task-id>/briefing.md` exists, rather than taking
+the human's word alone.
 
 **Point the human at the delta briefing path when `/ship` completes** — that
 read is the third recurring touchpoint, and it happens once, at the end,

@@ -18,6 +18,17 @@
 # accumulated history. --full bypasses that scoping and invokes both
 # adapters with `--full` instead, for CI or a dedicated whole-tree cleanup
 # task. Never pass --full from a per-task `/task` run.
+#
+# Changed-file set excludes spine's own task bookkeeping (work/**,
+# .spine/current-task) — same exclusion core/scripts/conformance already
+# applies to its own diff, for the identical reason: a task's own
+# ledger.json/deviations.md/artifacts/ writes are never reviewable source,
+# and left in, they reach every diff-scoped capability (lint, typecheck,
+# secret-scan, clone-scan, callers) as literal input. `callers` is the one
+# this bites hardest — it greps the changed-file set as literal symbol
+# strings, so a bookkeeping path with no code relationship to anything
+# fails it outright. Disclosed fix, g1-tee-waitlist testbed finding — see
+# docs/tradeoffs.md.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -78,9 +89,25 @@ add_result() {
 
 overall_fail=0
 changed_files=""
+# Spine's own bookkeeping (the task folder tree, and the one-line
+# active-task pointer) is never reviewable code — same exclusion
+# core/scripts/conformance already applies to its own "actual" diff, and
+# for the identical reason: left in, a task's own work/<task-id>/**
+# writes (ledger.json, deviations.md, artifacts/, the task's own
+# milestone.md bookkeeping edit) reach diff-scoped capabilities like
+# `callers` as literal grep targets, which fails them outright on
+# content that was never meant to be treated as source. Disclosed fix,
+# g1-tee-waitlist testbed finding — see docs/tradeoffs.md.
+is_bookkeeping() {
+  case "$1" in
+    work/*) return 0 ;;
+    .spine/current-task) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 compute_changed_files() {
   if [[ -z "$changed_files" ]]; then
-    changed_files="$(cd "$project" && git diff --name-only "$base_ref" -- . 2>/dev/null || true)"
+    changed_files="$(cd "$project" && git diff --name-only "$base_ref" -- . 2>/dev/null | while IFS= read -r f; do is_bookkeeping "$f" || printf '%s\n' "$f"; done || true)"
   fi
 }
 

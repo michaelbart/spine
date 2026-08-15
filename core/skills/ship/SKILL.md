@@ -21,7 +21,24 @@ instruction):
 ${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md
 ```
 
-If STALE: this is a real deviation, not a soft warning — append a
+**Before treating STALE as real drift, cross-check each drifted file
+against this task's own record** (disclosed fix — see docs/tradeoffs.md's
+g1-tee-waitlist testbed findings; the naive "any STALE verdict is drift"
+rule produces a guaranteed false positive on every task that touches a
+file it also read as grounding, which is most tasks). A drifted file is
+**expected, not drift**, if either is true: (a) it appears in
+`work/<task-id>/plan.md`'s own `## Predicted touch` list — this task's
+own approved implementation changed it, not a neighbor; or (b) it's
+explained by a `work/<task-id>/deviations.md` record with `Status:
+resolved` (e.g. a manifest file changed because an approved
+new-dependency deviation added one). Only a file covered by **neither**
+is genuine unexplained drift. If every drifted file is expected by this
+rule: `ledger set <task-id> ship_time_regrounding "check-stale: stale
+(expected — matches predicted-touch/deviations)"` and proceed normally —
+not a halt, not a deviation, does not touch the circuit breaker.
+
+If any drifted file is **not** covered by either check: this is a real
+deviation, not a soft warning — append a
 `work/<task-id>/deviations.md` record, tier `halt` (grounding drifted
 since this was last verified, the same halt-tier build prompt §2.4
 already assigns to schema/contract/auth surprises), and **it counts
