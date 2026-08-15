@@ -1662,15 +1662,15 @@ plot it.
 
 A separate project (`g1-tee-waitlist`) is being run through `/task` for
 real, live work — not a scratch repo built to exercise spine, an actual
-feature getting built. This surfaced nine real discrepancies between what
+feature getting built. This surfaced ten real discrepancies between what
 the skills/docs say happens and what the actual hooks/scripts do, found
 across three tasks' classify→research→plan→implement→verify runs
 (`20260814-login-view`, a login-view feature, findings 1–6;
 `20260815-waitlist-status-view`, a waitlist-status view, findings 7–8; and
 `20260815-ui-render-adapter`, building the reference `ui-render` adapter
-finding 8 itself added, finding 9). All nine are fixed here; this section
-is the disclosure the build prompt's own self-red-team practice calls
-for — problem stated plainly, root cause, the real fix.
+finding 8 itself added, findings 9–10). All ten are fixed here; this
+section is the disclosure the build prompt's own self-red-team practice
+calls for — problem stated plainly, root cause, the real fix.
 
 **1. `phase-gate` denied a bookkeeping edit `core/skills/task/SKILL.md`
 itself said was exempt.** The skill's `--milestone` header note said the
@@ -1953,6 +1953,34 @@ now toolchain-config-by-filename here) — worth watching whether a fourth
 instance means the heuristic's whole "search for a literal reference"
 approach has a more fundamental gap than exemption-by-exemption patching
 can keep up with, rather than revising the heuristic itself again here.
+
+**10. `/ship`'s ship-time re-grounding had no way to recognize a fix
+`/verify`'s own adversary review already found, applied, and
+documented.** Found live, same task as finding 9: the security
+adversary's own review found finding 9's `callers` exemption was
+glob-shaped rather than an allowlist (any orphaned file matching the
+pattern would be silently exempted, not just `vite.config.ts`); the fix
+was applied and recorded as `FIXED` directly in `verify.md`'s own
+"Adversary verdicts" section, per this project's own established
+convention for adversary-found, post-verify fixes. But `.spine/adapters/
+callers` was never named in `plan.md`'s own `## Predicted touch` list
+(this need only became apparent mid-implementation) nor in `deviations.md`
+— so `/ship`'s ship-time `check-stale` correctly flagged it as drifted,
+and its own re-grounding rule had exactly two recognized sources for
+"expected, not drift" (predicted-touch, or a resolved `deviations.md`
+record), neither of which this fix belonged to. Recording it in
+`deviations.md` purely to satisfy the check would have been the third
+deviation for this task, firing `/task`'s own unconditional
+three-deviation circuit breaker — stashing fully-implemented,
+floor-passing, adversarially-verified work and resetting to `research`,
+for a fix with nothing wrong to re-plan and nothing left to stash.
+**Fix (core, `core/skills/ship/SKILL.md` §0)**: added a third recognized
+source — a drifted file named in `verify.md`'s own "Adversary verdicts"
+section against a kept finding marked `FIXED` there is expected drift too,
+the identical "this task's own approved work, not a neighbor's" property
+predicted-touch and deviations.md already establish, just recorded in a
+third place this project's own conventions already use for exactly this
+situation.
 
 ## `spine/work/.build/` — keep it
 
