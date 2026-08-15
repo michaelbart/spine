@@ -159,6 +159,21 @@ without inventing a second, stack-specific fixture-delivery channel. An
 adapter author validating a hand-written adapter gets the same self-test
 modes `adapter-conformance` uses; there's only one path to "conformant."
 
+**The self-test must exercise the adapter's real invocation path, not a
+parallel check that happens to agree with it on the fixture.** A self-test
+that re-implements its own ad-hoc pass/fail logic (e.g. a second, simpler
+grep or comparison inlined in the `--self-test` branch) instead of calling
+through the same function/command the normal-mode branch calls proves
+nothing about the adapter's actual behavior — it can pass forever while
+the real path is broken on inputs the toy check never represents (g1-tee-
+waitlist testbed finding: a `callers` adapter's self-test grepped a bare
+symbol name against a fixture, while the real adapter greps a full
+repo-relative file path against real source — a shape neither the pass nor
+the fail fixture ever exercised, so a heuristic that structurally could
+not match any real relative or aliased import stayed "conformant"
+indefinitely). Build the fixture, then invoke the same code path normal
+mode uses against it — never a second implementation of the check.
+
 Design note this implies: an adapter must be able to construct at least one
 concrete pass case and one concrete fail case for its own capability, fully
 self-contained. Where a capability's tool has nothing meaningful to

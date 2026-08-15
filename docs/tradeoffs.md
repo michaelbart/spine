@@ -1662,12 +1662,14 @@ plot it.
 
 A separate project (`g1-tee-waitlist`) is being run through `/task` for
 real, live work — not a scratch repo built to exercise spine, an actual
-feature getting built. This surfaced four real discrepancies between what
+feature getting built. This surfaced seven real discrepancies between what
 the skills/docs say happens and what the actual hooks/scripts do, found
-during one Class 2 task's classify→research→plan→implement→verify run
-(`20260814-login-view`, a login-view feature). All four are fixed here;
-this section is the disclosure the build prompt's own self-red-team
-practice calls for — problem stated plainly, root cause, the real fix.
+across two tasks' classify→research→plan→implement→verify runs
+(`20260814-login-view`, a login-view feature, findings 1–6; and
+`20260815-waitlist-status-view`, a waitlist-status view, finding 7). All
+seven are fixed here; this section is the disclosure the build prompt's
+own self-red-team practice calls for — problem stated plainly, root cause,
+the real fix.
 
 **1. `phase-gate` denied a bookkeeping edit `core/skills/task/SKILL.md`
 itself said was exempt.** The skill's `--milestone` header note said the
@@ -1792,6 +1794,85 @@ verbal summary, then repeats the same ask-and-wait pattern for `/ship`,
 confirming completion afterward by checking `.spine/current-task` was
 actually cleared and `work/<task-id>/briefing.md` actually exists.
 `README.md`'s command table reworded accordingly for both entries.
+
+**5. `core/scripts/floor`'s `compute_changed_files` had no `work/**`
+exclusion, unlike `core/scripts/conformance`'s own already-fixed
+equivalent.** Found during `20260814-login-view`'s `/verify` run:
+bookkeeping files (`work/<task-id>/ledger.json`, `work/M0/milestone.md`)
+reached every diff-scoped capability (`lint`, `typecheck`, `secret-scan`,
+`clone-scan`, `callers`) as literal input — `callers` failed outright,
+since it greps the changed-file set as literal symbol strings with no
+extension filter to save it the way the other three happened to have.
+**Fix**: added an `is_bookkeeping()` filter to `compute_changed_files`
+excluding `work/*` and `.spine/current-task`, mirroring `conformance`'s
+existing exclusion.
+
+**6. `/ship`'s ship-time re-grounding treated any `check-stale` `STALE`
+verdict as automatic drift, with no way to recognize a task's own
+predicted, approved changes.** A naive "any STALE verdict is drift" rule
+produces a guaranteed false positive on nearly every task, since a task
+that edits a file it also read as grounding — the ordinary case — always
+trips `check-stale` at ship time. **Fix**: before treating a drifted file
+as real drift, cross-check it against this task's own record — expected,
+not drift, if the file appears in `plan.md`'s own `## Predicted touch`
+list (this task's own approved change, not a neighbor's) or is explained
+by a resolved `deviations.md` record (e.g. a manifest changed because an
+approved new-dependency deviation added one). Only a file covered by
+neither is genuine unexplained drift, which still counts toward the
+circuit breaker exactly as before — this narrows false positives without
+weakening real-drift detection, the identical shape as finding 3's fix to
+`check-stale` itself.
+
+**7. `callers`' own `--self-test` proved nothing about the adapter's real
+behavior, and the adapter's real heuristic structurally couldn't match a
+relative or aliased import.** Found during `20260815-waitlist-status-view`
+(same project)'s `/verify` run: the floor's `callers` capability failed on
+every changed file in a task that added correct, working relative
+(`from './client'`) and `@/`-aliased (`from '@/stores/auth'`) imports. Two
+distinct problems, one in `~/spine` core and one in this project's
+generated adapter:
+- **Core problem**: `g1-tee-waitlist`'s generated `callers` adapter's
+  `--self-test pass`/`--self-test fail` never called the adapter's own
+  real matching logic — the self-test branch had its own separate,
+  simpler grep (`grep -rn "widget" "$tmp"`) that happened to succeed on a
+  same-directory bare-symbol fixture, while the real adapter grepped a
+  changed file's full repo-relative path as a literal string against the
+  whole `src/` tree. A relative or aliased import specifier never
+  contains that literal path substring, so the real heuristic was broken
+  for the single most common import shape in the stack it was generated
+  for — and `adapter-conformance` had no way to catch it, because the
+  self-test it was running wasn't exercising the code path with the bug.
+  **Fix (core, `ADAPTER-CONTRACT.md §4`)**: added an explicit rule that a
+  self-test must invoke the adapter's real invocation path, never a
+  second, parallel check that merely happens to agree with it on the
+  fixture — the self-test's fixture is exactly what would have caught
+  this if it had gone through `find_callers` instead of around it. This
+  is stack-blind and applies to every future adapter, not just this one.
+- **Project-specific problem**: even with a self-test that exercises the
+  real path, `g1-tee-waitlist`'s own `.spine/adapters/callers` needed its
+  actual matching logic fixed for its actual stack — TypeScript/Vue code
+  overwhelmingly imports by relative specifier or the `@/` alias, neither
+  of which is the literal repo-relative path the original adapter grepped
+  for. **Fix (this project's adapter only, not portable to core)**:
+  rewrote the adapter to check three real reference shapes (literal path,
+  `@/`-aliased form, and a relative-import-specifier match on the file's
+  basename) through one shared `find_callers` function that both normal
+  mode and the rewritten self-test call, plus exempting `*.spec.ts` files
+  (vitest test entry points, discovered by file glob, never imported by
+  other source — requiring a caller for them is a structural false
+  positive). `adapter-conformance callers` reconfirmed conformant against
+  the rewritten self-test.
+- **A second, smaller instance of finding 5's same bug class**: this same
+  `/verify` run also failed `callers` on `.spine/adapters/callers` itself
+  — the file just edited to fix the above, caught in the same diff as
+  spine tooling config, not application source. `floor`'s `is_bookkeeping`
+  only excluded `work/**`/`.spine/current-task`, not the rest of a
+  project's own `.spine/` tooling install (`adapters/`,
+  `capabilities.json`, `protected-paths.conf`,
+  `install-command-patterns.conf`, `core-pin.json`). **Fix (core)**:
+  extended `is_bookkeeping` to exclude all of those paths too — a task
+  fixing its own generated adapter mid-verify (exactly this scenario)
+  should never have that fix judged as if it were reviewable feature code.
 
 ## `spine/work/.build/` — keep it
 
