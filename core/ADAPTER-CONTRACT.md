@@ -8,23 +8,36 @@ a language, framework, or tool — this document, like the core, is stack-blind.
 
 A capability is an executable at `.spine/adapters/<name>` in the installed
 project. The core never calls a tool directly; it calls a capability name.
-Fourteen capabilities exist:
+Fifteen capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
 `clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`,
-`migrate-rehearse`, `contract-check` (Extension B — §3.2).
+`migrate-rehearse`, `contract-check` (Extension B — §3.2), `ui-render`
+(§3.3).
 
 `contract-check` only ever exists in a repo that is a workspace member and
 party (producer or consumer) to at least one declared contract
 (`workspace.json`'s `contracts[]`, `core/skills/workspace/SKILL.md`) — a
 plain single-repo project marks it `not-applicable` with reason "not a
 workspace member," the same disclosed-degradation shape every other
-inapplicable capability already uses. Unlike the other thirteen,
-`contract-check` is never invoked by `core/scripts/floor`'s own dispatch
-loop (floor's fixed capability sequence is unchanged by Extension B,
-preserving single-repo behavior exactly) — `core/skills/verify/SKILL.md`'s
-aggregation step invokes it directly, once per touched contract, only for
-repos `core/scripts/contract-touch` puts in a task's blast radius. See §3.2.
+inapplicable capability already uses. Unlike the other thirteen (`ui-render`
+shares this trait too, see below), `contract-check` is never invoked by
+`core/scripts/floor`'s own dispatch loop (floor's fixed capability
+sequence is unchanged by Extension B, preserving single-repo behavior
+exactly) — `core/skills/verify/SKILL.md`'s aggregation step invokes it
+directly, once per touched contract, only for repos
+`core/scripts/contract-touch` puts in a task's blast radius. See §3.2.
+
+`ui-render` only ever exists in a project whose runtime shape serves a
+browser UI a person looks at (`core/skills/bootstrap/SKILL.md` /
+`core/skills/adopt/SKILL.md`'s Layer 3 calibration question) — a project
+with no browser UI (a CLI, a library, a pure API with no rendered surface)
+marks it `not-applicable` with reason "no browser UI in this project's
+runtime shape." Like `contract-check`, `ui-render` is never invoked by
+`floor`'s dispatch loop — `core/skills/verify/SKILL.md`'s own orchestration
+invokes it directly, and only when `core/scripts/ui-touch` reports the
+task's diff actually touched a UI-file-shape path (`.spine/ui-paths.conf`).
+See §3.3.
 
 `.spine/capabilities.json` marks each `implemented`, `unavailable`, or
 `not-applicable`, each with a `reason`. Only capabilities marked `implemented`
@@ -121,6 +134,59 @@ capability (§4) — they do not read `SPINE_CONTRACT_SPEC_PATH` at all, since
 self-test's entire point is proving the adapter's own logic without
 touching anything real. An adapter that requires the real env vars to be
 set even in self-test mode has misunderstood the convention.
+
+### 3.3 `ui-render` — a real browser, not a mocked render
+
+Every other capability that touches UI code (`test`, `test-changed`) runs
+against a mocked DOM or mocked network layer — real, valuable coverage,
+but structurally blind to a class of bug that only shows up when the
+actual view is served by the actual dev server and rendered in an actual
+browser: a network call that returns something other than what the test
+mocked (a dev-server SPA fallback returning 200+HTML for an unmatched API
+route, for instance — g1-tee-waitlist testbed finding, `docs/tradeoffs.md`),
+a CSS/layout failure invisible to jsdom/happy-dom, a route that 404s for
+real. `ui-render` exists to catch exactly this gap, not to replace or
+duplicate `test`/`test-changed`.
+
+`ui-render` sits in §3's "operates on nothing" row: no stdin, no
+positional argument, exit code alone governs pass/fail (§2). The adapter
+is responsible end-to-end for standing up whatever it needs to render a
+real page — starting the project's own dev server (or reusing one already
+running), driving a real or headless browser to the project's real
+routes, and tearing down anything it started before returning, pass or
+fail. Which routes to drive and how to reach a rendered page is a
+stack-specific detail the adapter itself owns (e.g. reading a small
+project-local routes list it maintains, or the same entry points
+`docs/map.md`'s survey already names) — core never enumerates routes on
+the adapter's behalf.
+
+**Pass criterion, at minimum**: every route the adapter drives renders a
+non-empty, non-whitespace body, and (where the adapter can determine it)
+the rendered content is one of that route's own known states — not a
+generic framework shell, not an empty successful-request placeholder. An
+adapter that only checks "the page returned a 200" has not implemented
+this capability correctly; the entire reason it exists is to catch a
+blank/wrong render that a 200 status code would not.
+
+**Eligibility, not always-on**: unlike `test`, `ui-render` is not run
+unconditionally by `floor` — it is never invoked by `floor`'s dispatch
+loop at all. `core/skills/verify/SKILL.md`'s own orchestration runs
+`core/scripts/ui-touch` against the task's real diff first; `ui-render`
+is only invoked when that reports the diff touched a UI-file-shape path
+(`.spine/ui-paths.conf`, project-declared, written at `/bootstrap`/`/adopt`
+time). A task whose diff never touches a view/component file never pays
+this capability's cost.
+
+**Self-test**: `--self-test pass`/`--self-test fail` build their own
+throwaway page/fixture inside scratch space and a throwaway static server
+to serve it — never the project's real dev server or real routes, same
+isolation every other capability's self-test already requires (§4). Both
+modes must route through the *same* render-check function normal mode
+uses (§4's own general rule, restated here because this is exactly the
+capability the rule was written after finding broken elsewhere): the pass
+fixture renders visible, non-blank text; the fail fixture renders an
+empty/blank body, and the adapter's self-test must actually detect that
+via its real check, not a simplified stand-in.
 
 ## 4. The self-test convention (what makes conformance possible)
 

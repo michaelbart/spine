@@ -28,7 +28,7 @@ producer task forever).
 `core/skills/task/SKILL.md`'s own header section for the full three-outcome
 rule (ran-passed / ran-failed / could-not-run) and how to record it
 (notes.md, `ledger note-gap`, and a hand-authored `ledger.json` stub if
-`ledger` itself is what's unreachable). Two capabilities here need a
+`ledger` itself is what's unreachable). Several capabilities here need a
 specific default when they could not run at all, because "silently treat
 as pass" is exactly the failure mode this fix exists to close:
 
@@ -49,6 +49,12 @@ as pass" is exactly the failure mode this fix exists to close:
   consequence — "conformance score unavailable — plan predictiveness
   unmeasured for this task" — and leave `ledger set ... conformance_score`
   unset (don't invent a number).
+- **`ui-touch` could not run at all**: do not treat this as "no UI
+  touched" (that would silently skip step 1c's gate on a task that
+  genuinely touched UI code) — record the gap with the consequence "UI
+  render check eligibility unmeasured for this task; step 1c skipped
+  without proof this diff didn't need it" and skip step 1c, loudly, rather
+  than silently defaulting to not-touched.
 
 ## 1. Floor
 
@@ -131,6 +137,47 @@ For each `touched_contracts[]` entry:
   reason — same "never silently skip a gate" discipline as every other
   capability. A consumer gated this way never also runs its own floor for
   this task — that's the entire point of the edited-vs-affected rule.
+
+## 1c. UI render check (only when the diff touches a declared UI path)
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/ui-touch --project <project root> \
+  --out work/<task-id>/artifacts/ui-touch.json
+```
+
+Single-repo by default; multi-repo runs this once per repo in the
+*edited* set (same set step 1 already derived), `--project <repo-abs-path>`,
+each writing its own `work/<task-id>/artifacts/ui-touch-<repo>.json`.
+
+If `ui_touched` is `false` for every repo checked: skip the rest of this
+step entirely — no `ui-render` invocation, no section in `verify.md` (same
+omit-whole-section rule step 1b's "Contract conformance" already uses when
+nothing was touched — this is not a degraded or skipped gate, it's a gate
+that correctly never applied).
+
+If `ui_touched` is `true` for any repo: check whether this class is
+eligible to run `ui-render` at all, same gating shape `core/scripts/floor`
+already uses for `mutate`:
+
+```
+jq -r '.ui_render_class1_optin // false' ~/.spine/user-config.json
+```
+
+Class 2: always eligible. Class 1: eligible only if the above reads
+`true` (default `false` — same opt-in-only default `mutate_class1_optin`
+uses). Not eligible: record this plainly in `verify.md`'s own "UI render"
+section as `SKIPPED (Class 1, ui_render_class1_optin not set)` — this is
+neither a pass nor a capability gap, it is a deliberate calibration choice,
+and must read as one, not as an unexplained absence.
+
+Eligible: check `.spine/capabilities.json` for `ui-render`'s status in
+that repo. If `implemented`, run it directly — **not through `floor`** —
+`.spine/adapters/ui-render` (CWD at that repo's root, per
+`core/ADAPTER-CONTRACT.md §3.3`). Record pass/fail in its own "UI render"
+section (§5) — never folded into the floor table, same discipline as
+"Contract conformance." If not `implemented` (`unavailable`/
+`not-applicable`), record it degraded with its recorded reason — same
+"never silently skip a gate" discipline as every other capability.
 
 ## 2. Adversary count
 
@@ -223,6 +270,12 @@ this document quotes scripts, it doesn't paraphrase them:
   reported touched — name, `spec_change`, `registry_stale` — and, for every
   gated-not-edited consumer from step 1b, its `contract-check` result.
   "None" only if `contract-touch` found nothing touched.
+- **UI render** (per `core/templates/verify.md`'s own section, omitted
+  entirely if step 1c found no UI path touched in any repo): the
+  `ui-render` result — pass/fail with the adapter's own diagnostics on
+  fail, `SKIPPED (Class 1, ui_render_class1_optin not set)` if this class
+  wasn't eligible, or degraded with its recorded reason if the capability
+  isn't `implemented`.
 - Conformance line from `conformance.json` (or one line per
   `conformance-<repo>.json`, multi-repo).
 - One subsection per adversary that ran, from its filtered verdict file:
@@ -250,7 +303,8 @@ this document quotes scripts, it doesn't paraphrase them:
 
 Reply to the caller with exactly: `PASS` or `FAIL`, plus the one-line reason
 if FAIL (which capability, which repo's floor, an ungated consumer's failed
-`contract-check`, or step 1b's breaking-change gate — "adversaries ran, see
-verify.md" is not a FAIL by itself — adversary findings don't fail verify;
-they inform `/ship` and the briefing). `/task` decides what happens next;
-this skill's job ends at `verify.md` plus that one-line verdict.
+`contract-check`, step 1b's breaking-change gate, or step 1c's `ui-render`
+failure — "adversaries ran, see verify.md" is not a FAIL by itself —
+adversary findings don't fail verify; they inform `/ship` and the
+briefing). `/task` decides what happens next; this skill's job ends at
+`verify.md` plus that one-line verdict.

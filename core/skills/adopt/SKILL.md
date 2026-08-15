@@ -37,9 +37,17 @@ floor can be checked against it for "mirror-or-exceed, never less").
 Same process as `core/skills/bootstrap/SKILL.md` §4 — infer stack and
 commands from the repo (lockfiles, config files, existing CI config) and
 present findings for confirmation rather than asking cold; ask runtime
-shape. Generate `.spine/adapters/<name>` for each of the 13 capabilities
-per `core/ADAPTER-CONTRACT.md`, mark `unavailable`/`not-applicable` with
-real reasons where nothing viable exists, then:
+shape, **and specifically whether this project serves a browser UI a
+person looks at** (infer first from the repo — a frontend framework
+dependency, a `views`/`components`/`templates` directory, an
+`index.html` served by a dev server — and present that inference for
+confirmation, same inference-first posture as everything else in this
+step). If yes: confirm the view/component glob(s) for
+`.spine/ui-paths.conf` and the dev-server start command + port. If no:
+mark `ui-render` `not-applicable`, reason "no browser UI in this
+project's runtime shape." Generate `.spine/adapters/<name>` for each of
+the 14 capabilities per `core/ADAPTER-CONTRACT.md`, mark `unavailable`/
+`not-applicable` with real reasons where nothing viable exists, then:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance --all --project <project>

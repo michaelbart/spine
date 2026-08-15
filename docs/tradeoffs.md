@@ -1662,14 +1662,14 @@ plot it.
 
 A separate project (`g1-tee-waitlist`) is being run through `/task` for
 real, live work — not a scratch repo built to exercise spine, an actual
-feature getting built. This surfaced seven real discrepancies between what
+feature getting built. This surfaced eight real discrepancies between what
 the skills/docs say happens and what the actual hooks/scripts do, found
 across two tasks' classify→research→plan→implement→verify runs
 (`20260814-login-view`, a login-view feature, findings 1–6; and
-`20260815-waitlist-status-view`, a waitlist-status view, finding 7). All
-seven are fixed here; this section is the disclosure the build prompt's
-own self-red-team practice calls for — problem stated plainly, root cause,
-the real fix.
+`20260815-waitlist-status-view`, a waitlist-status view, findings 7–8).
+All eight are fixed here; this section is the disclosure the build
+prompt's own self-red-team practice calls for — problem stated plainly,
+root cause, the real fix.
 
 **1. `phase-gate` denied a bookkeeping edit `core/skills/task/SKILL.md`
 itself said was exempt.** The skill's `--milestone` header note said the
@@ -1873,6 +1873,52 @@ generated adapter:
   extended `is_bookkeeping` to exclude all of those paths too — a task
   fixing its own generated adapter mid-verify (exactly this scenario)
   should never have that fix judged as if it were reviewable feature code.
+
+**8. No capability meant "mount the real UI in a real browser and confirm
+it isn't blank" — a genuine gap between task-level mocked tests and full
+seeded-backend `smoke-run`.** Found while shipping
+`20260815-waitlist-status-view`: after `/verify` reported PASS (every
+acceptance check was a mocked-`axios` unit/component test, correctly
+passing), manually driving the real app in a real browser found a live
+bug no capability could have caught — Vite's dev-server SPA fallback
+returns `200 text/html` for the unmatched `GET /api/waitlist/status`
+(no backend exists yet in this walking-skeleton milestone), so the
+fetch never throws and the view silently renders a blank "success" state
+matching none of its own render branches. `test`/`test-changed` mock the
+network layer by design (correctly — that's what makes them fast and
+deterministic); `smoke-run` is scoped to a full seeded-backend e2e run,
+unavailable here until a real backend fixture exists (task 3's job).
+Nothing sits between those two: a lightweight "does the real UI actually
+render, against the real dev server, for whatever backend exists right
+now" check. **Fix**: added a fifteenth capability, `ui-render`
+(`ADAPTER-CONTRACT.md §3.3`) — boots the project's real dev server, drives
+a real/headless browser to the project's real routes, and fails if any
+route renders a blank or wrong-state body. Modeled deliberately on
+`contract-check`'s existing shape (the only prior capability that is (a)
+conditional on diff content rather than task class, and (b) never invoked
+through `floor`'s dispatch loop): a new stack-blind helper,
+`core/scripts/ui-touch`, diffs a task's real changeset against a
+project-declared glob list (`.spine/ui-paths.conf`, parallel format to
+`.spine/protected-paths.conf`) and reports whether the diff touched a
+UI-file-shape path; `core/skills/verify/SKILL.md` gained a new "1c. UI
+render check" sub-step that only invokes `.spine/adapters/ui-render`
+directly (never through `floor`) when `ui-touch` says so, gated
+identically to `mutate` (Class 2 mandatory, Class 1 opt-in via a new
+`ui_render_class1_optin` flag in `~/.spine/user-config.json`, default
+`false`) — a task whose diff never touches a view/component file never
+pays this capability's cost. `core/templates/verify.md` gained its own
+"UI render" section, omitted entirely when nothing was touched, same
+discipline as "Contract conformance." `core/skills/bootstrap/SKILL.md`
+and `core/skills/adopt/SKILL.md`'s Layer 3 calibration gained an explicit
+question — "does this project serve a browser UI a person looks at?" —
+since the existing "runtime shape" question ("service, app, CLI") never
+distinguished a browser-rendering app from any other kind; answering yes
+writes `.spine/ui-paths.conf` and the dev-server start command the
+adapter needs. g1-tee-waitlist's own real `.spine/adapters/ui-render` was
+built and validated as the reference implementation (Playwright +
+headless Chromium, driving `/login` and `/waitlist-status` with a seeded
+session token) — see that task's own `work/` record for the adapter and
+the demonstration that it catches this exact bug class.
 
 ## `spine/work/.build/` — keep it
 

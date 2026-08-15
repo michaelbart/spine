@@ -64,7 +64,22 @@ These answers are consumed **only** here, in adapter generation — nothing
 outside `.spine/adapters/` may ever read them (build prompt §2.5), and
 nothing in `spine/` may name a language, framework, or tool.
 
-For each of the 13 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
+**Ask specifically, as its own question, not folded into "runtime
+shape": does this project serve a browser UI a person looks at?**
+"App" alone doesn't distinguish a browser-rendering web app from a CLI, a
+headless service, or a mobile/desktop app with no browser involved, and
+that distinction is exactly what `ui-render`
+(`core/ADAPTER-CONTRACT.md §3.3`) needs. If yes: ask for the glob(s)
+identifying view/component files and write them to
+`<project>/.spine/ui-paths.conf` (one glob per line, `#` comments — same
+format `.spine/protected-paths.conf` already uses), and ask the dev-server
+start command + port the `ui-render` adapter will need to boot a real
+render. If no: leave `.spine/ui-paths.conf` absent (mirrors
+`.spine/install-command-patterns.conf`'s own "absent means no-op" rule)
+and mark `ui-render` `not-applicable` in `.spine/capabilities.json` with
+reason "no browser UI in this project's runtime shape."
+
+For each of the 14 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
 invocation exists for the confirmed stack, write
 `<project>/.spine/adapters/<name>` as a real, executable script — exit
 0/non-zero, one line on success, full diagnostics on failure, plus a working
@@ -150,7 +165,8 @@ each.
 Commit the symlinks, `.claude/settings.json`, `docs/charter.md`,
 `docs/map.md`, `docs/decisions/.gitkeep`, `work/.gitkeep`,
 `.spine/capabilities.json`, `.spine/protected-paths.conf`,
-`.spine/install-command-patterns.conf` (if written), and
+`.spine/install-command-patterns.conf` (if written),
+`.spine/ui-paths.conf` (if written), and
 `.spine/adapters/` as one setup commit — this is the one commit any install
 mechanism requires (build prompt §3); everything after this is `git pull`
 inside `spine/` with zero further commits in `<project>`.

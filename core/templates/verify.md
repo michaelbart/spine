@@ -16,6 +16,12 @@ mess" anti-pattern, build prompt §1). A single-repo task has exactly one
 "Floor results" table and an empty "Contract conformance" section — this
 is the same zero-behavioral-change guarantee as everywhere else in
 Extension B, expressed at the template level.
+
+§"UI render" is unrelated to Extension B — it applies to a single-repo
+task exactly as it does a multi-repo one, gated purely by whether the
+task's own diff touched a declared UI path (core/scripts/ui-touch), never
+by repo topology. Omit the whole section on any task (single- or
+multi-repo) where nothing was touched.
 -->
 
 # Verify: `<task-id>`
@@ -45,6 +51,20 @@ Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
      that repo's contract-check result (PASS/FAIL/DEGRADED, same
      discipline as a floor capability). "None" only if contract-touch
      reported zero touched contracts. -->
+
+## UI render
+
+<!-- Omitted entirely if core/scripts/ui-touch found no UI path touched
+     (this project's own .spine/ui-paths.conf) in any repo — this is not a
+     degraded gate, it's a gate that correctly never applied. When it did
+     apply: the ui-render result — PASS/FAIL with the adapter's own
+     diagnostics on fail (which route rendered blank/wrong, per
+     core/ADAPTER-CONTRACT.md §3.3's pass criterion), `SKIPPED (Class 1,
+     ui_render_class1_optin not set)` if this class wasn't eligible, or
+     DEGRADED with capabilities.json's recorded reason if the capability
+     isn't implemented. Same discipline as "Contract conformance" above —
+     never folded into the floor table even though it's a floor-shaped
+     pass/fail. -->
 
 ## Conformance
 

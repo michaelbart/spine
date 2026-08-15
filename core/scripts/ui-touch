@@ -1,0 +1,78 @@
+#!/bin/bash
+# ui-touch — project-level, stack-blind. For a task's diff, determines
+# whether it touched a UI-file-shape path this project declared in
+# `.spine/ui-paths.conf` (one glob per line, `#` starts a comment — same
+# format `.spine/protected-paths.conf` already uses). This is what makes
+# `ui-render` (core/ADAPTER-CONTRACT.md §3.3) conditional on diff content
+# rather than always-on: a task whose diff never touches a view/component
+# file never pays that capability's cost.
+#
+# Never blocks by itself (informational, like contract-touch) —
+# `core/skills/verify/SKILL.md`'s own step decides what to do with the
+# result. This script only produces a fact a script can check.
+#
+# Portability: no associative arrays, no `mapfile` — same bash 3.2
+# constraint contract-touch and check-stale already document.
+#
+# Usage: ui-touch [--project <path>] [--base <ref>] [--out <json-path>]
+set -uo pipefail
+
+usage() { echo "usage: ui-touch [--project <path>] [--base <ref>] [--out <json-path>]" >&2; exit 2; }
+
+project="$(pwd)"
+base="HEAD"
+out_path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --base) base="$2"; shift 2 ;;
+    --out) out_path="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+conf="$project/.spine/ui-paths.conf"
+
+if [[ ! -f "$conf" ]]; then
+  output='{"ui_touched":false,"matched_paths":[],"reason":"no .spine/ui-paths.conf — this project has no declared UI paths"}'
+  if [[ -n "$out_path" ]]; then echo "$output" >"$out_path"; else echo "$output"; fi
+  echo "ui-touch: no .spine/ui-paths.conf — treating as no UI touched"
+  exit 0
+fi
+
+# Same diff convention contract-touch uses: tracked diff + untracked (a
+# task's newly-created view file is the common case, and plain
+# `git diff --name-only` alone misses it).
+changed="$(cd "$project" && { git diff --name-only "$base" -- . 2>/dev/null; git ls-files --others --exclude-standard -- . 2>/dev/null; } | sort -u)"
+
+matched=""
+while IFS= read -r line; do
+  glob="${line%%#*}"
+  glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
+  [[ -z "$glob" ]] && continue
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    case "$f" in
+      $glob) matched="$matched$f"$'\n' ;;
+    esac
+  done <<<"$changed"
+done < "$conf"
+
+matched_json="[]"
+matched_clean="$(printf '%s' "$matched" | awk 'NF' | sort -u)"
+[[ -n "$matched_clean" ]] && matched_json="$(printf '%s\n' "$matched_clean" | jq -R . | jq -s .)"
+
+touched=false
+[[ -n "$matched_clean" ]] && touched=true
+
+output="$(jq -n --argjson touched "$touched" --argjson matched "$matched_json" \
+  '{ui_touched:$touched, matched_paths:$matched}')"
+
+if [[ -n "$out_path" ]]; then
+  echo "$output" >"$out_path"
+else
+  echo "$output"
+fi
+
+echo "ui-touch: ui_touched=$touched, $(jq 'length' <<<"$matched_json") path(s) matched"
+exit 0
