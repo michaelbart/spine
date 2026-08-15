@@ -26,16 +26,27 @@ against this task's own record** (disclosed fix — see docs/tradeoffs.md's
 g1-tee-waitlist testbed findings; the naive "any STALE verdict is drift"
 rule produces a guaranteed false positive on every task that touches a
 file it also read as grounding, which is most tasks). A drifted file is
-**expected, not drift**, if either is true: (a) it appears in
-`work/<task-id>/plan.md`'s own `## Predicted touch` list — this task's
-own approved implementation changed it, not a neighbor; or (b) it's
+**expected, not drift**, if any of the following is true: (a) it appears
+in `work/<task-id>/plan.md`'s own `## Predicted touch` list — this task's
+own approved implementation changed it, not a neighbor; (b) it's
 explained by a `work/<task-id>/deviations.md` record with `Status:
 resolved` (e.g. a manifest file changed because an approved
-new-dependency deviation added one). Only a file covered by **neither**
+new-dependency deviation added one); or (c) it's named in
+`work/<task-id>/verify.md`'s own "Adversary verdicts" section against a
+kept finding marked `FIXED` there — an adversary-found fix applied and
+recorded during `/verify` is exactly as "this task's own approved work,
+not a neighbor's" as (a)/(b), and forcing every such fix through
+`deviations.md` too would make the circuit breaker fire on legitimate,
+already-adversarially-verified work with nothing left to stash (disclosed
+fix — see docs/tradeoffs.md's g1-tee-waitlist testbed findings; found live
+when a `callers` adapter fix the security adversary's own review had
+already driven and `verify.md` already documented as `FIXED` had no other
+home to be "expected" from). Only a file covered by **none of the three**
 is genuine unexplained drift. If every drifted file is expected by this
 rule: `ledger set <task-id> ship_time_regrounding "check-stale: stale
-(expected — matches predicted-touch/deviations)"` and proceed normally —
-not a halt, not a deviation, does not touch the circuit breaker.
+(expected — matches predicted-touch/deviations/verify-fixed)"` and
+proceed normally — not a halt, not a deviation, does not touch the
+circuit breaker.
 
 If any drifted file is **not** covered by either check: this is a real
 deviation, not a soft warning — append a
