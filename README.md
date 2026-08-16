@@ -229,6 +229,7 @@ you type them; the model doesn't reach for one on its own.
 | `/ratchet` | `<description of the recurring finding>` | Converts a finding that's genuinely recurred twice (two deviations, two adversary verdicts, two relayed review comments) into a deterministic check, deleting the prose rule it supersedes. The only command allowed to grow `CLAUDE.md` or the rules directory. |
 | `/remap` | *(none)* | Regenerates `docs/map.md` from the current repository's real state, stamped with the current commit SHA. Runs isolated from the calling conversation. |
 | `/task-report` | `<task-id> [--project <path>]` | Generates a self-contained HTML visualization of one task's `work/` record — timeline, deviations, adversary activity, floor results — for a quick look without reading five files by hand. Never a gate. |
+| `/visualize` | `[--project <path>]` | Generates a project-wide HTML dashboard — Gantt timeline of every task, a chronological event feed, the decision store with supersession chains, the live capability matrix, milestone progress, and the /costs-style drift instrument. Never a gate. |
 
 
 ## Working with other engineers (2–4, on the same project)

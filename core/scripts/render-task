@@ -55,18 +55,31 @@ class_val="unknown"
 [[ -f "$work_dir/class" ]] && class_val="$(cat "$work_dir/class")"
 owner_val=""
 [[ -f "$work_dir/owner" ]] && owner_val="$(cat "$work_dir/owner")"
+# Drop the trailing "<email>" or bare email token — "Mike Bart
+# mike.bart@golfchannel.com" reads as "Mike Bart" here; the plain-name
+# form is what a report's header should show a human, not the raw
+# git-identity string /task wrote for its own bookkeeping.
+owner_val="$(sed -E 's/[[:space:]]*<[^>]*>[[:space:]]*$//; s/[[:space:]]+[^[:space:]]+@[^[:space:]]+[[:space:]]*$//' <<<"$owner_val")"
 state_val=""
 [[ -f "$work_dir/state" ]] && state_val="$(cat "$work_dir/state")"
 milestone_val=""
 [[ -f "$work_dir/milestone" ]] && milestone_val="$(cat "$work_dir/milestone")"
 
 title="$task_id"
-grounding_line=""
+grounding_sha=""
+grounding_decisions=""
+research_rel=""
 if [[ -f "$plan_file" ]]; then
   first_line="$(sed -n '1p' "$plan_file")"
   parsed_title="$(sed -E 's/^# Plan: `[^`]+` — //' <<<"$first_line")"
   [[ -n "$parsed_title" && "$parsed_title" != "$first_line" ]] && title="$parsed_title"
-  grounding_line="$(grep -m1 '^grounding: ' "$plan_file" || true)"
+  # grounding: research `<sha>` (`work/<task-id>/research.md`)[, decisions D-1, D-2, ...]
+  grounding_raw="$(grep -m1 '^grounding: ' "$plan_file" || true)"
+  if [[ -n "$grounding_raw" ]]; then
+    grounding_sha="$(sed -n 's/.*research `\([^`]*\)`.*/\1/p' <<<"$grounding_raw")"
+    research_rel="$(sed -n 's/.*(`\([^`]*\)`).*/\1/p' <<<"$grounding_raw")"
+    grounding_decisions="$(sed -n 's/.*, decisions \(.*\)$/\1/p' <<<"$grounding_raw")"
+  fi
 fi
 
 # --- ledger: phase timestamps + summed token cost per human-facing phase.
@@ -98,6 +111,29 @@ fmt_tokens() {
     if (n >= 1000000) printf "%.1fM", n/1000000;
     else if (n >= 1000) printf "%.1fk", n/1000;
     else printf "%d", n;
+  }'
+}
+
+to_epoch() {
+  # to_epoch <ledger.json UTC "...Z" timestamp> — BSD date (macOS
+  # /bin/bash 3.2 ships no GNU date -d); same parsing already proven in
+  # core/scripts/render-dashboard, copied rather than re-derived.
+  date -j -f "%Y-%m-%dT%H:%M:%SZ" "$1" "+%s" 2>/dev/null
+}
+
+fmt_ts() {
+  # fmt_ts <timestamp> — human-readable, e.g. "Aug 15, 2026 05:24 PM".
+  # Falls back to the raw value if it doesn't parse rather than hiding it.
+  local e
+  e="$(to_epoch "$1")" || { printf '%s' "$1"; return; }
+  date -r "$e" "+%b %d, %Y %I:%M %p" 2>/dev/null || printf '%s' "$1"
+}
+
+fmt_duration() {
+  awk -v s="$1" 'BEGIN{
+    if (s < 60) { printf "%ds", s; exit }
+    m = int(s/60); h = int(m/60); m = m % 60;
+    if (h > 0) printf "%dh %dm", h, m; else printf "%dm", m;
   }'
 }
 
@@ -267,6 +303,7 @@ cat <<HTML
   }
   nav.timeline a .phase { font-weight: 600; font-size: 0.9em; }
   nav.timeline a .ts { color: var(--muted); font-size: 0.76em; display: block; margin-top: 3px; }
+  nav.timeline a .dur { color: var(--muted); font-size: 0.76em; display: block; margin-top: 1px; }
   nav.timeline a .cost { color: var(--accent); font-size: 0.76em; display: block; margin-top: 1px; }
   nav.timeline a.empty { opacity: 0.4; }
   section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin-bottom: 20px; }
@@ -327,12 +364,27 @@ cat <<HTML
          echo "· <span class=\"badge $cls\">verify: $(html_escape <<<"$verify_result")</span>"
        } )
   </div>
-  $( [[ -n "$grounding_line" ]] && echo "<div class=\"meta\">$(html_escape <<<"$grounding_line")</div>" )
+  $( [[ -n "$grounding_sha" || -n "$grounding_decisions" ]] && {
+       research_link=""
+       if [[ -n "$grounding_sha" && -f "$work_dir/research.md" ]]; then
+         research_link="<a href=\"research.md\" title=\"research commit $(html_escape <<<"$grounding_sha")\">research notes</a>"
+       elif [[ -n "$grounding_sha" ]]; then
+         research_link="research notes"
+       fi
+       sentence=""
+       [[ -n "$research_link" ]] && sentence="Grounded in $research_link"
+       if [[ -n "$grounding_decisions" ]]; then
+         [[ -n "$sentence" ]] && sentence="$sentence and decisions $(html_escape <<<"$grounding_decisions")" \
+           || sentence="Grounded in decisions $(html_escape <<<"$grounding_decisions")"
+       fi
+       [[ -n "$sentence" ]] && echo "<div class=\"meta\">$sentence.</div>"
+     } )
 </header>
 
 <nav class="timeline">
 HTML
 
+prev_ts=""
 for phase in "${TIMELINE_PHASES[@]}"; do
   ts="$(marked_at_for "$phase")"
   cost="$(tokens_for $(phase_source_keys "$phase"))"
@@ -340,8 +392,16 @@ for phase in "${TIMELINE_PHASES[@]}"; do
     printf '<a class="empty" href="#%s"><span class="phase">%s</span><span class="ts">not reached</span></a>\n' \
       "$phase" "$phase"
   else
-    printf '<a href="#%s"><span class="phase">%s</span><span class="ts">%s</span><span class="cost">%s tok</span></a>\n' \
-      "$phase" "$phase" "$(html_escape <<<"$ts")" "$(fmt_tokens "$cost")"
+    dur=""
+    if [[ -n "$prev_ts" ]]; then
+      e_ts="$(to_epoch "$ts")"; e_prev="$(to_epoch "$prev_ts")"
+      [[ -n "$e_ts" && -n "$e_prev" ]] && dur="$(fmt_duration $((e_ts - e_prev)))"
+    fi
+    printf '<a href="#%s" title="%s"><span class="phase">%s</span><span class="ts">%s</span>%s<span class="cost">%s tok</span></a>\n' \
+      "$phase" "$(html_escape <<<"$ts")" "$phase" "$(html_escape <<<"$(fmt_ts "$ts")")" \
+      "$( [[ -n "$dur" ]] && printf '<span class="dur">took %s</span>' "$(html_escape <<<"$dur")" )" \
+      "$(fmt_tokens "$cost")"
+    prev_ts="$ts"
   fi
 done
 
@@ -420,11 +480,21 @@ if [[ "$floor_present" -eq 1 ]]; then
     badge="degraded"
     [[ "$status" == "pass" ]] && badge="pass"
     [[ "$status" == "fail" ]] && badge="fail"
+    # floor's own floor-result.json writes detail strings with a full
+    # absolute filesystem path baked in (e.g. "...(artifact: /Users/.../
+    # work/<task-id>/artifacts/dep-diff.md)") — real structured data, not
+    # something this script invented, so the fix happens here at render
+    # time: strip this task's own work_dir (and, as a fallback, the
+    # project root) prefix so the path reads relative and doubles as a
+    # working link from report.html's own location.
+    short="${detail//$work_dir\//}"
+    short="${short//$project\//}"
+    detail_html="$(sed -E 's#(artifacts/[A-Za-z0-9._/-]+)#<a href="\1">\1</a>#g' <<<"$(html_escape <<<"$short")")"
     printf '<tr><td><code>%s</code></td><td><span class="badge %s">%s</span></td><td>%s</td></tr>\n' \
-      "$(html_escape <<<"$cap")" "$badge" "$(html_escape <<<"$status")" "$(html_escape <<<"$detail")"
+      "$(html_escape <<<"$cap")" "$badge" "$(html_escape <<<"$status")" "$detail_html"
   done < <(jq -r '.results[] | [.capability, .status, .detail] | @tsv' "$floor_json")
   echo '</table>'
-  [[ -n "$floor_run_ts" ]] && printf '<p class="omitted" style="margin-top:10px;">Floor run: %s</p>\n' "$(html_escape <<<"$floor_run_ts")"
+  [[ -n "$floor_run_ts" ]] && printf '<p class="omitted" style="margin-top:10px;">Floor run: %s</p>\n' "$(html_escape <<<"$(fmt_ts "$floor_run_ts")")"
 elif [[ "$floor_could_not_run" -eq 1 ]]; then
   echo '<p class="omitted">Floor could not run this task — see verify.md Tooling gaps.</p>'
 elif [[ "$verify_present" -eq 1 ]]; then
@@ -540,7 +610,7 @@ echo '</section>'
 
 cat <<HTML
 <footer class="page">
-  Generated $(date -u +%Y-%m-%dT%H:%M:%SZ) from <code>work/$(html_escape <<<"$task_id")/</code>.
+  Generated $(fmt_ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)") from <code>work/$(html_escape <<<"$task_id")/</code>.
   Regenerate with <code>render-task --task $(html_escape <<<"$task_id") --project $(html_escape <<<"$project")</code>.
 </footer>
 </div>

@@ -1,0 +1,661 @@
+#!/bin/bash
+# render-dashboard — reads a spine-installed project's entire history
+# (every work/<task-id>/, docs/decisions/, .spine/capabilities.json,
+# work/M*/milestone.md, work/design/design-review.md, git log, and
+# core/scripts/ledger's own aggregates) and writes one self-contained
+# project-wide HTML dashboard: a Gantt strip across every task, a
+# chronological event feed (one row per real ledger phase transition,
+# with its own duration/cost/outcome, interleaved with non-task project
+# events), the decision store with supersession chains, a grouped
+# capability matrix, milestone progress, and the /costs-style drift
+# instrument. Pure aggregation of what /task/verify/ship/design already
+# write — no new instrumentation. Never a gate.
+#
+# Usage: render-dashboard --project <path> [--out <path>]
+set -uo pipefail
+
+usage() { echo "usage: render-dashboard --project <path> [--out <path>]" >&2; exit 2; }
+
+project=""
+out_path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --out) out_path="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$project" ]] || usage
+project="$(cd "$project" && pwd)"
+[[ -f "$project/.spine/capabilities.json" ]] || { echo "render-dashboard: $project is not spine-installed (no .spine/capabilities.json)" >&2; exit 2; }
+[[ -n "$out_path" ]] || out_path="$project/docs/dashboard.html"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+render_task_bin="$SCRIPT_DIR/render-task"
+ledger_bin="$SCRIPT_DIR/ledger"
+
+# Every generated link is relative to $out_path's own directory. The one
+# supported layout is docs/dashboard.html (one level under the project
+# root) — link_prefix is what closes that one-level gap back to root so
+# work/<task-id>/report.html actually resolves instead of 404ing under
+# docs/. A caller passing --out somewhere else still gets a dashboard,
+# just with links computed for the documented default depth.
+out_dir="$(cd "$(dirname "$out_path")" 2>/dev/null && pwd || echo "$project")"
+if [[ "$out_dir" == "$project" ]]; then
+  link_prefix=""
+else
+  link_prefix="../"
+fi
+
+html_escape() {
+  sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+is_git_repo=0
+git -C "$project" rev-parse --git-dir >/dev/null 2>&1 && is_git_repo=1
+
+to_epoch() {
+  # to_epoch <timestamp> — accepts both shapes this dashboard reads:
+  # ledger.json's UTC "...Z" (marked_at) and git %aI's "...+HH:MM" offset
+  # form. BSD date (macOS /bin/bash 3.2 ships no GNU date -d) needs a
+  # fixed -f format per shape, and the offset form needs its colon
+  # stripped first (BSD strptime doesn't accept "+04:00", only "+0400").
+  local ts="$1" stripped
+  date -j -f "%Y-%m-%dT%H:%M:%SZ" "$ts" "+%s" 2>/dev/null && return
+  stripped="$(printf '%s' "$ts" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"
+  date -j -f "%Y-%m-%dT%H:%M:%S%z" "$stripped" "+%s" 2>/dev/null && return
+  return 1
+}
+
+fmt_ts() {
+  # fmt_ts <timestamp> — human-readable, e.g. "Aug 15, 2026 05:24 PM".
+  # Falls back to the raw value if it doesn't parse rather than hiding it.
+  local e
+  e="$(to_epoch "$1")" || { printf '%s' "$1"; return; }
+  date -r "$e" "+%b %d, %Y %I:%M %p" 2>/dev/null || printf '%s' "$1"
+}
+
+fmt_duration() {
+  awk -v s="$1" 'BEGIN{
+    if (s < 60) { printf "%ds", s; exit }
+    m = int(s/60); h = int(m/60); m = m % 60;
+    if (h > 0) printf "%dh %dm", h, m; else printf "%dm", m;
+  }'
+}
+
+fmt_tokens() {
+  awk -v n="$1" 'BEGIN{
+    if (n >= 1000000) printf "%.1fM tokens", n/1000000;
+    else if (n >= 1000) printf "%.1fk tokens", n/1000;
+    else printf "%d tokens", n;
+  }'
+}
+
+phase_source_keys() {
+  # phase_source_keys <timeline-phase> — bash 3.2 has no associative
+  # arrays; a case statement is the portable equivalent (same pattern
+  # already proven in core/scripts/render-task). Absorbs each phase's own
+  # delegated-agent ledger keys (research-agent; falsifier, security)
+  # into its human-facing phase so a task's real cost isn't undercounted.
+  case "$1" in
+    classify) echo "classify" ;;
+    research) echo "research research-agent" ;;
+    plan) echo "plan" ;;
+    implement) echo "implement" ;;
+    verify) echo "verify falsifier security" ;;
+    ship) echo "ship" ;;
+  esac
+}
+
+TIMELINE_PHASES="classify research plan implement verify ship"
+
+# --- discover real tasks: <YYYYMMDD>-<kebab-slug> dirs under work/,
+# per core/ADAPTER-CONTRACT.md §6's own task-id shape — excludes
+# work/design, work/M<n>, work/.build and any other non-task bookkeeping
+# dir a milestone or design stage leaves behind. ---
+task_ids=()
+if [[ -d "$project/work" ]]; then
+  while IFS= read -r d; do
+    name="$(basename "$d")"
+    [[ "$name" =~ ^[0-9]{8}-[a-z0-9-]+$ ]] && task_ids+=("$name")
+  done < <(find "$project/work" -maxdepth 1 -mindepth 1 -type d | sort)
+fi
+
+# --- per-task summary: class, state, verify result, first/last ledger
+# timestamp (for the Gantt span), token total, report.html presence. ---
+declare_task_summary() {
+  local t="$1" wd="$project/work/$t"
+  local class="unknown" state="" verify_result="" first_ts="" last_ts="" tokens=0 has_report=0
+  [[ -f "$wd/class" ]] && class="$(cat "$wd/class")"
+  [[ -f "$wd/state" ]] && state="$(cat "$wd/state")"
+  [[ -f "$wd/report.html" ]] && has_report=1
+  if [[ -f "$wd/verify.md" ]]; then
+    verify_result="$(sed -n 's/.*Result: `\([A-Za-z]*\)`.*/\1/p' "$wd/verify.md" | head -1)"
+  fi
+  if [[ -f "$wd/ledger.json" ]]; then
+    first_ts="$(jq -r '[.phases[].marked_at] | map(select(. != null)) | sort | .[0] // empty' "$wd/ledger.json")"
+    last_ts="$(jq -r '[.phases[].marked_at] | map(select(. != null)) | sort | .[-1] // empty' "$wd/ledger.json")"
+    tokens="$(jq '[.phases[] | .tokens // {input:0,output:0,cache_create:0,cache_read:0} | (.input+.output+.cache_create+.cache_read)] | add // 0' "$wd/ledger.json")"
+  fi
+  printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' "$t" "$class" "$state" "$verify_result" "$first_ts" "$last_ts" "$tokens" "$has_report"
+}
+
+task_rows=()
+for t in "${task_ids[@]}"; do
+  task_rows+=("$(declare_task_summary "$t")")
+done
+
+# --- overall time span across every task's own first/last ledger mark,
+# for the Gantt strip's percentage-of-span positioning. ---
+span_min=""
+span_max=""
+for row in "${task_rows[@]}"; do
+  IFS=$'\x1f' read -r t cls st vr first last tok rep <<<"$row"
+  [[ -n "$first" ]] || continue
+  e_first="$(to_epoch "$first")"
+  e_last="$(to_epoch "${last:-$first}")"
+  [[ -n "$e_first" ]] || continue
+  [[ -z "$span_min" || "$e_first" -lt "$span_min" ]] && span_min="$e_first"
+  [[ -z "$span_max" || "$e_last" -gt "$span_max" ]] && span_max="$e_last"
+done
+
+gantt_pos() {
+  local e="$1"
+  [[ -n "$span_min" && -n "$span_max" && "$span_max" -gt "$span_min" ]] || { echo 0; return; }
+  awk -v e="$e" -v lo="$span_min" -v hi="$span_max" 'BEGIN{
+    p = (e - lo) / (hi - lo) * 100;
+    if (p < 0) p = 0; if (p > 100) p = 100;
+    printf "%.2f", p;
+  }'
+}
+
+commit_trailer() {
+  # commit_trailer <sha> <trailer-name> — first match, or empty.
+  git -C "$project" log -1 --format='%B' "$1" 2>/dev/null | sed -n "s/^${2}: //p" | head -1
+}
+
+# --- decisions: fixed frontmatter fields per core/templates/decision.md's
+# own grammar. DEFERRED.md is explicitly not a decision record. Sorted
+# numerically by decision id, not lexically (D-10 must sort after D-9,
+# not after D-1) — done by pairing basename with full path so `sort`'s
+# field split never lands on a hyphen earlier in the absolute path. ---
+decision_files=()
+if [[ -d "$project/docs/decisions" ]]; then
+  while IFS= read -r f; do
+    [[ "$(basename "$f")" == "DEFERRED.md" ]] && continue
+    decision_files+=("$f")
+  done < <(find "$project/docs/decisions" -maxdepth 1 -name 'D-*.md' -exec basename {} \; -print 2>/dev/null \
+    | paste -d'\t' - - | sort -t'-' -k2,2n | cut -f2)
+fi
+
+decision_field() { sed -n "s/^- $2: //p" "$1" | head -1; }
+decision_title() { sed -n '1s/^# //p' "$1"; }
+
+# --- milestones: work/M<n>/milestone.md. ---
+milestone_files=()
+if [[ -d "$project/work" ]]; then
+  while IFS= read -r f; do milestone_files+=("$f"); done < <(find "$project/work" -maxdepth 2 -name 'milestone.md' -path '*/M*/*' 2>/dev/null | sort)
+fi
+
+# --- design-stage review, if this project went through /design. ---
+design_review="$project/work/design/design-review.md"
+has_design_review=0
+[[ -f "$design_review" ]] && has_design_review=1
+
+# --- cost/drift instrument: shell out to the existing ledger script
+# itself, same numbers /costs reports, never re-derived by hand. ---
+ledger_aggregate_json="{}"
+untracked_line=""
+ledger_reachable=1
+if [[ -x "$ledger_bin" ]]; then
+  ledger_aggregate_json="$($ledger_bin aggregate --project "$project" 2>/dev/null)"
+  [[ -n "$ledger_aggregate_json" ]] || ledger_aggregate_json="{}"
+  untracked_line="$($ledger_bin scan-untracked-ratio --project "$project" 2>/dev/null)"
+else
+  ledger_reachable=0
+fi
+
+# --- generate any missing per-task report.html so every dashboard link
+# resolves — reuses render-task, never a second parser. ---
+if [[ -x "$render_task_bin" ]]; then
+  for row in "${task_rows[@]}"; do
+    IFS=$'\x1f' read -r t cls st vr first last tok rep <<<"$row"
+    [[ "$rep" -eq 0 ]] && "$render_task_bin" --task "$t" --project "$project" >/dev/null 2>&1 || true
+  done
+fi
+
+# --- event feed: one row per real ledger phase transition per task
+# (duration since the previous phase, token cost, outcome), interleaved
+# chronologically with non-task git commits (bootstrap, design-stage,
+# milestone bookkeeping — anything with no Spine-Task: trailer, since a
+# Spine-Task-trailered commit's own moment is already represented by
+# that task's ship-phase row). Columns, tab-separated:
+#   epoch \t kind(phase|commit) \t ts_iso \t subject \t href \t
+#   duration_secs \t tokens \t outcome \t is_bypass \t bypass_detail
+event_rows=()
+
+for t in "${task_ids[@]}"; do
+  wd="$project/work/$t"
+  [[ -f "$wd/ledger.json" ]] || continue
+  href="${link_prefix}work/$t/report.html"
+  prev_ts=""
+  verify_result_for_t=""
+  [[ -f "$wd/verify.md" ]] && verify_result_for_t="$(sed -n 's/.*Result: `\([A-Za-z]*\)`.*/\1/p' "$wd/verify.md" | head -1)"
+  adversary_kept=0
+  if [[ -d "$wd/artifacts" ]]; then
+    while IFS= read -r af; do
+      [[ -n "$af" ]] || continue
+      n="$(jq '.verdicts | length' "$af" 2>/dev/null || echo 0)"
+      adversary_kept=$((adversary_kept + n))
+    done < <(find "$wd/artifacts" -maxdepth 1 -name '*-verdict.json' ! -name '*-raw.json' 2>/dev/null)
+  fi
+  bypass_reason="$(jq -r '.bypass // empty' "$wd/ledger.json" 2>/dev/null)"
+
+  for phase in $TIMELINE_PHASES; do
+    ts="$(jq -r --arg p "$phase" '.phases[$p].marked_at // empty' "$wd/ledger.json")"
+    [[ -n "$ts" ]] || continue
+    e="$(to_epoch "$ts")"
+    [[ -n "$e" ]] || continue
+    keys="$(phase_source_keys "$phase")"
+    keys_json="$(printf '%s\n' $keys | jq -R . | jq -s .)"
+    tok="$(jq --argjson ks "$keys_json" '
+      [ .phases as $p | $ks[] | $p[.].tokens // {input:0,output:0,cache_create:0,cache_read:0} ]
+      | map(.input + .output + .cache_create + .cache_read) | add // 0
+    ' "$wd/ledger.json")"
+    dur=""
+    if [[ -n "$prev_ts" ]]; then
+      prev_e="$(to_epoch "$prev_ts")"
+      [[ -n "$prev_e" ]] && dur=$((e - prev_e))
+    fi
+    outcome=""
+    case "$phase" in
+      verify)
+        [[ -n "$verify_result_for_t" ]] && outcome="verify: $verify_result_for_t"
+        [[ "$adversary_kept" -gt 0 ]] && outcome="$outcome ($adversary_kept adversary finding(s) kept)"
+        ;;
+      ship)
+        if [[ -n "$bypass_reason" ]]; then
+          outcome="shipped via bypass"
+        else
+          outcome="shipped"
+        fi
+        ;;
+    esac
+    is_bypass=0
+    bypass_detail=""
+    if [[ "$phase" == "ship" && -n "$bypass_reason" ]]; then
+      is_bypass=1
+      bypass_detail="$(printf '%s' "$bypass_reason" | cut -c1-160)"
+    fi
+    subject="$t — $phase"
+    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+      "$e" "phase" "$ts" "$subject" "$href" "${dur:-}" "$tok" "$outcome" "$is_bypass" "$bypass_detail")")
+    prev_ts="$ts"
+  done
+done
+
+if [[ "$is_git_repo" -eq 1 ]]; then
+  while IFS=$'\t' read -r sha ts subject; do
+    [[ -n "$sha" ]] || continue
+    task_trailer="$(commit_trailer "$sha" "Spine-Task")"
+    [[ -n "$task_trailer" ]] && continue
+    e="$(to_epoch "$ts")"
+    [[ -n "$e" ]] || continue
+    bypass="$(commit_trailer "$sha" "Spine-Bypass")"
+    is_bypass=0; bypass_detail=""
+    if [[ -n "$bypass" ]]; then is_bypass=1; bypass_detail="$(printf '%s' "$bypass" | cut -c1-160)"; fi
+    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+      "$e" "commit" "$ts" "$subject" "" "" "" "" "$is_bypass" "$bypass_detail")")
+  done < <(git -C "$project" log --format='%H%x09%aI%x09%s' --reverse 2>/dev/null)
+fi
+
+# Chronological sort — epoch is field 1. \x1f (unit separator), not tab:
+# bash 3.2's `read` treats tab as a default-whitespace IFS character and
+# collapses adjacent/leading/trailing tabs even when IFS is set to tab
+# alone, silently misaligning any row with an empty middle field (href,
+# duration, outcome, bypass_detail are all legitimately empty on plenty
+# of real rows here) — confirmed empirically, not a style preference.
+sorted_events=()
+if [[ "${#event_rows[@]}" -gt 0 ]]; then
+  while IFS= read -r line; do sorted_events+=("$line"); done < <(printf '%s\n' "${event_rows[@]}" | sort -t $'\x1f' -k1,1n)
+fi
+
+tmp_out="$(mktemp "${TMPDIR:-/tmp}/render-dashboard.XXXXXX")"
+trap 'rm -f "$tmp_out"' EXIT
+mkdir -p "$(dirname "$out_path")"
+
+# ============================== render ==============================
+
+{
+cat <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>$(html_escape <<<"$(basename "$project")") — spine dashboard</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --panel: #ffffff; --border: #e0e0e3; --text: #1a1a1e;
+    --muted: #6b6b76; --accent: #2f5fdb;
+    --pass: #1a7f37; --fail: #cf222e; --degraded: #9a6700; --neutral: #6b6b76;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.page h1 { margin: 0 0 4px; font-size: 1.7em; }
+  header.page .meta { color: var(--muted); font-size: 0.9em; margin-bottom: 28px; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin-bottom: 22px; }
+  section > h2 { margin: 0 0 14px; font-size: 1.05em; }
+  section p.omitted { color: var(--muted); font-style: italic; margin: 0; }
+  section p.lead { font-size: 1.02em; margin: 0 0 14px; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.78em; font-weight: 600; color: #fff; }
+  .badge.pass { background: var(--pass); } .badge.fail { background: var(--fail); }
+  .badge.degraded { background: var(--degraded); } .badge.neutral { background: var(--neutral); }
+
+  /* Gantt */
+  .gantt { position: relative; }
+  .gantt-row { position: relative; margin-bottom: 14px; }
+  .gantt-label { position: absolute; left: 0; top: 0; font-size: 0.82em; color: var(--muted); line-height: 40px; white-space: nowrap; }
+  .gantt-track { position: relative; margin-left: 190px; height: 40px; background: var(--bg); border-radius: 6px; }
+  .gantt-bar { position: absolute; top: 6px; height: 28px; border-radius: 6px; background: var(--accent); min-width: 6px; }
+  .gantt-bar.fail { background: var(--fail); }
+  .gantt-bar a { display: block; width: 100%; height: 100%; text-decoration: none; }
+  .gantt-caption { margin-left: 190px; margin-top: 4px; font-size: 0.8em; color: var(--muted); }
+
+  /* Event feed */
+  .feed { border-left: 2px solid var(--border); margin-left: 8px; padding-left: 20px; }
+  .feed-item { position: relative; padding-bottom: 16px; }
+  .feed-item::before { content: ""; position: absolute; left: -25px; top: 5px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .feed-item.commit-event::before { background: var(--muted); }
+  .feed-item.bypass::before { background: var(--fail); }
+  .feed-ts { font-size: 0.76em; color: var(--muted); }
+  .feed-subject { margin-top: 2px; }
+  .feed-subject a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--border); }
+  .feed-meta { font-size: 0.82em; color: var(--muted); margin-top: 2px; }
+  .feed-meta .chip { display: inline-block; margin-right: 10px; }
+  .feed-outcome { font-size: 0.82em; margin-top: 2px; }
+
+  /* Decisions */
+  .decision-row { display: flex; align-items: baseline; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .decision-row:last-child { border-bottom: none; }
+  .decision-id { font-weight: 600; font-size: 0.85em; color: var(--muted); min-width: 42px; }
+  .decision-title { flex: 1; }
+  .decision-chain { font-size: 0.8em; color: var(--muted); }
+
+  /* Capability matrix */
+  .cap-group { margin-bottom: 16px; }
+  .cap-group:last-child { margin-bottom: 0; }
+  .cap-group h3 { margin: 0 0 8px; font-size: 0.92em; color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em; }
+  .cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .cap-cell { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 0.85em; }
+  .cap-cell .cap-name { font-weight: 600; }
+  .cap-cell .cap-reason { color: var(--muted); font-size: 0.9em; margin-top: 2px; }
+
+  /* Milestone */
+  .ms-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .ms-tasks li { display: flex; align-items: baseline; gap: 10px; }
+  table.simple { width: 100%; border-collapse: collapse; font-size: 0.9em; margin-top: 10px; }
+  table.simple th, table.simple td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+
+  /* Cost panel */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .stat { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; }
+  .stat .stat-val { font-size: 1.4em; font-weight: 700; }
+  .stat .stat-label { font-size: 0.78em; color: var(--muted); }
+  .instrument-note { font-size: 0.85em; color: var(--muted); margin-top: 12px; }
+
+  footer.page { color: var(--muted); font-size: 0.85em; margin-top: 20px; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16171a; --panel: #1e1f23; --border: #33343a; --text: #e8e8ea; --muted: #8b8b96; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="page">
+  <h1>$(html_escape <<<"$(basename "$project")")</h1>
+  <div class="meta">spine dashboard · ${#task_ids[@]} task(s) · generated $(fmt_ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)")</div>
+</header>
+HTML
+
+# ---- Gantt strip ----
+echo '<section id="gantt"><h2>Task timeline</h2>'
+if [[ "${#task_rows[@]}" -eq 0 ]]; then
+  echo '<p class="omitted">No tasks found under work/.</p>'
+elif [[ -z "$span_min" ]]; then
+  echo '<p class="omitted">No task has a ledger.json with phase timestamps yet — nothing to position on a timeline.</p>'
+else
+  echo '<div class="gantt">'
+  for row in "${task_rows[@]}"; do
+    IFS=$'\x1f' read -r t cls st vr first last tok rep <<<"$row"
+    if [[ -n "$first" ]]; then
+      e_first="$(to_epoch "$first")"
+      e_last="$(to_epoch "${last:-$first}")"
+      left="$(gantt_pos "$e_first")"
+      width="$(gantt_pos "$e_last")"
+      width="$(awk -v w="$width" -v l="$left" 'BEGIN{d=w-l; if (d<0.6) d=0.6; printf "%.2f", d}')"
+      bar_class="ok"
+      [[ "$vr" == "FAIL" ]] && bar_class="fail"
+      href="${link_prefix}work/$t/report.html"
+      tip="class $cls · $st · verify: ${vr:-n/a} · $(fmt_ts "$first") – $(fmt_ts "${last:-$first}")"
+      # Every fact the hover tip carries also renders as permanent, visible
+      # text below the bar — a bar's own width is often too narrow to hold
+      # a label, and hovering isn't how this dashboard is meant to be read.
+      caption="$(fmt_ts "$first") – $(fmt_ts "${last:-$first}") · took $(fmt_duration $((e_last - e_first)))"
+      [[ -n "$vr" ]] && caption="$caption · verify: $vr"
+      printf '<div class="gantt-row">\n<span class="gantt-label">%s</span>\n<div class="gantt-track">\n<div class="gantt-bar %s" style="left:%s%%;width:%s%%;">\n<a href="%s" title="%s"></a>\n</div>\n</div>\n<div class="gantt-caption">%s</div>\n</div>\n' \
+        "$(html_escape <<<"$t")" "$bar_class" "$left" "$width" "$(html_escape <<<"$href")" "$(html_escape <<<"$tip")" "$(html_escape <<<"$caption")"
+    else
+      printf '<div class="gantt-row"><span class="gantt-label">%s</span><div class="gantt-track"></div></div>\n' "$(html_escape <<<"$t")"
+    fi
+  done
+  echo '</div>'
+fi
+echo '</section>'
+
+# ---- Event feed ----
+echo '<section id="events"><h2>Event feed</h2>'
+if [[ "${#sorted_events[@]}" -eq 0 ]]; then
+  echo '<p class="omitted">No events to show yet.</p>'
+else
+  echo '<div class="feed">'
+  for ev in "${sorted_events[@]}"; do
+    IFS=$'\x1f' read -r e kind ts subject href dur tok outcome is_bypass bypass_detail <<<"$ev"
+    item_class="$kind-event"
+    [[ "$is_bypass" == "1" ]] && item_class="$item_class bypass"
+    printf '<div class="feed-item %s">\n<div class="feed-ts">%s</div>\n<div class="feed-subject">' \
+      "$item_class" "$(html_escape <<<"$(fmt_ts "$ts")")"
+    if [[ -n "$href" ]]; then
+      printf '<a href="%s">%s</a>' "$(html_escape <<<"$href")" "$(html_escape <<<"$subject")"
+    else
+      printf '%s' "$(html_escape <<<"$subject")"
+    fi
+    echo '</div>'
+    if [[ "$kind" == "phase" ]]; then
+      meta=""
+      [[ -n "$dur" ]] && meta="<span class=\"chip\">took $(html_escape <<<"$(fmt_duration "$dur")")</span>"
+      [[ -n "$tok" && "$tok" != "0" ]] && meta="$meta<span class=\"chip\">$(html_escape <<<"$(fmt_tokens "$tok")")</span>"
+      [[ -n "$meta" ]] && printf '<div class="feed-meta">%s</div>\n' "$meta"
+      [[ -n "$outcome" ]] && printf '<div class="feed-outcome">%s</div>\n' "$(html_escape <<<"$outcome")"
+    fi
+    [[ "$is_bypass" == "1" ]] && printf '<div class="feed-outcome" style="color:var(--fail);">bypass: %s</div>\n' "$(html_escape <<<"$bypass_detail")"
+    echo '</div>'
+  done
+  echo '</div>'
+fi
+echo '</section>'
+
+# ---- Decision store ----
+echo '<section id="decisions"><h2>Decision store</h2>'
+if [[ "${#decision_files[@]}" -eq 0 ]]; then
+  echo '<p class="omitted">No docs/decisions/ records found.</p>'
+else
+  for f in "${decision_files[@]}"; do
+    id="$(decision_field "$f" "Id")"
+    status="$(decision_field "$f" "Status")"
+    supersedes="$(decision_field "$f" "Supersedes")"
+    superseded_by="$(decision_field "$f" "Superseded-by")"
+    title="$(decision_title "$f")"
+    badge="neutral"
+    [[ "$status" == "implemented" ]] && badge="pass"
+    [[ "$status" == "superseded" ]] && badge="degraded"
+    [[ "$status" == "proposed" ]] && badge="neutral"
+    chain=""
+    [[ -n "$supersedes" && "$supersedes" != "none" ]] && chain="supersedes $supersedes"
+    if [[ -n "$superseded_by" && "$superseded_by" != "none" ]]; then
+      [[ -n "$chain" ]] && chain="$chain · "
+      chain="${chain}superseded by $superseded_by"
+    fi
+    printf '<div class="decision-row">\n<span class="decision-id">%s</span>\n<span class="decision-title">%s</span>\n<span class="badge %s">%s</span>\n' \
+      "$(html_escape <<<"$id")" "$(html_escape <<<"$title")" "$badge" "$(html_escape <<<"$status")"
+    [[ -n "$chain" ]] && printf '<span class="decision-chain">%s</span>\n' "$(html_escape <<<"$chain")"
+    echo '</div>'
+  done
+fi
+if [[ "$has_design_review" -eq 1 ]]; then
+  printf '<p class="instrument-note">Design-stage adversary review ran against the charter/decisions before implementation — see <a href="%swork/design/design-review.md">work/design/design-review.md</a>.</p>\n' "$link_prefix"
+fi
+echo '</section>'
+
+# ---- Capability matrix (grouped, plain language) ----
+echo '<section id="capabilities"><h2>Capability matrix</h2>'
+impl_cells=""; unavail_cells=""; na_cells=""
+while IFS=$'\t' read -r name status reason; do
+  cell="$(printf '<div class="cap-cell"><span class="cap-name">%s</span><div class="cap-reason">%s</div></div>\n' \
+    "$(html_escape <<<"$name")" "$(html_escape <<<"$reason")")"
+  case "$status" in
+    implemented) impl_cells="$impl_cells$cell" ;;
+    unavailable) unavail_cells="$unavail_cells$cell" ;;
+    *) na_cells="$na_cells$cell" ;;
+  esac
+done < <(jq -r 'to_entries[] | [.key, .value.status, .value.reason] | @tsv' "$project/.spine/capabilities.json")
+if [[ -n "$impl_cells" ]]; then
+  printf '<div class="cap-group"><h3>Working today</h3><div class="cap-grid">%s</div></div>\n' "$impl_cells"
+fi
+if [[ -n "$unavail_cells" ]]; then
+  printf '<div class="cap-group"><h3>Not yet available</h3><div class="cap-grid">%s</div></div>\n' "$unavail_cells"
+fi
+if [[ -n "$na_cells" ]]; then
+  printf '<div class="cap-group"><h3>Doesn'"'"'t apply here</h3><div class="cap-grid">%s</div></div>\n' "$na_cells"
+fi
+echo '</section>'
+
+# ---- Milestones (plain-language summary first) ----
+echo '<section id="milestones"><h2>Milestone progress</h2>'
+if [[ "${#milestone_files[@]}" -eq 0 ]]; then
+  echo '<p class="omitted">No work/M*/milestone.md found — this project has no milestone yet.</p>'
+else
+  for mf in "${milestone_files[@]}"; do
+    ms_id="$(basename "$(dirname "$mf")")"
+    ms_title="$(sed -n '1s/^# Milestone `[^`]*`: //p' "$mf")"
+    printf '<h3 style="margin-top:0;">%s%s</h3>\n' "$(html_escape <<<"$ms_id")" "$( [[ -n "$ms_title" ]] && echo ": $(html_escape <<<"$ms_title")" )"
+
+    member_lines="$(awk '
+      /^## Member tasks/ { f=1; next }
+      f && /^## / { if (buf != "") print buf; buf=""; exit }
+      f && /^[0-9]+\. / { if (buf != "") print buf; buf=$0; next }
+      f && NF == 0 { next }
+      f { sub(/^ +/, ""); buf = buf " " $0 }
+      END { if (buf != "") print buf }
+    ' "$mf")"
+
+    total=0; done_count=0
+    li_html=""
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      total=$((total+1))
+      tid="$(sed -n 's/^[0-9]*\. `\([^`]*\)`.*/\1/p' <<<"$line")"
+      rest="$(sed -n 's/^[0-9]*\. `[^`]*` — //p' <<<"$line")"
+      badge="neutral"; status_word="TBD"; label="$tid"
+      if [[ "$tid" == "TBD" ]]; then
+        badge="degraded"
+      else
+        real_state=""
+        [[ -f "$project/work/$tid/state" ]] && real_state="$(cat "$project/work/$tid/state")"
+        status_word="${real_state:-unknown}"
+        if [[ "$real_state" == "done" ]]; then badge="pass"; done_count=$((done_count+1)); fi
+        label="<a href=\"${link_prefix}work/$tid/report.html\">$tid</a>"
+      fi
+      li_html="$li_html$(printf '<li><span class="badge %s">%s</span> %s — %s</li>\n' "$badge" "$(html_escape <<<"$status_word")" "$label" "$(html_escape <<<"$rest")")"
+    done <<<"$member_lines"
+
+    caps_table="$(awk '/^## Capability targets/{f=1;next} f && /^\| [a-z]/{print} f && /^## /{exit}' "$mf")"
+    cap_mismatch=0; cap_total=0
+    cap_rows_html=""
+    if [[ -n "$caps_table" ]]; then
+      while IFS='|' read -r _ cap planned _; do
+        cap="$(sed 's/^ *//;s/ *$//' <<<"$cap")"
+        planned="$(sed 's/^ *//;s/ *$//' <<<"$planned")"
+        actual="$(jq -r --arg c "$cap" '.[$c].status // "missing"' "$project/.spine/capabilities.json")"
+        cap_total=$((cap_total+1))
+        drift_cls="pass"
+        if [[ "$actual" != "implemented" ]]; then drift_cls="degraded"; cap_mismatch=$((cap_mismatch+1)); fi
+        cap_rows_html="$cap_rows_html$(printf '<tr><td><code>%s</code></td><td>%s</td><td><span class="badge %s">%s</span></td></tr>\n' \
+          "$(html_escape <<<"$cap")" "$(html_escape <<<"$planned")" "$drift_cls" "$(html_escape <<<"$actual")")"
+      done <<<"$caps_table"
+    fi
+
+    summary="$done_count of $total member task(s) done"
+    if [[ "$cap_total" -gt 0 ]]; then
+      if [[ "$cap_mismatch" -eq 0 ]]; then
+        summary="$summary; every targeted capability is already at its planned status."
+      else
+        summary="$summary; $cap_mismatch of $cap_total targeted capabilit$([[ $cap_mismatch -eq 1 ]] && echo y || echo ies) still short of plan."
+      fi
+    else
+      summary="$summary."
+    fi
+    printf '<p class="lead">%s</p>\n' "$(html_escape <<<"$summary")"
+
+    echo '<ul class="ms-tasks">'
+    printf '%s' "$li_html"
+    echo '</ul>'
+    if [[ -n "$cap_rows_html" ]]; then
+      echo '<table class="simple"><tr><th>Capability</th><th>Planned</th><th>Actual</th></tr>'
+      printf '%s' "$cap_rows_html"
+      echo '</table>'
+    fi
+  done
+fi
+echo '</section>'
+
+# ---- Cost / drift instrument ----
+echo '<section id="drift"><h2>Cost &amp; drift instrument</h2>'
+if [[ "$ledger_reachable" -eq 0 ]]; then
+  echo '<p class="omitted">core/scripts/ledger not reachable — cost/drift numbers unavailable.</p>'
+else
+  task_count="$(jq -r '.task_count // 0' <<<"$ledger_aggregate_json")"
+  total_tokens="$(jq -r '.total_tokens // 0' <<<"$ledger_aggregate_json")"
+  avg_dev="$(jq -r '.avg_deviation_count // 0' <<<"$ledger_aggregate_json")"
+  bypass_count="$(jq -r '.bypass_count // 0' <<<"$ledger_aggregate_json")"
+  tooling_gap_count="$(jq -r '.tooling_gap_count // 0' <<<"$ledger_aggregate_json")"
+  hand_tracked="$(jq -r '.hand_tracked_task_count // 0' <<<"$ledger_aggregate_json")"
+  fmt_dev="$(awk -v n="$avg_dev" 'BEGIN{printf "%.2f", n}')"
+  ratio="$(sed -n 's/^untracked-commit ratio: \([0-9.]*\).*/\1/p' <<<"$untracked_line")"
+  echo '<div class="stat-grid">'
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">tasks</div></div>\n' "$task_count"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">total cost</div></div>\n' "$(fmt_tokens "$total_tokens")"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">avg deviations/task</div></div>\n' "$fmt_dev"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">bypasses</div></div>\n' "$bypass_count"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">tooling gaps</div></div>\n' "$tooling_gap_count"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">hand-tracked tasks</div></div>\n' "$hand_tracked"
+  [[ -n "$ratio" ]] && printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">untracked-commit ratio</div></div>\n' "$ratio"
+  echo '</div>'
+  echo '<p class="instrument-note">An instrument for spotting drift early, not a leaderboard — same framing /costs itself uses. A high untracked-commit ratio on a solo/no-remote project is expected (only the final /ship commit carries a Spine-Task: trailer; every intermediate task-bookkeeping commit does not) — read this alongside bypass count and tooling gaps, not in isolation.</p>'
+fi
+echo '</section>'
+
+cat <<HTML
+<footer class="page">
+  Generated $(fmt_ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)") from <code>$(html_escape <<<"$project")</code>.
+  Regenerate with <code>render-dashboard --project $(html_escape <<<"$project")</code>.
+</footer>
+</div>
+</body>
+</html>
+HTML
+} > "$tmp_out"
+
+mv "$tmp_out" "$out_path"
+trap - EXIT
+echo "render-dashboard: wrote $out_path"
