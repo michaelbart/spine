@@ -1,0 +1,554 @@
+#!/bin/bash
+# render-task — reads one task's work/<task-id>/ folder and writes a
+# single self-contained HTML report. Pure rendering, no new
+# instrumentation: every field below comes from a file /task, /verify, or
+# /ship already writes (core/ADAPTER-CONTRACT.md's structured artifacts,
+# not re-derived prose). Never a gate — this is observational tooling,
+# same posture as core/scripts/... feeding /costs, never invoked by
+# /task/verify/ship themselves.
+#
+# Degradation discipline: a source file that doesn't exist yet (the task
+# hasn't reached that phase) or a section that's genuinely absent (no
+# deviations happened, no adversaries ran) is rendered as an explicit,
+# labeled omission — never blank, never fabricated.
+#
+# Usage: render-task --task <task-id> --project <path> [--out <path>]
+set -uo pipefail
+
+usage() { echo "usage: render-task --task <task-id> --project <path> [--out <path>]" >&2; exit 2; }
+
+task_id=""
+project=""
+out_path=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --task) task_id="$2"; shift 2 ;;
+    --project) project="$2"; shift 2 ;;
+    --out) out_path="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$task_id" && -n "$project" ]] || usage
+project="$(cd "$project" && pwd)"
+work_dir="$project/work/$task_id"
+[[ -d "$work_dir" ]] || { echo "render-task: $work_dir not found" >&2; exit 2; }
+[[ -n "$out_path" ]] || out_path="$work_dir/report.html"
+
+plan_file="$work_dir/plan.md"
+deviations_file="$work_dir/deviations.md"
+verify_file="$work_dir/verify.md"
+briefing_file="$work_dir/briefing.md"
+ledger_file="$work_dir/ledger.json"
+artifacts_dir="$work_dir/artifacts"
+
+tmp_out="$(mktemp "${TMPDIR:-/tmp}/render-task.XXXXXX")"
+trap 'rm -f "$tmp_out"' EXIT
+
+html_escape() {
+  sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+# --- metadata: plain single-value files /task writes, preferred over
+# ledger.json's own class_declared (seen null in real fixtures even when
+# the class file itself held the real value) ---
+class_val="unknown"
+[[ -f "$work_dir/class" ]] && class_val="$(cat "$work_dir/class")"
+owner_val=""
+[[ -f "$work_dir/owner" ]] && owner_val="$(cat "$work_dir/owner")"
+state_val=""
+[[ -f "$work_dir/state" ]] && state_val="$(cat "$work_dir/state")"
+milestone_val=""
+[[ -f "$work_dir/milestone" ]] && milestone_val="$(cat "$work_dir/milestone")"
+
+title="$task_id"
+grounding_line=""
+if [[ -f "$plan_file" ]]; then
+  first_line="$(sed -n '1p' "$plan_file")"
+  parsed_title="$(sed -E 's/^# Plan: `[^`]+` — //' <<<"$first_line")"
+  [[ -n "$parsed_title" && "$parsed_title" != "$first_line" ]] && title="$parsed_title"
+  grounding_line="$(grep -m1 '^grounding: ' "$plan_file" || true)"
+fi
+
+# --- ledger: phase timestamps + summed token cost per human-facing phase.
+# research/verify absorb their own delegated-agent cost lines
+# (research-agent; falsifier, security) so the timeline reads as one
+# strip of real work, not spine's internal phase-key bookkeeping. ---
+ledger_present=0
+[[ -f "$ledger_file" ]] && ledger_present=1
+
+tokens_for() {
+  # tokens_for <phase...> — sums input+output+cache_create+cache_read
+  # across every listed ledger phase key that exists.
+  [[ "$ledger_present" -eq 1 ]] || { echo 0; return; }
+  local phases_json
+  phases_json="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
+  jq --argjson phases "$phases_json" '
+    [ .phases as $p | $phases[] | $p[.].tokens // {input:0,output:0,cache_create:0,cache_read:0} ]
+    | map(.input + .output + .cache_create + .cache_read) | add // 0
+  ' "$ledger_file"
+}
+
+marked_at_for() {
+  [[ "$ledger_present" -eq 1 ]] || { echo ""; return; }
+  jq -r --arg p "$1" '.phases[$p].marked_at // empty' "$ledger_file"
+}
+
+fmt_tokens() {
+  awk -v n="$1" 'BEGIN{
+    if (n >= 1000000) printf "%.1fM", n/1000000;
+    else if (n >= 1000) printf "%.1fk", n/1000;
+    else printf "%d", n;
+  }'
+}
+
+TIMELINE_PHASES=(classify research plan implement verify ship)
+phase_source_keys() {
+  # phase_source_keys <timeline-phase> — bash 3.2 has no associative
+  # arrays (macOS's shipped /bin/bash); a case statement is the portable
+  # equivalent. Absorbs each phase's own delegated-agent ledger keys
+  # (research-agent; falsifier, security) into its human-facing phase.
+  case "$1" in
+    classify) echo "classify" ;;
+    research) echo "research research-agent" ;;
+    plan) echo "plan" ;;
+    implement) echo "implement" ;;
+    verify) echo "verify falsifier security" ;;
+    ship) echo "ship" ;;
+  esac
+}
+
+extract_bullets() {
+  # extract_bullets <start-heading-regex> <end-regex> <file> — a `- ` line
+  # starts a new bullet; any non-blank line after it that doesn't itself
+  # start a new bullet is a wrapped continuation of the same one (plan.md's
+  # prose wraps at ~72 chars per the writing mandate) and gets folded back
+  # onto one line, not silently dropped.
+  awk -v start="$1" -v endpat="$2" '
+    $0 ~ start { f=1; next }
+    f && $0 ~ endpat { exit }
+    f && /^- / { if (buf != "") print buf; buf=$0; next }
+    f && NF == 0 { next }
+    f { sub(/^ +/, ""); buf = buf " " $0 }
+    END { if (buf != "") print buf }
+  ' "$3"
+}
+
+# --- plan.md: gist prose, predicted touch, decisions grounded on ---
+gist=""
+predicted_touch=""
+grounds_decisions=""
+if [[ -f "$plan_file" ]]; then
+  gist="$(awk '/^## The gist/{f=1;next} f && /^## /{exit} f' "$plan_file" | sed '/./,$!d')"
+  predicted_touch="$(extract_bullets '^## Predicted touch' '^<!-- /MACHINE' "$plan_file")"
+  grounds_decisions="$(extract_bullets '^## Grounds on decisions' '^<!-- /MACHINE' "$plan_file")"
+fi
+
+# --- deviations.md: fixed-field records per core/templates/deviations.md.
+# Absent file means no deviation ever happened — "the plan held," the same
+# convention briefing.md itself uses, not a gap. ---
+deviation_count=0
+[[ -f "$deviations_file" ]] && deviation_count="$(grep -c '^## Deviation ' "$deviations_file" || true)"
+
+extract_field() {
+  # extract_field <block> <field-label> — a field's value runs from its
+  # own "- Label:" line up to (not including) the next "- Word" bullet,
+  # so a value that wraps onto a continuation line is still captured
+  # whole rather than truncated at the first newline.
+  local block="$1" field="$2"
+  awk -v field="- $field:" '
+    index($0, field) == 1 { sub("^" field " *", ""); buf = $0; collecting = 1; next }
+    collecting && /^- [A-Za-z]/ { exit }
+    collecting { sub(/^ +/, ""); buf = buf " " $0 }
+    END { print buf }
+  ' <<<"$block" | tr -s ' '
+}
+
+deviation_block() {
+  local n="$1"
+  awk -v target="## Deviation $n" '
+    $0 == target { f=1; next }
+    f && /^## Deviation / { exit }
+    f { print }
+  ' "$deviations_file"
+}
+
+# --- verify.md: overall result line + per-adversary kept/dropped counts.
+# Floor results and capability/tooling gaps come from the structured JSON
+# artifacts below instead of re-parsing verify.md's prose tables. ---
+verify_present=0
+[[ -f "$verify_file" ]] && verify_present=1
+verify_result=""
+floor_run_ts=""
+if [[ "$verify_present" -eq 1 ]]; then
+  header_line="$(grep -m1 '^Class: ' "$verify_file" || true)"
+  verify_result="$(sed -n 's/.*Result: `\([A-Za-z]*\)`.*/\1/p' <<<"$header_line")"
+  floor_run_ts="$(sed -n 's/.*Floor run: `\([^`]*\)`.*/\1/p' <<<"$header_line")"
+fi
+
+adversary_dropped_for() {
+  # adversary_dropped_for <Agent-name-as-in-heading> — reads verify.md's
+  # own "Verdicts kept: `N` · dropped: `N`" line for that ### subsection.
+  [[ "$verify_present" -eq 1 ]] || { echo ""; return; }
+  awk -v h="### $1" '
+    $0 == h { f=1; next }
+    f && /^### / { exit }
+    f && /Verdicts kept:/ { print; exit }
+  ' "$verify_file" | sed -n 's/.*dropped: `\([0-9]*\)`.*/\1/p'
+}
+
+# --- floor: prefer the structured artifact floor writes over re-parsing
+# verify.md's markdown table. ---
+floor_json="$artifacts_dir/floor-result.json"
+floor_present=0
+[[ -f "$floor_json" ]] && floor_present=1
+floor_could_not_run=0
+if [[ "$verify_present" -eq 1 && "$floor_present" -eq 0 ]]; then
+  grep -q 'COULD NOT RUN' "$verify_file" && floor_could_not_run=1
+fi
+
+# --- adversary verdicts: the actual filtered, schema-validated objects
+# verdict-filter wrote (core/ADAPTER-CONTRACT.md §5), never the raw
+# pre-filter file. ---
+adversary_files=()
+if [[ -d "$artifacts_dir" ]]; then
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && adversary_files+=("$f")
+  done < <(find "$artifacts_dir" -maxdepth 1 -name '*-verdict.json' ! -name '*-raw.json' 2>/dev/null | sort)
+fi
+
+# --- briefing.md: the two floors this document may never compress below
+# (core/templates/briefing.md) — What & why, and the six-months line. ---
+briefing_present=0
+[[ -f "$briefing_file" ]] && briefing_present=1
+what_why=""
+six_months=""
+if [[ "$briefing_present" -eq 1 ]]; then
+  what_why="$(awk '/^\*\*What & why:\*\*/{f=1} f{print} f && /^\*\*What surprised us:/{exit}' "$briefing_file" | sed '$d' | sed 's/^\*\*What & why:\*\* *//')"
+  six_months="$(awk '/^\*\*In six months/{f=1} f{print} f && /^$/{exit}' "$briefing_file" | sed 's/^\*\*In six months you.ll want to know:\*\* *//')"
+fi
+
+# ============================== render ==============================
+
+{
+cat <<HTML
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>$(html_escape <<<"$task_id") — task report</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --panel: #ffffff; --border: #e0e0e3; --text: #1a1a1e;
+    --muted: #6b6b76; --accent: #2f5fdb;
+    --pass: #1a7f37; --fail: #cf222e; --degraded: #9a6700;
+    --tier-halt: #cf222e; --tier-record: #9a6700; --tier-decide: #6b6b76;
+    --sev-high: #cf222e; --sev-medium: #9a6700; --sev-low: #6b6b76;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 32px 24px 80px; }
+  header.page { margin-bottom: 28px; }
+  header.page h1 { margin: 0 0 6px; font-size: 1.6em; }
+  header.page .meta { color: var(--muted); font-size: 0.92em; }
+  header.page .meta code { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.8em; font-weight: 600; color: #fff; }
+  .badge.pass { background: var(--pass); }
+  .badge.fail { background: var(--fail); }
+  .badge.degraded { background: var(--degraded); }
+  .badge.neutral { background: var(--muted); }
+  nav.timeline { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 32px; padding-bottom: 4px; }
+  nav.timeline a {
+    flex: 0 0 auto; display: block; min-width: 108px; padding: 10px 12px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    text-decoration: none; color: var(--text);
+  }
+  nav.timeline a .phase { font-weight: 600; font-size: 0.9em; }
+  nav.timeline a .ts { color: var(--muted); font-size: 0.76em; display: block; margin-top: 3px; }
+  nav.timeline a .cost { color: var(--accent); font-size: 0.76em; display: block; margin-top: 1px; }
+  nav.timeline a.empty { opacity: 0.4; }
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin-bottom: 20px; }
+  section > h2 { margin: 0 0 14px; font-size: 1.05em; }
+  section p.omitted { color: var(--muted); font-style: italic; margin: 0; }
+  .gist-text { white-space: pre-wrap; }
+  ul.touch-list, ul.grounds-list { margin: 8px 0 0; padding-left: 20px; }
+  ul.touch-list li, ul.grounds-list li { margin-bottom: 4px; }
+  table.floor { width: 100%; border-collapse: collapse; font-size: 0.92em; }
+  table.floor th, table.floor td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  table.floor code { font-size: 0.95em; }
+  .card { border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; }
+  .card:last-child { margin-bottom: 0; }
+  .card .tier { font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.02em; }
+  .tier-halt { color: var(--tier-halt); }
+  .tier-record-and-proceed { color: var(--tier-record); }
+  .tier-decide-alone { color: var(--tier-decide); }
+  .card dl { margin: 8px 0 0; }
+  .card dt { font-weight: 600; font-size: 0.85em; color: var(--muted); margin-top: 8px; }
+  .card dd { margin: 2px 0 0; }
+  .verdict { border-left: 3px solid var(--sev-low); padding: 8px 0 8px 12px; margin-bottom: 10px; }
+  .verdict.sev-high { border-left-color: var(--sev-high); }
+  .verdict.sev-medium { border-left-color: var(--sev-medium); }
+  .verdict.sev-low { border-left-color: var(--sev-low); }
+  .verdict .sev-label { font-weight: 600; font-size: 0.78em; text-transform: uppercase; }
+  .verdict .sev-label.sev-high { color: var(--sev-high); }
+  .verdict .sev-label.sev-medium { color: var(--sev-medium); }
+  .verdict .sev-label.sev-low { color: var(--sev-low); }
+  .verdict .claim { margin: 4px 0; }
+  .verdict .evidence { font-size: 0.88em; color: var(--muted); }
+  .verdict .evidence code { color: var(--text); }
+  details.evidence-cmd summary { cursor: pointer; }
+  details.evidence-cmd pre { background: var(--bg); border-radius: 6px; padding: 8px 10px; overflow-x: auto; margin: 6px 0 0; }
+  .attacked-list { font-size: 0.88em; color: var(--muted); margin: 0 0 14px; padding-left: 20px; }
+  .summary-badge { font-size: 0.85em; color: var(--muted); margin-bottom: 10px; }
+  .gap-list { margin: 0; padding-left: 20px; font-size: 0.92em; }
+  footer.page { color: var(--muted); font-size: 0.85em; margin-top: 20px; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171a; --panel: #1e1f23; --border: #33343a; --text: #e8e8ea;
+      --muted: #8b8b96;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="page">
+  <h1>$(html_escape <<<"$title")</h1>
+  <div class="meta">
+    <code>$(html_escape <<<"$task_id")</code>
+    · class $(html_escape <<<"$class_val")
+    $( [[ -n "$state_val" ]] && echo "· state $(html_escape <<<"$state_val")" )
+    $( [[ -n "$milestone_val" && "$milestone_val" != "none" ]] && echo "· milestone $(html_escape <<<"$milestone_val")" )
+    $( [[ -n "$owner_val" ]] && echo "· $(html_escape <<<"$owner_val")" )
+    $( [[ -n "$verify_result" ]] && {
+         cls="neutral"; [[ "$verify_result" == "PASS" ]] && cls="pass"; [[ "$verify_result" == "FAIL" ]] && cls="fail"
+         echo "· <span class=\"badge $cls\">verify: $(html_escape <<<"$verify_result")</span>"
+       } )
+  </div>
+  $( [[ -n "$grounding_line" ]] && echo "<div class=\"meta\">$(html_escape <<<"$grounding_line")</div>" )
+</header>
+
+<nav class="timeline">
+HTML
+
+for phase in "${TIMELINE_PHASES[@]}"; do
+  ts="$(marked_at_for "$phase")"
+  cost="$(tokens_for $(phase_source_keys "$phase"))"
+  if [[ -z "$ts" ]]; then
+    printf '<a class="empty" href="#%s"><span class="phase">%s</span><span class="ts">not reached</span></a>\n' \
+      "$phase" "$phase"
+  else
+    printf '<a href="#%s"><span class="phase">%s</span><span class="ts">%s</span><span class="cost">%s tok</span></a>\n' \
+      "$phase" "$phase" "$(html_escape <<<"$ts")" "$(fmt_tokens "$cost")"
+  fi
+done
+
+cat <<'HTML'
+</nav>
+
+<section id="research">
+<h2>The gist</h2>
+HTML
+
+if [[ -n "$gist" ]]; then
+  printf '<div class="gist-text">%s</div>\n' "$(html_escape <<<"$gist")"
+else
+  echo '<p class="omitted">plan.md not yet written — task has not reached /task'"'"'s plan phase.</p>'
+fi
+
+if [[ -n "$predicted_touch" ]]; then
+  echo '<h2 style="margin-top:20px;">Predicted touch</h2><ul class="touch-list">'
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    printf '<li>%s</li>\n' "$(sed 's/^- //' <<<"$line" | html_escape)"
+  done <<<"$predicted_touch"
+  echo '</ul>'
+fi
+
+if [[ -n "$grounds_decisions" ]]; then
+  echo '<h2 style="margin-top:20px;">Grounds on decisions</h2><ul class="grounds-list">'
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    printf '<li>%s</li>\n' "$(sed 's/^- //' <<<"$line" | html_escape)"
+  done <<<"$grounds_decisions"
+  echo '</ul>'
+fi
+
+echo '</section>'
+
+# ---- deviations ----
+cat <<'HTML'
+<section id="plan">
+<h2>Deviations</h2>
+HTML
+
+if [[ "$deviation_count" -eq 0 ]]; then
+  echo '<p class="omitted">No deviations — the plan held.</p>'
+else
+  for n in $(seq 1 "$deviation_count"); do
+    block="$(deviation_block "$n")"
+    tier="$(extract_field "$block" "Tier" | sed 's/^ *//;s/ *$//')"
+    status="$(extract_field "$block" "Status" | sed 's/^ *//;s/ *$//')"
+    plan_assumed="$(extract_field "$block" "Plan assumed")"
+    actually_true="$(extract_field "$block" "Actually true")"
+    resolution="$(extract_field "$block" "Resolution")"
+    tier_class="tier-decide-alone"
+    [[ "$tier" == "halt" ]] && tier_class="tier-halt"
+    [[ "$tier" == "record-and-proceed" ]] && tier_class="tier-record-and-proceed"
+    printf '<div class="card">\n'
+    printf '<span class="tier %s">%s</span> · %s\n' "$tier_class" "$(html_escape <<<"$tier")" "$(html_escape <<<"$status")"
+    printf '<dl>\n'
+    [[ -n "$plan_assumed" ]] && printf '<dt>Plan assumed</dt><dd>%s</dd>\n' "$(html_escape <<<"$plan_assumed")"
+    [[ -n "$actually_true" ]] && printf '<dt>Actually true</dt><dd>%s</dd>\n' "$(html_escape <<<"$actually_true")"
+    [[ -n "$resolution" ]] && printf '<dt>Resolution</dt><dd>%s</dd>\n' "$(html_escape <<<"$resolution")"
+    printf '</dl></div>\n'
+  done
+fi
+echo '</section>'
+
+# ---- floor results ----
+cat <<'HTML'
+<section id="verify">
+<h2>Floor results</h2>
+HTML
+
+if [[ "$floor_present" -eq 1 ]]; then
+  echo '<table class="floor"><tr><th>Capability</th><th>Result</th><th>Detail</th></tr>'
+  while IFS=$'\t' read -r cap status detail; do
+    badge="degraded"
+    [[ "$status" == "pass" ]] && badge="pass"
+    [[ "$status" == "fail" ]] && badge="fail"
+    printf '<tr><td><code>%s</code></td><td><span class="badge %s">%s</span></td><td>%s</td></tr>\n' \
+      "$(html_escape <<<"$cap")" "$badge" "$(html_escape <<<"$status")" "$(html_escape <<<"$detail")"
+  done < <(jq -r '.results[] | [.capability, .status, .detail] | @tsv' "$floor_json")
+  echo '</table>'
+  [[ -n "$floor_run_ts" ]] && printf '<p class="omitted" style="margin-top:10px;">Floor run: %s</p>\n' "$(html_escape <<<"$floor_run_ts")"
+elif [[ "$floor_could_not_run" -eq 1 ]]; then
+  echo '<p class="omitted">Floor could not run this task — see verify.md Tooling gaps.</p>'
+elif [[ "$verify_present" -eq 1 ]]; then
+  echo '<p class="omitted">No floor-result.json artifact found for this task.</p>'
+else
+  echo '<p class="omitted">verify.md not yet written — task has not reached /verify.</p>'
+fi
+echo '</section>'
+
+# ---- adversary verdicts ----
+cat <<'HTML'
+<section id="adversaries">
+<h2>Adversary activity</h2>
+HTML
+
+if [[ "${#adversary_files[@]}" -eq 0 ]]; then
+  if [[ "$verify_present" -eq 1 ]]; then
+    echo '<p class="omitted">Not run — floor failed before the adversary phase, or this task'"'"'s verify run never reached it.</p>'
+  else
+    echo '<p class="omitted">verify.md not yet written — task has not reached /verify.</p>'
+  fi
+else
+  for f in "${adversary_files[@]}"; do
+    agent="$(jq -r '.agent' "$f")"
+    agent_title="$(tr '[:lower:]' '[:upper:]' <<<"${agent:0:1}")${agent:1}"
+    dropped="$(adversary_dropped_for "$agent_title")"
+    kept_count="$(jq '.verdicts | length' "$f")"
+    max_sev="none"
+    for s in high medium low; do
+      if jq -e --arg s "$s" '.verdicts[] | select(.severity == $s)' "$f" >/dev/null 2>&1; then
+        max_sev="$s"; break
+      fi
+    done
+    printf '<h3>%s</h3>\n' "$(html_escape <<<"$agent_title")"
+    printf '<div class="summary-badge">%s kept%s · max severity: %s</div>\n' \
+      "$kept_count" "$( [[ -n "$dropped" ]] && echo ", $dropped dropped" )" "$(html_escape <<<"$max_sev")"
+    echo '<div class="attacked-list"><strong>Attacked:</strong><ul>'
+    while IFS= read -r item; do
+      [[ -n "$item" ]] || continue
+      printf '<li>%s</li>\n' "$(html_escape <<<"$item")"
+    done < <(jq -r '.attacked[]' "$f")
+    echo '</ul></div>'
+
+    while IFS= read -r verdict; do
+      [[ -n "$verdict" ]] || continue
+      sev="$(jq -r '.severity' <<<"$verdict")"
+      claim="$(jq -r '.claim' <<<"$verdict")"
+      ev_kind="$(jq -r '.evidence.kind' <<<"$verdict")"
+      printf '<div class="verdict sev-%s">\n' "$sev"
+      printf '<span class="sev-label sev-%s">%s</span>\n' "$sev" "$(html_escape <<<"$sev")"
+      printf '<p class="claim">%s</p>\n' "$(html_escape <<<"$claim")"
+      if [[ "$ev_kind" == "file_line" ]]; then
+        ev_file="$(jq -r '.evidence.file' <<<"$verdict")"
+        ev_line="$(jq -r '.evidence.line' <<<"$verdict")"
+        printf '<div class="evidence">evidence: <code>%s:%s</code></div>\n' "$(html_escape <<<"$ev_file")" "$ev_line"
+      elif [[ "$ev_kind" == "command" ]]; then
+        ev_cmd="$(jq -r '.evidence.command' <<<"$verdict")"
+        ev_out="$(jq -r '.evidence.output' <<<"$verdict")"
+        printf '<details class="evidence-cmd"><summary><code>%s</code></summary><pre>%s</pre></details>\n' \
+          "$(html_escape <<<"$ev_cmd")" "$(html_escape <<<"$ev_out")"
+      elif [[ "$ev_kind" == "decision" ]]; then
+        ev_did="$(jq -r '.evidence.decision_id' <<<"$verdict")"
+        ev_quote="$(jq -r '.evidence.quote' <<<"$verdict")"
+        printf '<div class="evidence">evidence: <code>%s</code> — "%s"</div>\n' "$(html_escape <<<"$ev_did")" "$(html_escape <<<"$ev_quote")"
+      fi
+      echo '</div>'
+    done < <(jq -c '.verdicts[]' "$f")
+  done
+fi
+echo '</section>'
+
+# ---- capability / tooling gaps (from ledger.json, structured) ----
+cat <<'HTML'
+<section id="gaps">
+<h2>Capability &amp; tooling gaps</h2>
+HTML
+
+if [[ "$ledger_present" -eq 1 ]]; then
+  cap_gaps="$(jq -r '.capability_gaps[]?' "$ledger_file")"
+  tooling_gaps_count="$(jq '.tooling_gaps | length' "$ledger_file")"
+  if [[ -z "$cap_gaps" ]]; then
+    echo '<p class="omitted">No capability gaps recorded.</p>'
+  else
+    echo '<ul class="gap-list">'
+    while IFS= read -r g; do [[ -n "$g" ]] && printf '<li>%s</li>\n' "$(html_escape <<<"$g")"; done <<<"$cap_gaps"
+    echo '</ul>'
+  fi
+  if [[ "$tooling_gaps_count" -gt 0 ]]; then
+    echo '<h3 style="margin-top:14px;">Tooling gaps</h3><ul class="gap-list">'
+    while IFS=$'\t' read -r script consequence; do
+      printf '<li><code>%s</code> — %s</li>\n' "$(html_escape <<<"$script")" "$(html_escape <<<"$consequence")"
+    done < <(jq -r '.tooling_gaps[] | [.script, .consequence] | @tsv' "$ledger_file")
+    echo '</ul>'
+  fi
+else
+  echo '<p class="omitted">ledger.json not found.</p>'
+fi
+echo '</section>'
+
+# ---- briefing ----
+cat <<'HTML'
+<section id="ship">
+<h2>Briefing</h2>
+HTML
+
+if [[ "$briefing_present" -eq 1 ]]; then
+  [[ -n "$what_why" ]] && printf '<p><strong>What &amp; why:</strong> %s</p>\n' "$(html_escape <<<"$what_why")"
+  [[ -n "$six_months" ]] && printf '<p><strong>In six months you'"'"'ll want to know:</strong> %s</p>\n' "$(html_escape <<<"$six_months")"
+else
+  echo '<p class="omitted">briefing.md not yet written — task has not reached /ship.</p>'
+fi
+echo '</section>'
+
+cat <<HTML
+<footer class="page">
+  Generated $(date -u +%Y-%m-%dT%H:%M:%SZ) from <code>work/$(html_escape <<<"$task_id")/</code>.
+  Regenerate with <code>render-task --task $(html_escape <<<"$task_id") --project $(html_escape <<<"$project")</code>.
+</footer>
+</div>
+</body>
+</html>
+HTML
+} > "$tmp_out"
+
+mv "$tmp_out" "$out_path"
+trap - EXIT
+echo "render-task: wrote $out_path"
