@@ -13,6 +13,34 @@ projects reference it. Nothing in `spine/` names a language, framework, or
 tool — stack specificity lives only in a project's own `.spine/adapters/`,
 generated at install time.
 
+**Under the hood, it's three plain kinds of files, wired together by one
+convention:**
+
+1. **Skills** — the slash commands (`/task`, `/verify`, `/ship`, `/design`,
+   etc). Each is a markdown instruction file that tells whatever model is
+   running exactly what to do, step by step, in prose a model reads and
+   follows. This is the "brain" layer — no code runs here.
+2. **Agents** — fresh, isolated model sessions with a narrow job and no
+   memory of the conversation that spawned them (`researcher`,
+   `falsifier`, `security`). Skills delegate to them specifically to get
+   independence — a fresh session can't be swayed by the same reasoning
+   that wrote the code.
+3. **Hooks + scripts** — actual shell scripts, not prompts. Hooks
+   intercept tool calls before they run (block an edit to a protected
+   path, block a write during the wrong phase). Scripts do mechanical
+   work with no judgment involved — hashing a decision file, running the
+   test suite, generating the dashboard.
+
+Skills are the instructions, agents are the independent reviewers, hooks
+and scripts are the parts that can't be talked out of doing their job.
+Everything a model does is steerable by a good-enough prompt; everything a
+hook or script does isn't — that's the actual load-bearing distinction,
+and it's why this system calls itself "teeth" rather than just more
+prompting. And it's all just files in a git repo (`core/skills/`,
+`core/agents/`, `core/hooks/`, `core/scripts/`) that Claude Code resolves
+live from wherever it's checked out — nothing compiled, nothing hidden;
+someone could read every rule this enforces in an afternoon.
+
 ## Why this exists
 
 Building almost entirely with AI agents fails in a small number of
@@ -255,6 +283,101 @@ framed as an instrument for spotting drift early, not a leaderboard —
 `docs/tradeoffs.md`'s Extension C section has the full accounting,
 including what's still enforced by an agent following instructions rather
 than a hook, and what breaks past about 4 engineers.
+
+## Cross-repo work and where its docs live
+
+`/workspace` (Extension B) is for when a change spans more than one
+repository — a shared backend and the frontends that consume it, for
+example. It creates one **workspace root**: its own small git repo,
+separate from every repo it coordinates, holding `workspace.json` (the
+member-repo list and the contract registry), `contracts/<name>/spec.md`
+(the actual contract text), one shared `docs/charter.md` (a pointer
+document, never a duplicate of any member repo's own charter), and its own
+`work/<task-id>/` folders for tasks that touch more than one repo. A
+cross-repo `/task` runs *once*, at the workspace root — one plan, one
+research.md, one human approval — never a separate task per repo. A
+shared producer consumed by several other repos is still exactly one
+workspace, listing every consumer — never one workspace per consumer; the
+model is one repo → one workspace, and `docs/tradeoffs.md`'s Extension B
+section discloses the reverse (a repo split across multiple workspaces) as
+unsupported.
+
+Each member repo keeps its own spine install untouched — its own
+`docs/charter.md`, `docs/decisions/`, `.spine/adapters/`, and its own
+single-repo `work/` history for tasks that don't cross a repo boundary.
+The workspace root only ever holds what's genuinely shared: the contract
+itself, decisions *about* the contract, and the task record for changes
+that touch more than one repo at once.
+
+**Setting one up:** install spine into every repo that will join it first
+(`/bootstrap` or `/adopt` — `/workspace` coordinates already-installed
+repos, it does not install spine into them), then run `/workspace --root
+<path> --repo <name>=<path> [--repo <name>=<path> ...]` naming every repo
+at once if you already know them all. Start a fresh session **in the
+workspace root** before running `/task` there — hook/skill wiring doesn't
+hot-reload mid-session. A repo joining later re-runs `/workspace` against
+the same root to extend it, rather than standing up a second workspace.
+
+## How spine knows what to record, and when
+
+Nothing here is a model's judgment call about "this seems worth writing
+down" — every doc gets written at a fixed point in a fixed skill, because
+that skill's own instructions say so, never because a task happened to
+feel important. Walking the actual lifecycle:
+
+- **Once, before any code exists (`/design`):** foundational choices —
+  auth model, persistence, module boundaries — become
+  `docs/decisions/D-*.md` records, each with its own rejected alternatives.
+  Nothing is recorded here because it seemed prudent; the six foundational
+  categories are fixed, and `design-gate` refuses to hand off until every
+  one is either decided or explicitly deferred with a named trigger
+  (`docs/decisions/DEFERRED.md`) — never silently skipped.
+- **Every task, at research time (`/task`):** the researcher writes
+  `research.md`, citing real `file:line` evidence and a commit sha — never
+  from memory. It also greps existing `docs/decisions/` for anything the
+  new work touches, so a decision made once doesn't get silently
+  re-litigated task after task.
+- **Every task, at plan time:** `plan.md`'s own gist, predicted-touch
+  list, and rejected-alternative line are written before a single line of
+  code changes — this is what the human approves, not a retroactive
+  description of what already happened.
+- **Only when reality diverges from the plan:** a `deviations.md` record
+  — what was assumed, what's actually true, the options considered, the
+  resolution. Never written for its own sake; three of them on one task
+  invalidates the plan outright (`core/skills/task/SKILL.md`'s circuit
+  breaker) rather than letting deviations quietly accumulate.
+- **At ship time (`/ship`), automatically, from what already exists:** the
+  delta briefing, the PR description, and any decision this task's plan
+  cited get their status flipped (`adopted` → `implemented`) and their
+  `## Implementing paths` appended — and if a *resolved* deviation
+  establishes a rule future tasks should follow, `/ship` distills a brand
+  new decision record from it directly. This is the one place new
+  decisions get written after design — and only from something that
+  actually happened and got resolved, never speculatively.
+- **Continuously, mechanically, never by a model re-deciding it's stale:**
+  `check-stale` diffs a citation's recorded sha against current `HEAD`
+  every time research is read again, and `docs/decisions/INDEX.md`
+  regenerates at both points a decision is ever written (`/design`,
+  `/ship`) — staleness is a diff, not a guess.
+
+The result: at any point, every doc that exists traces to a specific skill
+step that wrote it for a specific reason — there's no separate "remember
+to update the docs" discipline to forget.
+
+## PR descriptions that document the change, not the diff
+
+`/ship` writes `work/<task-id>/pr-description.md` alongside the delta
+briefing, assembled entirely from artifacts the task already produced —
+`plan.md`'s rejected alternatives, `deviations.md`'s resolutions,
+`verify.md`'s adversary findings, ranked by what actually matters (an
+adversary-found bug ranks above routine plan drift). `core/templates/
+pr-description.md`'s own header states the rule directly: this file is
+never a summary of the diff, and nothing in it is generated by re-reading
+the changed source. A reviewer gets the reasoning behind the change and a
+priority-ordered "where to look" list with file:line pointers — closer to
+reviewing the decision than reconstructing it line-by-line from a raw
+diff, though it's meant to focus that remaining review, not replace it
+outright.
 
 ## If something feels like it's fighting you
 

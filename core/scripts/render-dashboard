@@ -68,11 +68,15 @@ to_epoch() {
 }
 
 fmt_ts() {
-  # fmt_ts <timestamp> — human-readable, e.g. "Aug 15, 2026 05:24 PM".
-  # Falls back to the raw value if it doesn't parse rather than hiding it.
+  # fmt_ts <timestamp> — human-readable, e.g. "Aug 15, 2026 05:24 PM EST".
+  # Rendered in DASHBOARD_TZ (default America/New_York) rather than
+  # whatever TZ the rendering machine happens to have, and always shows
+  # the zone abbreviation so a reader never has to guess which timezone
+  # a timestamp is in. Falls back to the raw value if it doesn't parse
+  # rather than hiding it.
   local e
   e="$(to_epoch "$1")" || { printf '%s' "$1"; return; }
-  date -r "$e" "+%b %d, %Y %I:%M %p" 2>/dev/null || printf '%s' "$1"
+  TZ="${DASHBOARD_TZ:-America/New_York}" date -r "$e" "+%b %d, %Y %I:%M %p %Z" 2>/dev/null || printf '%s' "$1"
 }
 
 fmt_duration() {
@@ -89,6 +93,63 @@ fmt_tokens() {
     else if (n >= 1000) printf "%.1fk tokens", n/1000;
     else printf "%d tokens", n;
   }'
+}
+
+gloss_for_commit() {
+  # gloss_for_commit <subject> — a short, plain-language "what actually
+  # happened" line for spine's own fixed bookkeeping commit-message
+  # vocabulary (core/skills/task/SKILL.md's registry-sync calls,
+  # core/skills/design/SKILL.md's/bootstrap's own commit messages — see
+  # each skill's own literal message strings; never free text a human
+  # typed, so pattern-matching against them is stable). Returns empty for
+  # anything that doesn't match a known shape — a feature/fix commit's
+  # own subject line already explains itself, and an unrecognized
+  # bookkeeping shape should stay silent rather than mis-gloss it.
+  # Purely additive: the raw commit subject always renders too, this is
+  # never a replacement.
+  local s="$1"
+  case "$s" in
+    "spine: bootstrap install"*)
+      echo "Project installed: charter drafted, floor calibrated, adapters generated." ;;
+    "spine: stamp map.md"*)
+      echo "Architecture map stamped with a starting commit — the baseline future staleness checks compare against." ;;
+    "spine: design stage"*)
+      echo "Design session complete — foundational decisions adopted, first milestone scoped, before any feature code existed." ;;
+    "task: open "*)
+      echo "New task opened — work begins." ;;
+    "task: begin research"|"task: research complete"*|"task: research header corrected"*)
+      echo "Research phase — grounding the change in how the system actually works today." ;;
+    "task: plan drafted"*)
+      echo "Implementation plan drafted, ready for human approval." ;;
+    "task: plan approved"*)
+      if [[ "$s" == *override* ]]; then
+        echo "Plan approved — self-approved override (solo/on-call), recorded loudly, not silently."
+      else
+        echo "Plan approved — code changes can now begin."
+      fi ;;
+    "task: begin implement"|"task: entering implement"*)
+      echo "Implementation phase begins, against the approved plan." ;;
+    "task: deviation "*)
+      echo "Plan met reality — the gap, the options considered, and the resolution were all written down before continuing." ;;
+    "task: implementation complete"*)
+      echo "Implementation finished — ready for independent verification." ;;
+    "task: log tooling gap"*)
+      echo "A tooling limitation was hit and recorded plainly, rather than silently skipped." ;;
+    "task: verify complete, PASS"*)
+      echo "Independent adversarial review and the mechanical floor both passed." ;;
+    "task: verify complete, FAIL"*)
+      echo "Independent adversarial review or the mechanical floor found a real problem — back to implementation." ;;
+    "task: post-verify fixes"*)
+      echo "Findings from the adversarial review were fixed and re-verified before shipping." ;;
+    "task: done")
+      echo "Task shipped and closed out." ;;
+    "task: milestone "*"assigned to"*)
+      echo "Milestone bookkeeping — this task assigned as a member task of the milestone." ;;
+    "deps: add "*)
+      echo "A new dependency was added — every install/dependency command runs under this project's own manifest-change discipline." ;;
+    "chore: clear active task pointer"*)
+      echo "Task pointer cleared — this project is no longer mid-task." ;;
+  esac
 }
 
 phase_source_keys() {
@@ -122,7 +183,23 @@ if [[ -d "$project/work" ]]; then
 fi
 
 # --- per-task summary: class, state, verify result, first/last ledger
-# timestamp (for the Gantt span), token total, report.html presence. ---
+# timestamp (for the Gantt span), token total, report.html presence,
+# owner (for multi-engineer visibility — see "who did what" additions
+# below). ---
+owner_display() {
+  # owner_display <task-id> — work/<task-id>/owner is "<name> <email>"
+  # (core/skills/task/SKILL.md §"registry-sync: resolve owner identity");
+  # strip the email/angle-bracket tail the same way render-task's own
+  # owner_val already does, so a dashboard reader sees a plain name, not
+  # a raw git identity string. Empty (never "unknown") if the file is
+  # absent — a task predating this field, or one degraded to
+  # hand-tracked, is a real absence to show as absent, not invented.
+  local wd="$project/work/$1" raw=""
+  [[ -f "$wd/owner" ]] && raw="$(cat "$wd/owner")"
+  [[ -n "$raw" ]] || { echo ""; return; }
+  sed -E 's/[[:space:]]*<[^>]*>[[:space:]]*$//; s/[[:space:]]+[^[:space:]]+@[^[:space:]]+[[:space:]]*$//' <<<"$raw"
+}
+
 declare_task_summary() {
   local t="$1" wd="$project/work/$t"
   local class="unknown" state="" verify_result="" first_ts="" last_ts="" tokens=0 has_report=0
@@ -137,7 +214,8 @@ declare_task_summary() {
     last_ts="$(jq -r '[.phases[].marked_at] | map(select(. != null)) | sort | .[-1] // empty' "$wd/ledger.json")"
     tokens="$(jq '[.phases[] | .tokens // {input:0,output:0,cache_create:0,cache_read:0} | (.input+.output+.cache_create+.cache_read)] | add // 0' "$wd/ledger.json")"
   fi
-  printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' "$t" "$class" "$state" "$verify_result" "$first_ts" "$last_ts" "$tokens" "$has_report"
+  local owner; owner="$(owner_display "$t")"
+  printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' "$t" "$class" "$state" "$verify_result" "$first_ts" "$last_ts" "$tokens" "$has_report" "$owner"
 }
 
 task_rows=()
@@ -150,7 +228,7 @@ done
 span_min=""
 span_max=""
 for row in "${task_rows[@]}"; do
-  IFS=$'\x1f' read -r t cls st vr first last tok rep <<<"$row"
+  IFS=$'\x1f' read -r t cls st vr first last tok rep own <<<"$row"
   [[ -n "$first" ]] || continue
   e_first="$(to_epoch "$first")"
   e_last="$(to_epoch "${last:-$first}")"
@@ -205,11 +283,14 @@ has_design_review=0
 # --- cost/drift instrument: shell out to the existing ledger script
 # itself, same numbers /costs reports, never re-derived by hand. ---
 ledger_aggregate_json="{}"
+ledger_by_engineer_json="[]"
 untracked_line=""
 ledger_reachable=1
 if [[ -x "$ledger_bin" ]]; then
   ledger_aggregate_json="$($ledger_bin aggregate --project "$project" 2>/dev/null)"
   [[ -n "$ledger_aggregate_json" ]] || ledger_aggregate_json="{}"
+  ledger_by_engineer_json="$($ledger_bin aggregate --project "$project" --by-engineer 2>/dev/null)"
+  [[ -n "$ledger_by_engineer_json" ]] || ledger_by_engineer_json="[]"
   untracked_line="$($ledger_bin scan-untracked-ratio --project "$project" 2>/dev/null)"
 else
   ledger_reachable=0
@@ -219,7 +300,7 @@ fi
 # resolves — reuses render-task, never a second parser. ---
 if [[ -x "$render_task_bin" ]]; then
   for row in "${task_rows[@]}"; do
-    IFS=$'\x1f' read -r t cls st vr first last tok rep <<<"$row"
+    IFS=$'\x1f' read -r t cls st vr first last tok rep own <<<"$row"
     [[ "$rep" -eq 0 ]] && "$render_task_bin" --task "$t" --project "$project" >/dev/null 2>&1 || true
   done
 fi
@@ -250,6 +331,7 @@ for t in "${task_ids[@]}"; do
     done < <(find "$wd/artifacts" -maxdepth 1 -name '*-verdict.json' ! -name '*-raw.json' 2>/dev/null)
   fi
   bypass_reason="$(jq -r '.bypass // empty' "$wd/ledger.json" 2>/dev/null)"
+  task_owner="$(owner_display "$t")"
 
   for phase in $TIMELINE_PHASES; do
     ts="$(jq -r --arg p "$phase" '.phases[$p].marked_at // empty' "$wd/ledger.json")"
@@ -288,14 +370,14 @@ for t in "${task_ids[@]}"; do
       bypass_detail="$(printf '%s' "$bypass_reason" | cut -c1-160)"
     fi
     subject="$t — $phase"
-    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
-      "$e" "phase" "$ts" "$subject" "$href" "${dur:-}" "$tok" "$outcome" "$is_bypass" "$bypass_detail")")
+    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+      "$e" "phase" "$ts" "$subject" "$href" "${dur:-}" "$tok" "$outcome" "$is_bypass" "$bypass_detail" "$task_owner")")
     prev_ts="$ts"
   done
 done
 
 if [[ "$is_git_repo" -eq 1 ]]; then
-  while IFS=$'\t' read -r sha ts subject; do
+  while IFS=$'\t' read -r sha ts author subject; do
     [[ -n "$sha" ]] || continue
     task_trailer="$(commit_trailer "$sha" "Spine-Task")"
     [[ -n "$task_trailer" ]] && continue
@@ -304,9 +386,9 @@ if [[ "$is_git_repo" -eq 1 ]]; then
     bypass="$(commit_trailer "$sha" "Spine-Bypass")"
     is_bypass=0; bypass_detail=""
     if [[ -n "$bypass" ]]; then is_bypass=1; bypass_detail="$(printf '%s' "$bypass" | cut -c1-160)"; fi
-    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
-      "$e" "commit" "$ts" "$subject" "" "" "" "" "$is_bypass" "$bypass_detail")")
-  done < <(git -C "$project" log --format='%H%x09%aI%x09%s' --reverse 2>/dev/null)
+    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+      "$e" "commit" "$ts" "$subject" "" "" "" "" "$is_bypass" "$bypass_detail" "$author")")
+  done < <(git -C "$project" log --format='%H%x09%aI%x09%an%x09%s' --reverse 2>/dev/null)
 fi
 
 # Chronological sort — epoch is field 1. \x1f (unit separator), not tab:
@@ -355,7 +437,8 @@ cat <<HTML
   /* Gantt */
   .gantt { position: relative; }
   .gantt-row { position: relative; margin-bottom: 14px; }
-  .gantt-label { position: absolute; left: 0; top: 0; font-size: 0.82em; color: var(--muted); line-height: 40px; white-space: nowrap; }
+  .gantt-label { position: absolute; left: 0; top: 0; width: 180px; font-size: 0.82em; color: var(--muted); line-height: 1.25; padding-top: 3px; }
+  .gantt-owner { display: block; font-size: 0.85em; color: var(--accent); margin-top: 1px; }
   .gantt-track { position: relative; margin-left: 190px; height: 40px; background: var(--bg); border-radius: 6px; }
   .gantt-bar { position: absolute; top: 6px; height: 28px; border-radius: 6px; background: var(--accent); min-width: 6px; }
   .gantt-bar.fail { background: var(--fail); }
@@ -369,6 +452,7 @@ cat <<HTML
   .feed-item.commit-event::before { background: var(--muted); }
   .feed-item.bypass::before { background: var(--fail); }
   .feed-ts { font-size: 0.76em; color: var(--muted); }
+  .feed-author { color: var(--accent); font-weight: 600; }
   .feed-subject { margin-top: 2px; }
   .feed-subject a { color: var(--text); text-decoration: none; border-bottom: 1px dotted var(--border); }
   .feed-meta { font-size: 0.82em; color: var(--muted); margin-top: 2px; }
@@ -427,7 +511,9 @@ elif [[ -z "$span_min" ]]; then
 else
   echo '<div class="gantt">'
   for row in "${task_rows[@]}"; do
-    IFS=$'\x1f' read -r t cls st vr first last tok rep <<<"$row"
+    IFS=$'\x1f' read -r t cls st vr first last tok rep own <<<"$row"
+    label="$t"
+    [[ -n "$own" ]] && label="$t <span class=\"gantt-owner\">$(html_escape <<<"$own")</span>"
     if [[ -n "$first" ]]; then
       e_first="$(to_epoch "$first")"
       e_last="$(to_epoch "${last:-$first}")"
@@ -437,16 +523,16 @@ else
       bar_class="ok"
       [[ "$vr" == "FAIL" ]] && bar_class="fail"
       href="${link_prefix}work/$t/report.html"
-      tip="class $cls · $st · verify: ${vr:-n/a} · $(fmt_ts "$first") – $(fmt_ts "${last:-$first}")"
+      tip="class $cls · $st · verify: ${vr:-n/a}$( [[ -n "$own" ]] && echo " · $own" ) · $(fmt_ts "$first") – $(fmt_ts "${last:-$first}")"
       # Every fact the hover tip carries also renders as permanent, visible
       # text below the bar — a bar's own width is often too narrow to hold
       # a label, and hovering isn't how this dashboard is meant to be read.
       caption="$(fmt_ts "$first") – $(fmt_ts "${last:-$first}") · took $(fmt_duration $((e_last - e_first)))"
       [[ -n "$vr" ]] && caption="$caption · verify: $vr"
       printf '<div class="gantt-row">\n<span class="gantt-label">%s</span>\n<div class="gantt-track">\n<div class="gantt-bar %s" style="left:%s%%;width:%s%%;">\n<a href="%s" title="%s"></a>\n</div>\n</div>\n<div class="gantt-caption">%s</div>\n</div>\n' \
-        "$(html_escape <<<"$t")" "$bar_class" "$left" "$width" "$(html_escape <<<"$href")" "$(html_escape <<<"$tip")" "$(html_escape <<<"$caption")"
+        "$label" "$bar_class" "$left" "$width" "$(html_escape <<<"$href")" "$(html_escape <<<"$tip")" "$(html_escape <<<"$caption")"
     else
-      printf '<div class="gantt-row"><span class="gantt-label">%s</span><div class="gantt-track"></div></div>\n' "$(html_escape <<<"$t")"
+      printf '<div class="gantt-row"><span class="gantt-label">%s</span><div class="gantt-track"></div></div>\n' "$label"
     fi
   done
   echo '</div>'
@@ -459,12 +545,14 @@ if [[ "${#sorted_events[@]}" -eq 0 ]]; then
   echo '<p class="omitted">No events to show yet.</p>'
 else
   echo '<div class="feed">'
+  feed_prev_epoch=""
   for ev in "${sorted_events[@]}"; do
-    IFS=$'\x1f' read -r e kind ts subject href dur tok outcome is_bypass bypass_detail <<<"$ev"
+    IFS=$'\x1f' read -r e kind ts subject href dur tok outcome is_bypass bypass_detail author <<<"$ev"
     item_class="$kind-event"
     [[ "$is_bypass" == "1" ]] && item_class="$item_class bypass"
-    printf '<div class="feed-item %s">\n<div class="feed-ts">%s</div>\n<div class="feed-subject">' \
-      "$item_class" "$(html_escape <<<"$(fmt_ts "$ts")")"
+    printf '<div class="feed-item %s">\n<div class="feed-ts">%s%s</div>\n<div class="feed-subject">' \
+      "$item_class" "$(html_escape <<<"$(fmt_ts "$ts")")" \
+      "$( [[ -n "$author" ]] && printf ' <span class=\"feed-author\">%s</span>' "$(html_escape <<<"$author")" )"
     if [[ -n "$href" ]]; then
       printf '<a href="%s">%s</a>' "$(html_escape <<<"$href")" "$(html_escape <<<"$subject")"
     else
@@ -477,9 +565,25 @@ else
       [[ -n "$tok" && "$tok" != "0" ]] && meta="$meta<span class=\"chip\">$(html_escape <<<"$(fmt_tokens "$tok")")</span>"
       [[ -n "$meta" ]] && printf '<div class="feed-meta">%s</div>\n' "$meta"
       [[ -n "$outcome" ]] && printf '<div class="feed-outcome">%s</div>\n' "$(html_escape <<<"$outcome")"
+    else
+      # Commit-kind events carry no per-task ledger duration ($dur is
+      # always empty for them — see the event-collection loop above,
+      # which only ever sets it for phase rows). Elapsed-since-the-
+      # previous-visible-event is real, mechanically computable data
+      # (git commit timestamps), just not the same "cost of one phase"
+      # number a phase row shows — labeled "since previous" so the two
+      # never read as the same measurement.
+      if [[ -n "$feed_prev_epoch" ]]; then
+        commit_gap=$((e - feed_prev_epoch))
+        printf '<div class="feed-meta"><span class="chip">%s since previous</span></div>\n' \
+          "$(html_escape <<<"$(fmt_duration "$commit_gap")")"
+      fi
+      gloss="$(gloss_for_commit "$subject")"
+      [[ -n "$gloss" ]] && printf '<div class="feed-outcome">%s</div>\n' "$(html_escape <<<"$gloss")"
     fi
     [[ "$is_bypass" == "1" ]] && printf '<div class="feed-outcome" style="color:var(--fail);">bypass: %s</div>\n' "$(html_escape <<<"$bypass_detail")"
     echo '</div>'
+    feed_prev_epoch="$e"
   done
   echo '</div>'
 fi
@@ -641,7 +745,29 @@ else
   printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">hand-tracked tasks</div></div>\n' "$hand_tracked"
   [[ -n "$ratio" ]] && printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">untracked-commit ratio</div></div>\n' "$ratio"
   echo '</div>'
-  echo '<p class="instrument-note">An instrument for spotting drift early, not a leaderboard — same framing /costs itself uses. A high untracked-commit ratio on a solo/no-remote project is expected (only the final /ship commit carries a Spine-Task: trailer; every intermediate task-bookkeeping commit does not) — read this alongside bypass count and tooling gaps, not in isolation.</p>'
+
+  # Per-engineer breakdown (Extension C §2.7) — same instrument, split by
+  # who owned each task's ledger.json. "unknown" groups any ledger
+  # predating the engineer field (never silently dropped, see
+  # core/scripts/ledger's own --by-engineer header comment). Rendered
+  # only when there's more than one real engineer to compare, or the
+  # single row would just restate the aggregate stats above with no new
+  # information.
+  eng_rows="$(jq -r 'length' <<<"$ledger_by_engineer_json" 2>/dev/null || echo 0)"
+  if [[ "$eng_rows" -gt 1 ]]; then
+    echo '<h3 style="margin-top:20px;">By engineer</h3>'
+    echo '<table class="simple"><tr><th>Engineer</th><th>Tasks</th><th>Total cost</th><th>Avg deviations/task</th><th>Bypasses</th><th>Tooling gaps</th></tr>'
+    while IFS=$'\t' read -r eng tc tk ad bc tg; do
+      [[ -n "$eng" ]] || continue
+      fmt_ad="$(awk -v n="$ad" 'BEGIN{printf "%.2f", n}')"
+      printf '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n' \
+        "$(html_escape <<<"$eng")" "$tc" "$(fmt_tokens "$tk")" "$fmt_ad" "$bc" "$tg"
+    done < <(jq -r '.[] | [.engineer, .task_count, .total_tokens, .avg_deviation_count, .bypass_count, .tooling_gap_count] | @tsv' <<<"$ledger_by_engineer_json" 2>/dev/null)
+    echo '</table>'
+  fi
+
+  echo '<p class="instrument-note">An instrument for spotting drift early, not a leaderboard — same framing /costs itself uses.</p>'
+  echo '<p class="instrument-note">A high untracked-commit ratio on a solo/no-remote project is expected: only the final /ship commit carries a Spine-Task: trailer, every intermediate task-bookkeeping commit does not. Read it alongside bypass count and tooling gaps, not in isolation.</p>'
 fi
 echo '</section>'
 

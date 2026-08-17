@@ -186,6 +186,8 @@ case "$cmd" in
         ($entries | group_by(.engineer // "unknown") | map({
           engineer: (.[0].engineer // "unknown"),
           task_count: length,
+          total_tokens: (map(.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0})
+              | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
           class_escalation_count: (map(select(.class_escalated==true)) | length),
           bypass_count: (map(select(.bypass != null)) | length),
           tooling_gap_count: (map(.tooling_gaps // [] | length) | add // 0),

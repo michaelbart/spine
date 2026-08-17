@@ -20,7 +20,27 @@ fallback for real before calling this skill done (§6 below).
 
 ## 0. Preflight — which mode
 
-Two entry paths, mutually exclusive per invocation:
+**First, before either entry path below: does `<root>/workspace.json`
+already exist?** If so, this is an **extend**, not a create — the
+template's own header comment states this outright ("never hand-edited
+except through `/workspace`'s own re-run") and this section is what makes
+that re-run actually safe rather than merely asserted. Read the existing
+`workspace.json` in full before doing anything else. Confirm the new
+repo(s) named this invocation aren't already listed — compare by absolute
+`path`, not just `name` (catches a rename or a re-registration attempt) —
+and tell the human plainly if one already is, rather than silently
+duplicating or silently no-oping. Extend mode changes §1, §2, and §4 below
+exactly as each says; §3, §5, and §6 are unchanged by it (§3's contract
+registration and §6's fallback check care about repos and contracts, not
+about whether this is the workspace's first or fifth repo).
+
+If `workspace.json` does not exist yet, this is a **create** — proceed to
+the two entry paths below exactly as written.
+
+Two entry paths, mutually exclusive per invocation (apply to both create
+and extend — an extend can equally arrive via `--from-design`, if a later
+design/repo-topology decision names a repo an earlier workspace session
+didn't know about yet):
 
 - **`--from-design <project-path>`** (greenfield): that project just ran
   `/design` and its `repo-topology` decision
@@ -55,7 +75,9 @@ Either path ends with the same set of facts: a workspace root path, and a
 list of `(name, absolute path, role)` triples. Everything from §1 onward is
 identical regardless of which path got you there.
 
-## 1. Create the workspace root
+## 1. Create the workspace root — or extend it
+
+**Create mode** (`workspace.json` did not exist at §0):
 
 `mkdir -p <root>/{contracts,work,docs/decisions,.spine}`. `cd <root> && git
 init` — the workspace root is its own small git repo (workspace.json,
@@ -97,6 +119,31 @@ coordinates, that `/task` here spans repos via `permissions.
 additionalDirectories`, and a pointer to `workspace.json` and
 `contracts/` rather than restating their contents.
 
+**Extend mode** (`workspace.json` already existed at §0):
+
+`cd <root> && git init` — safe to re-run unconditionally; git no-ops on an
+already-initialized repo rather than erroring or resetting history. Skip
+`mkdir` (the directories already exist).
+
+**Append, never regenerate, `<root>/workspace.json`.** Read the file,
+add one new `repos[]` entry per newly-named triple from §0
+(`producer_paths_match_count` on any *existing* `contracts[]` entry stays
+exactly as it was — a new consumer repo does not by itself change an
+existing contract's producer-path count), and write the file back whole.
+**Every existing `contracts[]` entry — spec_path, spec_hash,
+producer_paths, consumers, registered date — must come out byte-for-byte
+identical to how it went in.** This is the one genuinely destructive
+mistake this mode exists to prevent: writing `workspace.json` fresh from
+the template here, the same way create mode does, would silently discard
+every contract this workspace has already declared. If a new repo is
+itself a *consumer* of an already-declared contract, that is a second,
+explicit edit — append its name to that contract's `consumers` array —
+never inferred silently just because the repo joined the workspace.
+
+Do not touch `.spine/protected-paths.conf`, `docs/charter.md`, or
+`CLAUDE.md` — they already exist and describe what this workspace *is*,
+which a new member repo joining does not change.
+
 ## 2. Wire the install — same mechanism as `/bootstrap` §5, plus one line
 
 ```
@@ -110,10 +157,11 @@ startup directory, not from added directories) is exactly why it needs its
 own copy of this wiring rather than inheriting a member repo's. `setup`
 also initializes this workspace root's own `.spine/core-pin.json` and adds
 `.claude/skills/`, `.claude/agents/`, `.claude/rules/`, `.claude/hooks` to
-`<root>/.gitignore` — they're generated locally now, never committed.)
+`<root>/.gitignore` — they're generated locally now, never committed. Safe
+to re-run in extend mode too — idempotent against an already-wired root.)
 
-Write `<root>/.claude/settings.json`: the same three-hook `PreToolUse`
-wiring `/bootstrap` writes, **plus**:
+**Create mode**: write `<root>/.claude/settings.json`: the same three-hook
+`PreToolUse` wiring `/bootstrap` writes, **plus**:
 
 ```json
 {
@@ -122,6 +170,13 @@ wiring `/bootstrap` writes, **plus**:
   }
 }
 ```
+
+**Extend mode**: read the existing `<root>/.claude/settings.json` and
+append the new repo's path(s) to the existing
+`permissions.additionalDirectories` array — write the file back whole,
+same append-never-regenerate discipline as §1's `workspace.json` edit.
+Leave every other key (the three hook entries, anything else already
+there) untouched.
 
 This is primitive §0.1(c)'s confirmed mechanism — added directories become
 readable/editable under the session's permission mode, and the *workspace
@@ -157,37 +212,58 @@ this skill speculatively.
 
 ## 4. Commit
 
+**Create mode:**
+
 ```
 git add -A -- workspace.json .spine/ contracts/ docs/ work/ CLAUDE.md .claude/
 git commit -m "spine: workspace init — <n> repos, <m> contracts"
 ```
 
-Untrailered setup commit, same precedent as `/bootstrap`/`/design`'s own
-install commits — there is no task ID yet.
+**Extend mode** — its own distinct message shape, so the event feed
+(`render-dashboard`'s event kind, `/costs`) can tell "this workspace was
+created" from "this workspace grew" apart rather than collapsing both into
+one indistinguishable "workspace init" line:
+
+```
+git add -A -- workspace.json .claude/settings.json
+git commit -m "spine: workspace extend — added <repo-name>[, <repo-name>...]"
+```
+
+Both untrailered, same precedent as `/bootstrap`/`/design`'s own install
+commits — there is no task ID yet.
 
 ## 5. Hand off
 
-Tell the human: the repos registered, any contract declared, and that a
-fresh session must start **in the workspace root** (not any member repo)
-before running `/task` for cross-repo work — hook/skill wiring does not
-hot-reload mid-session, identical caveat to `/bootstrap`'s own §6. A member
-repo remains independently usable for its own local, single-repo tasks
+Tell the human: the repos registered (or, in extend mode, the repo(s) just
+added and the workspace's now-complete member list), any contract
+declared, and that a fresh session must start **in the workspace root**
+(not any member repo) before running `/task` for cross-repo work — hook/
+skill wiring does not hot-reload mid-session, identical caveat to
+`/bootstrap`'s own §6, and it applies exactly as much to an extend as to a
+first-time create: a session already running against the old
+`additionalDirectories` list will not see the newly-added repo until a
+fresh session starts. A member repo remains independently usable for its
+own local, single-repo tasks
 exactly as before — joining a workspace does not revoke that; a session
 started directly inside the member repo never sees `workspace.json` at all
 and every hook there runs its plain single-repo path.
 
 **Also tell the human, explicitly, if this is the workspace root's first
-session**: Claude Code's own project-trust layer silently drops
-`permissions.additionalDirectories` (and `permissions.allow`) for a
+session, or a newly-added member repo's very first time appearing in
+`additionalDirectories`**: Claude Code's own project-trust layer silently
+drops `permissions.additionalDirectories` (and `permissions.allow`) for a
 directory that has never been opened in an interactive session before —
 confirmed for real in Phase D, where this produced a read-permission
 denial on every member-repo path, before any hook ever ran, with no
-mention of hooks or `workspace.json` in the error at all. Run `claude`
-(interactively, no `-p`) in the workspace root once and accept the trust
-dialog — or set `hasTrustDialogAccepted: true` for its path in
-`~/.claude.json` — before the first real `/task` session, or before
-fire-testing anything here. This is a Claude Code primitive, not something
-`/workspace` itself can do on the human's behalf.
+mention of hooks or `workspace.json` in the error at all. This applies per
+*directory*, not once per workspace — extend mode adding a repo that has
+never itself been opened interactively hits the identical silent-drop,
+even though the workspace root itself was trusted long ago. Run `claude`
+(interactively, no `-p`) directly in that repo's own path once and accept
+the trust dialog — or set `hasTrustDialogAccepted: true` for its path in
+`~/.claude.json` — before the first real `/task` session touching it, or
+before fire-testing anything here. This is a Claude Code primitive, not
+something `/workspace` itself can do on the human's behalf.
 
 ## 6. Verify the fallback, once, before calling this done
 

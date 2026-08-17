@@ -48,6 +48,41 @@ html_escape() {
   sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
+render_paragraphs() {
+  # render_paragraphs — takes prose on stdin (already HTML-escaped),
+  # splits it into one <p> per sentence at ". " followed by a capital
+  # letter or a backtick (a new code span almost always opens a new
+  # clause worth its own line here). This is the wall-of-text fix:
+  # core/templates/plan.md's own "## The gist" and briefing.md's "What &
+  # why"/"six months" fields are deliberately written as 2-5 dense
+  # sentences in one block — exactly the shape that renders unreadably as
+  # a single paragraph however long the underlying prose legitimately
+  # needs to be. Splitting at render time (not by rewriting the source
+  # prose) means every past and future plan/briefing benefits without
+  # asking the writing mandate to change what "one sentence, then 2-5
+  # more" means.
+  #
+  # Flattens markdown's soft line-wrapping to one line FIRST (`tr` then
+  # squeeze spaces) before sentence-splitting — a sentence boundary that
+  # happens to fall at the end of a wrapped physical line (". " becomes
+  # ".\n" in the raw source, not ". ") is otherwise invisible to a
+  # single-line sed pattern; confirmed this is a real, not hypothetical,
+  # case against this capability's own real fixtures (a plan.md gist
+  # whose "...cross-repo contract." / "Rejected alternative:" boundary
+  # sits exactly at a line wrap).
+  #
+  # Deliberately simple, not a real sentence tokenizer: this project's
+  # real gist/briefing prose (checked against all four real tasks this
+  # capability was built against) uses backtick-quoted code spans and
+  # em-dash asides, never the classic false-split abbreviations ("e.g.",
+  # "vs.", "Dr.") *inside* this specific field — those do appear
+  # elsewhere in a plan.md (e.g. "## What I'll decide alone vs. stop and
+  # ask"), which is exactly why this only ever touches the three fields
+  # named above, never a whole file blindly.
+  tr '\n' ' ' | sed -E 's/  +/ /g; s/\. ([A-Z`])/.\n\1/g' | sed -E '/^[[:space:]]*$/d' | \
+    awk '{ gsub(/^[ \t]+|[ \t]+$/, ""); if ($0 != "") printf "<p>%s</p>\n", $0 }'
+}
+
 # --- metadata: plain single-value files /task writes, preferred over
 # ledger.json's own class_declared (seen null in real fixtures even when
 # the class file itself held the real value) ---
@@ -122,11 +157,15 @@ to_epoch() {
 }
 
 fmt_ts() {
-  # fmt_ts <timestamp> — human-readable, e.g. "Aug 15, 2026 05:24 PM".
-  # Falls back to the raw value if it doesn't parse rather than hiding it.
+  # fmt_ts <timestamp> — human-readable, e.g. "Aug 15, 2026 05:24 PM EDT".
+  # Rendered in DASHBOARD_TZ (default America/New_York), always showing
+  # the zone abbreviation, same fix and same env var as
+  # core/scripts/render-dashboard's own fmt_ts (copied rather than
+  # re-derived — see this function's own header comment above). Falls
+  # back to the raw value if it doesn't parse rather than hiding it.
   local e
   e="$(to_epoch "$1")" || { printf '%s' "$1"; return; }
-  date -r "$e" "+%b %d, %Y %I:%M %p" 2>/dev/null || printf '%s' "$1"
+  TZ="${DASHBOARD_TZ:-America/New_York}" date -r "$e" "+%b %d, %Y %I:%M %p %Z" 2>/dev/null || printf '%s' "$1"
 }
 
 fmt_duration() {
@@ -309,7 +348,8 @@ cat <<HTML
   section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; margin-bottom: 20px; }
   section > h2 { margin: 0 0 14px; font-size: 1.05em; }
   section p.omitted { color: var(--muted); font-style: italic; margin: 0; }
-  .gist-text { white-space: pre-wrap; }
+  .gist-text p { margin: 0 0 10px; }
+  .gist-text p:last-child { margin-bottom: 0; }
   ul.touch-list, ul.grounds-list { margin: 8px 0 0; padding-left: 20px; }
   ul.touch-list li, ul.grounds-list li { margin-bottom: 4px; }
   table.floor { width: 100%; border-collapse: collapse; font-size: 0.92em; }
@@ -413,7 +453,7 @@ cat <<'HTML'
 HTML
 
 if [[ -n "$gist" ]]; then
-  printf '<div class="gist-text">%s</div>\n' "$(html_escape <<<"$gist")"
+  printf '<div class="gist-text">\n%s</div>\n' "$(html_escape <<<"$gist" | render_paragraphs)"
 else
   echo '<p class="omitted">plan.md not yet written — task has not reached /task'"'"'s plan phase.</p>'
 fi
@@ -601,8 +641,20 @@ cat <<'HTML'
 HTML
 
 if [[ "$briefing_present" -eq 1 ]]; then
-  [[ -n "$what_why" ]] && printf '<p><strong>What &amp; why:</strong> %s</p>\n' "$(html_escape <<<"$what_why")"
-  [[ -n "$six_months" ]] && printf '<p><strong>In six months you'"'"'ll want to know:</strong> %s</p>\n' "$(html_escape <<<"$six_months")"
+  if [[ -n "$what_why" ]]; then
+    # render_paragraphs splits multi-sentence fields into one <p> per
+    # sentence (see its own header comment) — the field's bold label
+    # belongs only on the first paragraph, injected into that one <p>
+    # tag rather than prefixed to the raw text before splitting (which
+    # would leave the label's own sentence-ending punctuation, if any,
+    # at risk of triggering a false split).
+    what_why_html="$(html_escape <<<"$what_why" | render_paragraphs)"
+    printf '%s\n' "$what_why_html" | sed '1s|^<p>|<p><strong>What \&amp; why:</strong> |'
+  fi
+  if [[ -n "$six_months" ]]; then
+    six_months_html="$(html_escape <<<"$six_months" | render_paragraphs)"
+    printf '%s\n' "$six_months_html" | sed '1s|^<p>|<p><strong>In six months you'"'"'ll want to know:</strong> |'
+  fi
 else
   echo '<p class="omitted">briefing.md not yet written — task has not reached /ship.</p>'
 fi
