@@ -20,10 +20,24 @@ note `docs/map.md`'s `sha:` staleness against current `HEAD` (a materially
 stale map is noted, not trusted). If either is absent, say so and continue —
 absence is common on a young install, not an error.
 
-**If `docs/decisions/` exists**, grep it for any `D-*.md` record whose
-`Scope:` field or subject matter actually touches what this task changes —
-a decision made once shouldn't get silently re-litigated. For every
-decision you actually ground a claim on, compute its citation hash with
+**If `docs/decisions/` exists**, start from `docs/decisions/INDEX.md` if
+it's present — one row per decision (id, title, category, status, scope,
+supersession chain), regenerated mechanically by `core/scripts/
+decision-index` and never itself a citation target. Use it to shortlist
+the 2-3 records whose `Category`/`Scope` column plausibly touches what
+this task changes, cheaper than grepping the full store cold every time
+it's larger than a handful of records. Then open and read each shortlisted
+record in full — the index is a triage aid, not a substitute for reading
+the actual decision; never cite a claim, a scope glob, or a hash off the
+index's row alone. If `INDEX.md` is absent or looks stale (its `sha:`
+header far behind current `HEAD`, or a record it lists no longer exists),
+fall back to grepping `docs/decisions/` directly the same as if it were
+never there — don't block on it, don't trust it uncritically either.
+
+Whichever way you found it: grep for any `D-*.md` record whose `Scope:`
+field or subject matter actually touches what this task changes — a
+decision made once shouldn't get silently re-litigated. For every decision
+you actually ground a claim on, compute its citation hash with
 `core/scripts/decision-hash docs/decisions/D-<n>-*.md` and add it to the
 header's `grounding-decisions:` block (below) — never hand-write a hash,
 never cite a decision you didn't open and read. Skip a decision that's

@@ -117,6 +117,31 @@ only as a generic `conformance` precision drop with no link back to which
 other task it endangered, indistinguishable from an ordinary, harmless
 scope change.
 
+**Fourth re-grounding check: the decision index, against whatever
+`docs/decisions/` looks like right now.** §2 below regenerates
+`docs/decisions/INDEX.md` for *this* task's own decision edits, but a
+neighbor's task (or a hand-edit, or a `--bypass`) can have changed the
+store since without regenerating it — the same staleness shape
+`check-stale` exists to catch for `research.md`, one layer over:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/decision-index --project <project root> --check
+```
+
+(multi-repo: once per repo in `## Ship order` that has its own
+`docs/decisions/`, `--project <repo-path>`.) A `STALE` result here is
+never this task's own fault by construction — §2 hasn't run yet at this
+point in the skill — so it is not a deviation and does not touch the
+circuit breaker; it's a stale, inherited artifact this task is about to
+fix anyway once §2's regeneration runs. Note it in the ledger
+(`ledger set <task-id> ship_time_regrounding_index "stale (regenerating in
+§2)"` or `"ok"`) purely so `/costs` can see how often the index drifts
+between tasks, and move on — §2's own regeneration (which runs
+unconditionally whenever this task touched `docs/decisions/`, and should
+also run here if it's stale for a reason unrelated to this task, e.g. a
+neighbor's un-regenerated ship) is what actually resolves it before this
+task's own commit.
+
 ## 1. The merge gate — unless `--bypass`
 
 Two deterministic checks, both must pass:
@@ -222,6 +247,22 @@ above, and `## Alternatives rejected` reading "n/a — distilled from a
 resolved deviation, see `work/<task-id>/deviations.md`" unless a real
 alternative was genuinely weighed and rejected in the deviation's own
 `Options considered` field.
+
+**Regenerate the decision index.** If this task touched `docs/decisions/`
+at all above — a status flip, an `## Implementing paths` append, or a
+newly-distilled record — regenerate its store's index before this task's
+commit(s) in step 5:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/decision-index --project <store-root>
+```
+
+For a repo-qualified decision, `<store-root>` is that member repo's own
+path, not the workspace root — same split `check-stale`/`decision-hash`
+already use for repo-qualified citations. Skip entirely if this task
+cited no decision and distilled none — the index doesn't need
+regenerating when the store it summarizes hasn't changed. Mechanical, no
+review needed.
 
 ## 3. Milestone done-definition
 

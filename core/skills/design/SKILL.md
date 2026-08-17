@@ -210,6 +210,18 @@ this file's own "Open questions" section instead of padding the main
 walkthrough. Regenerate this file (never hand-patch it) if a later
 decision supersedes one it summarizes.
 
+## 7.6. Regenerate the decision index
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/decision-index --project <project>
+```
+
+Every `D-*.md` this stage wrote or flipped to `adopted` in §6 must be
+reflected in `docs/decisions/INDEX.md` before it's committed alongside
+them — never let the index ship a stage behind the store it's supposed to
+summarize. Mechanical, no review needed; see the script's own header for
+why this is a triage aid, never a citation target.
+
 ## 8. Commit and hand off
 
 One commit — same untrailered, setup-shaped precedent `/bootstrap`'s own
