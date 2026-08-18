@@ -104,14 +104,28 @@ fired or didn't). This is the objective, checklist-gated classification that
 keeps "it's small" from silently dodging warranted rigor
 (`docs/proposals/intake-and-adaptive-autonomy.md` §4/§11).
 
+**For a Class 1 task, also propose an autonomy** — how many *stops* the flow has
+(`core/skills/task/SKILL.md`'s autonomy dial, orthogonal to class). Read it off
+the same signal: a small, low-complexity Class 1 with crisp scope → `auto` (spine
+runs research→plan→implement→verify→ship and hands back a draft PR, no scheduled
+stops); a substantial Class 1 → `checkpointed` (approve the plan, then one finish
+action); a Class 1 near the Class 2 boundary, or anything you're less sure of →
+`guided` (stop at each phase). Class 2 is always `guided` (the ceiling); Class 0
+is `traced`. Like the class, this is a proposal the menu can dial up or down.
+
 ## 6. The confidence-weighted menu
 
 How much you ask scales with how sure you are — don't turn the front door into
 its own ceremony:
 
+The menu covers the class *and* — for Class 1 — the autonomy: the recommended
+option is a `(class, autonomy)` flow, and its alternatives include dialing
+autonomy down (more stops, e.g. `auto`→`checkpointed`→`guided`) as well as class
+escalation and scope-first.
+
 - **Confident**: state the recommendation and ask for a near-one-tap confirm
-  ("This looks like Class 1 — go, or pick a deeper flow?"). Don't make them
-  read three paragraphs.
+  ("This looks like Class 1, `auto` — go, or pick a flow with more stops?").
+  Don't make them read three paragraphs.
 - **Torn** (a real fork): present the recommended class plus the genuine
   alternatives via `AskUserQuestion` — typically *recommended class* /
   *escalate to the next class up* / *scope it first* (a bounded research spike
@@ -143,8 +157,9 @@ Once the class is confirmed:
 
   ```
   # .spine/current-intake  (consumed and deleted by core/skills/task/SKILL.md §1)
-  {"ticket":"<key|null>", "class":<0|1|2>, "description":"<the clarified brief>",
-   "class_below_recommended":<true|false>, "recommended_class":<0|1|2>, "at":"<iso8601>"}
+  {"ticket":"<key|null>", "class":<0|1|2>, "autonomy":"<auto|checkpointed|guided>",
+   "description":"<the clarified brief>", "class_below_recommended":<true|false>,
+   "recommended_class":<0|1|2>, "at":"<iso8601>"}
   ```
 
   Then **follow `core/skills/task/SKILL.md` from §1 onward in this same

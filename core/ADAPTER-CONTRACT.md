@@ -8,12 +8,12 @@ a language, framework, or tool — this document, like the core, is stack-blind.
 
 A capability is an executable at `.spine/adapters/<name>` in the installed
 project. The core never calls a tool directly; it calls a capability name.
-Sixteen capabilities exist:
+Seventeen capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
 `clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`,
 `migrate-rehearse`, `contract-check` (Extension B — §3.2), `ui-render`
-(§3.3), `ticket-fetch` (intake — §3.4).
+(§3.3), `ticket-fetch` (intake — §3.4), `open-pr` (ship — §3.5).
 
 `contract-check` only ever exists in a repo that is a workspace member and
 party (producer or consumer) to at least one declared contract
@@ -48,6 +48,15 @@ reason "no ticket source" and `/intake` falls back to a manual paste. Like
 other capability it is a *data source*, not a pass/fail gate: exit 0 means the
 ticket was fetched (JSON on stdout), non-zero means it couldn't be (→ manual
 paste). See §3.4.
+
+`open-pr` only ever exists in a project whose engineers ship through pull
+requests on a host `gh`/`glab`/etc. can reach (`core/skills/ship/SKILL.md` §5a) —
+a project with no PR host, or one where PRs are always opened by hand, marks it
+`not-applicable` and `/ship` falls back to committing locally and leaving the PR
+to the human. Like `ticket-fetch`, it is invoked only by a skill (`/ship`), never
+by `floor`, and it is an *action* adapter, not a gate: exit 0 means a **draft** PR
+was opened (its URL on stdout), non-zero means it couldn't be. It **never** opens
+a ready-to-merge PR and never merges — the human marks ready and merges. See §3.5.
 
 `.spine/capabilities.json` marks each `implemented`, `unavailable`, or
 `not-applicable`, each with a `reason`. Only capabilities marked `implemented`
@@ -226,6 +235,35 @@ sense for pass/fail gates, and no others:
 (exit 0); `--self-test fail` returns malformed/empty output with a non-zero exit
 — proving `/intake` can tell a real fetch from a failed one without a live
 tracker.
+
+### 3.5 `open-pr` (ship) — an action, not a gate
+
+`/ship` calls `open-pr` for a task whose autonomy is `auto` or `checkpointed`
+(`core/skills/task/SKILL.md`) to push the current branch and open a **draft** PR,
+so the human's one remaining touchpoint is reviewing/merging it. Inputs by
+environment variable (the §3.2 precedent — no positional, since there is no
+output-artifact path and more than one input):
+
+| Variable | Carries |
+|---|---|
+| `SPINE_PR_TITLE` | The PR title (typically the commit subject). |
+| `SPINE_PR_BODY_FILE` | Path to the PR body — always `work/<task-id>/pr-description.md`, already written by `/ship` §4a. |
+| `SPINE_PR_BASE` | Optional base branch; if unset the adapter uses the project's own mainline convention (e.g. `develop`). |
+| `SPINE_PR_HEAD` | Optional head branch; if unset the adapter uses the current branch. |
+
+- **Output on success (exit 0)**: the PR URL on stdout (`/ship` records it in the
+  briefing). **Always a draft.** The adapter must never open a ready PR and never
+  merge — that is the human's decision (proposal §6.2).
+- **Output on failure (non-zero)**: diagnostics on stderr; `/ship` degrades to the
+  `guided` behavior (commit already made locally — push and open by hand) and
+  records the gap. A failed PR-open is never a lost commit.
+- The §2 rules that apply: never prompts, never reads a TTY. Credentials come from
+  whatever environment the adapter arranges (the G1 adapter wraps the existing
+  `g1-ship` skill, which already pushes and creates/updates a draft PR).
+
+**Self-test** (§4): `--self-test pass` prints a well-formed fixture PR URL and
+exits 0; `--self-test fail` exits non-zero — proving `/ship` can tell a real open
+from a failure without a live host. (Neither self-test contacts a real host.)
 
 ## 4. The self-test convention (what makes conformance possible)
 

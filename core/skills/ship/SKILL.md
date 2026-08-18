@@ -467,9 +467,30 @@ the same way `contract-touch` is; what it writes (flags in *other* tasks'
 folders) is what later blocks *their* phase advance, via
 `core/skills/task/SKILL.md`'s flag-blocked-advance check, not this one.
 
-Do not push, in either case. Committing locally is this skill's job;
-pushing or opening a PR is the human's call, made after reading the
-briefing.
+**Pushing and opening the PR is autonomy-aware** (read `work/<task-id>/
+autonomy`, `core/skills/task/SKILL.md`; absent = `guided`):
+
+- **`guided`** — do not push. Committing locally is this skill's job; pushing or
+  opening a PR is the human's call, made after reading the briefing. This is the
+  unchanged pre-Phase-4 behavior.
+- **`auto` / `checkpointed`** — open a **draft** PR now via the `open-pr`
+  capability (`core/ADAPTER-CONTRACT.md` §3.5), body =
+  `work/<task-id>/pr-description.md` (§4a), head = the current branch, so the
+  human's one remaining touchpoint is reviewing/merging it:
+
+  ```
+  SPINE_PR_TITLE="<commit subject>" \
+    SPINE_PR_BODY_FILE=work/<task-id>/pr-description.md \
+    <project root>/.spine/adapters/open-pr
+  ```
+
+  **Always a draft — this skill never merges** (proposal §6.2; the human marks
+  ready and merges). Record the returned PR URL in the briefing (§4). If `open-pr`
+  is `not-applicable`/absent or exits non-zero, degrade to the `guided` behavior:
+  the commit is already made, so say plainly "couldn't open the PR (<reason>) —
+  push and open it by hand" and note the gap; never silently drop it. (Profile-
+  gated auto-open for `guided`, or disabling it for a team that prefers
+  hand-opened PRs, is Phase 5.)
 
 ## 6. Close out
 
@@ -485,8 +506,10 @@ registry's live view, not just from this machine's local one. Remove
 (the task is no longer active — a subsequent trivial edit should default
 back to Class 0, not stay phase-gated against a finished task; for a
 multi-repo task this file lives at the workspace root only — member repos
-never had one). Tell the human where the briefing is, and where
-`pr-description.md` is (§4a) — pushing and opening the PR is their call,
-made after reading both. That read is the third recurring touchpoint
+never had one). Tell the human where the briefing is. For a `guided` task,
+also point at `pr-description.md` (§4a) — pushing and opening the PR is their
+call, made after reading both. For an `auto`/`checkpointed` task the draft PR
+is already open (§5a) — give them its URL, so the one remaining touchpoint is
+reviewing and merging it. That read is the third recurring touchpoint
 (build prompt §2.7), and it happens now, once, not as a gate this skill
 enforced on itself.

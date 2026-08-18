@@ -56,7 +56,7 @@ case for. Record `work/<task-id>/milestone` = `<id>`, one line, so `/ship`
 (final member task's own done-definition check) and a resumed session both
 know this task belongs to a milestone without re-parsing `$ARGUMENTS`.
 
-State lives in three places, and every phase transition below updates them
+State lives in four places, and every phase transition below updates them
 — they are not decoration, the hooks (`core/hooks/phase-gate`,
 `path-escalate`) read them on every `Edit`/`Write`:
 
@@ -64,6 +64,16 @@ State lives in three places, and every phase transition below updates them
   task = Class 0 default.
 - `work/<task-id>/state` — the current phase name, one line.
 - `work/<task-id>/class` — `0`, `1`, or `2`, one line.
+- `work/<task-id>/autonomy` — `guided`, `checkpointed`, or `auto`, one line
+  (absent = `guided`, the default). This is the Phase 4 dial for *how many
+  human stops* the flow has, orthogonal to `class` (which sets *how much
+  verification*). **Blast radius caps autonomy, never the reverse:** a Class 2
+  task is always `guided`; a Class 1 task may be `auto`/`checkpointed`/`guided`;
+  Class 0 is `traced` (no task folder — §1). `/intake` sets this and enforces
+  the ceiling; §3's escalation re-enforces it. `auto` runs with no scheduled
+  stops — only the same tripwires every task has (a `halt`-tier deviation, a
+  mid-stream escalation, the circuit breaker, a verify `FAIL`) pull the human
+  in. Checks (floor, adversaries) never scale down with autonomy; only stops do.
 
 **The registry (Extension C §2.2/§2.3), sibling files alongside the three
 above — never crammed into `state` itself**, which every hook and skill
@@ -167,14 +177,16 @@ sections — notes.md is this task's running log until then.
 ## 1. Classify — the first recurring human touchpoint
 
 **If `.spine/current-intake` exists, this task came through `/intake`**
-(`core/skills/intake/SKILL.md`). Read it — `{ticket, class, description,
+(`core/skills/intake/SKILL.md`). Read it — `{ticket, class, autonomy, description,
 class_below_recommended, recommended_class}` — and treat the class as already
 confirmed: the human confirmed it in `/intake`'s menu, so do **not** re-suggest
 or re-prompt the class below. Use `description` as the task description if
 `$ARGUMENTS` carried none. Proceed straight to task-ID generation with that
 class. Two things ride along in the setup step below: write
 `work/<task-id>/ticket` = the ticket key (one line; omit the file if the ticket
-was null), which `/ship` reads for the `Spine-Ticket:` trailer; and if
+was null), which `/ship` reads for the `Spine-Ticket:` trailer; write
+`work/<task-id>/autonomy` = the handoff's `autonomy` (a Class 2 task is forced
+to `guided` regardless of what the handoff says — the ceiling); and if
 `class_below_recommended` is true, when you record `class_declared` (§6) also
 `ledger set <task-id> class_downgraded_from <recommended_class>` and add a
 `notes.md` line — the downgrade stays visible without consuming a
@@ -184,7 +196,9 @@ deviation, so it is **not** a `deviations.md` record). Then **delete
 only for a `/task` invoked directly, with no intake handoff.
 
 Every task gets a class, and the human confirms it — not the model alone
-(build prompt §2.7). Suggest one, don't decide it unilaterally:
+(build prompt §2.7). Suggest one, don't decide it unilaterally (a direct
+`/task` with no intake handoff runs `guided` — write `work/<task-id>/autonomy`
+= `guided` at setup; the lighter autonomies are chosen at `/intake`):
 
 - **Class 0 (trivial):** suggest when the change looks like it will touch
   ≤2 files, ≈15 lines or fewer, introduces no new public symbol, and (check
@@ -337,7 +351,9 @@ escalation composes as max across repos": there is no separate max
 computation to write, it falls out of checking every entry regardless of
 which repo it belongs to. If any match and `work/<task-id>/class` is not
 already `2`, auto-escalate: rewrite the class file to `2` (one file, at the
-workspace root for a multi-repo task — one class for the whole task), and
+workspace root for a multi-repo task — one class for the whole task), **and
+rewrite `work/<task-id>/autonomy` = `guided`** (the ceiling — a Class 2 task
+is never `auto`/`checkpointed`; escalation pulls the human back in), and
 say so plainly when you present the plan — this is the plan-triggered
 escalation build prompt §2.2 describes; it does not need a separate
 confirmation prompt beyond the plan approval you're about to ask for
@@ -374,6 +390,17 @@ instead of a permanent zero — do this on *every* blocking run, override
 or not, since a conflict that gets resolved by waiting/renegotiating
 still happened and is worth counting. If clear (exit 0, warnings or not),
 proceed straight to presenting the plan.
+
+**If `work/<task-id>/autonomy` is `auto`, there is no plan-approval stop.**
+Write the plan exactly as above — it is still written, and `/ship` attaches it
+to the PR for review, trading pre-implementation plan review for PR-time review
+(the disclosed `auto` tradeoff, `docs/proposals/intake-and-adaptive-autonomy.md`
+§7). Record `approval.json` as a self-approval with `"autonomy": "auto"` set,
+`registry-sync`, and proceed straight to §4. This can only happen at Class 1
+(the ceiling); if §3's protected-path check just auto-escalated this task to
+Class 2, `work/<task-id>/autonomy` was set to `guided` above, so this branch no
+longer applies and you fall through to the stop below. For `checkpointed` and
+`guided`:
 
 **Present the plan and stop — this is the second recurring human
 touchpoint.** Do not proceed to implementation in the same turn. Wait for
@@ -460,29 +487,49 @@ yourself first; don't hand a known-broken diff to `/verify`. Then: `ledger
 mark <task-id> verify`, write `state` = `verify`, `registry-sync
 <task-id>`.
 
-**`/verify` and `/ship` both carry `disable-model-invocation: true` — this
-skill cannot call either one itself, via the Skill tool or any other
-means.** That setting blocks every model-initiated call unconditionally,
-including one this running `/task` session attempts on the human's own
-behalf; only the human literally typing `/verify <task-id>` (or `/ship
-<task-id>`) gets through. Tell the human plainly: implementation is ready,
-please run `/verify <task-id>` yourself. Then stop and wait — this session
-does not proceed to ship on an unverified diff, the same waiting posture
-step 3 already uses for a Class-2 second approver.
+**This phase's shape depends on `work/<task-id>/autonomy`** (absent =
+`guided`). The independence that `/verify` protects comes from the falsifier
+and security agents being *fresh, isolated subagents* — never from who typed
+the command — so `checkpointed`/`auto` preserve it while removing the human
+relay the engineer explicitly delegated by choosing that autonomy at `/intake`.
 
-When resumed, **read `work/<task-id>/verify.md` directly** to learn the
-outcome — don't infer it from the human's own summary of what happened.
-Its `Result:` line on the file's own second line reads `PASS` or `FAIL`
-verbatim (`core/templates/verify.md`'s own header format). If `FAIL`: fix
-it (back to implementation, same task, not a new deviation by itself
-unless the fix itself diverges from the plan), then ask the human to
-re-run `/verify <task-id>` and wait again. If `PASS`: write `state` =
-`ship`, `registry-sync <task-id>`, then tell the human plainly: verify
-passed, please run `/ship <task-id>` yourself, and stop and wait the same
-way. `/ship` handles the merge gate, the commit trailer, the briefing, and
-clearing `.spine/current-task` (Extension C additions to `/ship` itself —
-ship-time re-grounding, second-approver, its own final registry sync —
-land in Phase C, not here).
+**guided** — `/verify` and `/ship` both carry `disable-model-invocation: true`,
+so this skill cannot call either via the Skill tool; only the human literally
+typing `/verify <task-id>` (or `/ship <task-id>`) gets through. Tell the human
+plainly: implementation is ready, please run `/verify <task-id>` yourself. Then
+stop and wait — this session does not proceed to ship on an unverified diff, the
+same waiting posture step 3 uses for a Class-2 second approver. When resumed,
+**read `work/<task-id>/verify.md` directly** (its `Result:` line reads `PASS` or
+`FAIL` verbatim). If `FAIL`: fix it (back to implementation, same task) and ask
+the human to re-run `/verify`. If `PASS`: write `state` = `ship`, `registry-sync`,
+then ask the human to run `/ship <task-id>` and wait the same way.
+
+**checkpointed** — one human action closes out the task instead of two. Present a
+single **finish** confirmation ("implementation's ready and the plan's acceptance
+checks pass — verify and ship?"). On the human's go, **follow
+`core/skills/verify/SKILL.md`'s steps inline** — read that file and execute its
+steps in this session. This is *not* a Skill-tool invocation, so
+`disable-model-invocation` does not block it (that flag blocks the tool call, not
+following the written procedure); the human authorized it with the finish
+confirmation. Read the resulting `verify.md` `Result:`. On `PASS`, **follow
+`core/skills/ship/SKILL.md`'s steps inline** the same way. On `FAIL`, fix and
+re-run verify inline — no new human stop unless a `halt`-tier deviation opens
+(§4).
+
+**auto** — no scheduled human stop. **Follow `core/skills/verify/SKILL.md` inline**
+(same mechanism as `checkpointed`; the falsifier's stub-out probe is *mandatory*
+in this mode — it is the partial backstop for the plan review `auto` skipped,
+`docs/proposals/intake-and-adaptive-autonomy.md` §7). Read `verify.md`'s
+`Result:`. On `PASS`, **follow `core/skills/ship/SKILL.md` inline**, which for an
+`auto` task opens a **draft PR** (never merges — `core/skills/ship/SKILL.md` §5a,
+proposal §6.2) and stops at "PR ready for review." On `FAIL`, this is an
+*exception* stop: go back to implementation, fix, re-run verify inline; if the fix
+hits a `halt`-tier decision or trips the circuit breaker (§4), stop and pull the
+human in exactly as §4 says. The human's single touchpoint is reviewing the
+finished PR.
+
+For every mode, `/ship` (however it runs) handles the merge gate, the commit
+trailer(s), the briefing, and clearing `.spine/current-task`.
 
 When resumed after `/ship`, confirm it actually completed by checking that
 `.spine/current-task` no longer names this task (`/ship` clears it on
