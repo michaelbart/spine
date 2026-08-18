@@ -300,7 +300,7 @@ headless sessions alone.
 | Multi-workspace (a repo belonging to more than one workspace) | `workspace.json`'s repo list assumes one workspace per member repo; nothing prevents authoring a second workspace pointing at the same repo, but nothing coordinates the two either |
 | Anything depending on `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` | Explicitly out of scope per build prompt §0.3 — per-repo context reaches sessions through skills reading files instead, deliberately not through this env flag |
 | Full `/costs` aggregation across a workspace and its member repos' independent task histories | Open question 6 (above) — mechanism named (`loop over workspace.json`'s repos + workspace root, sum `ledger aggregate`), zero code written |
-| Design-mode adversary cost tiers | Open question 7 (above) — left unresolved through both Phase C and Phase E; no tiering exists, every design review pays full adversary ceremony regardless of decision-set size. Partial mitigation for the normal `/task` path: adversary re-run caching (below) skips a re-verify entirely when blast radius didn't grow, but design mode's own review has no analogous re-run yet. |
+| Design-mode adversary cost tiers | Open question 7 (above) — left unresolved through both Phase C and Phase E; no tiering exists, every design review pays full adversary ceremony regardless of decision-set size. Partial mitigation for the normal `/task` path: adversary re-run caching (below) skips a re-verify entirely when content and blast radius both provably didn't change, and tiers budget (not scope) down for a focused re-run when only part of the diff is new — but design mode's own review has no analogous re-run yet. |
 
 ## The seven open questions (build prompt §5), answered and defended
 
@@ -2203,3 +2203,79 @@ covered. Implemented in `core/skills/verify/SKILL.md` §3 and
 `core/templates/verify.md`'s adversary section; unexercised against a real
 multi-pass `/verify` run so far — same caveat as the budget/lane-discipline
 fixes above, principle plausible, not yet fire-tested.
+
+### Content-hash correction, and a three-tier refinement (traced against a real multi-pass run)
+
+The "unexercised... not yet fire-tested" caveat directly above turned out to be
+load-bearing: the very first real multi-pass `/verify` run this feature could
+have applied to (tgml's `20260818-monorepo-scaffold`, three passes, run before
+this feature had landed there) exposed two problems by hand-tracing the actual
+pass-by-pass verdict history against the shipped rule.
+
+**Bug: the subset check was path-only, not content-aware, and its own example
+scenario was the exact case it got wrong.** "If the fix's own blast radius
+stayed inside what that adversary already covered, its clean verdict on
+everything else still holds" (the mid-verify paragraph, as originally written)
+is false whenever the fix is applied *in place* to a file that was already
+part of the diff — the single most common shape a fix takes. Blast radius was
+defined as a set of file *paths*; an in-place fix doesn't add a new path, so
+the path-only subset check reads "unchanged" for a file whose content just
+changed. Traced against the real task: pass 2 fixed a floor-adapter bug by
+editing `.spine/adapters/dep-diff` in place (a file already in blast radius
+since pass 1). Under the path-only rule as written, that fix would have
+qualified for `REUSED` — skipping exactly the falsifier re-dispatch that went
+on to prove the fix real via a stub-out probe (revert the fix, reproduce the
+original bug, restore it, confirm byte-identical). A cache whose flagship
+use case silently defeats verification of the fix that use case exists to
+cover is worse than no cache. Fixed by keying `<agent>-coverage.json` on a
+content hash per file, not a bare path — "already covered" now requires
+byte-identical content, not merely a familiar filename.
+
+**Separate finding: the empty-verdicts bar made the cache fire close to
+never.** Tracing the same task's three passes against the *original* (even
+path-corrected) rule: neither adversary ever returned a literally empty
+`verdicts` array until the final pass's `security` run. Every other pass —
+including ones the human reasonably considered "clean" — carried at least one
+low-severity or informational kept verdict (an adversary confirming a fix
+worked, or a documentation-only observation). A cache gated on a literal empty
+array will rarely trigger on real, non-toy diffs, which undercuts its purpose
+for exactly the scenario it was built for: a task with several small follow-up
+fix rounds. Widened the bar to "no `medium`/`high` kept verdict" — `low`-only
+or empty both now qualify as clean-enough.
+
+**Neither fix, by itself, solves the cost problem that motivated this
+feature.** Retracing the same task's pass 2→pass 3 transition with *both*
+corrections applied: pass 3's fixes (a `packages/core` typecheck script, an
+eslint ignore entry) were themselves in-place edits to already-diffed files,
+so their content hashes correctly fail to match pass 2's coverage — pass 3
+still requires a full dispatch for both adversaries, exactly as it actually
+ran. The content-hash fix makes the cache *correct*; it does not, on this
+task's evidence, make multi-round fix-and-reverify cheaper, because every
+round's fix was itself new content requiring fresh eyes. Skip-entirely
+(REUSED) is real and worth keeping — it's sound now, and it fires for the
+case it can honestly claim (a large diff where a *separate*, later change
+lands entirely outside anything previously covered) — but it is not the lever
+that reduces the cost of "several rounds of small, real fixes to the same
+few files," which is what actually drove this task's spend.
+
+**Added: a third tier, "focused re-run," to actually address that.** Neither
+"skip" nor "full re-run" fit the observed waste — pass 3 re-verified, at full
+budget, several already-fixed items (the pass-1/2 findings) that hadn't
+changed since a prior pass had already rigorously confirmed them, alongside
+the two genuinely new fixes that did need full scrutiny. A focused re-run
+still hands the adversary the complete current diff and full authority (no
+scope narrowing — the rejected-alternative reasoning above still holds in
+full), but names the unchanged-by-hash files explicitly in the delegation
+message and reduces wall-clock budget roughly in proportion to how much of
+the blast radius is provably stable. This is a cost lever (less exploration
+time on ground already covered), not a coverage lever (nothing is hidden from
+the adversary) — the same distinction the rejected per-file *input* caching
+collapsed, deliberately not repeated here.
+
+Implemented in `core/skills/verify/SKILL.md` §3 and `core/templates/verify.md`'s
+adversary section. Status: the correction and the three-tier model are traced
+by hand against one real task's complete verdict history (not simulated,
+not hypothetical) — stronger evidence than "principle plausible," short of a
+live run with the corrected code active. A live multi-pass `/verify` run
+under this version, especially one that exercises the focused-re-run tier for
+real, is still the open validation this needs next.

@@ -90,12 +90,24 @@ predicted=`<n>` actual=`<n>` precision=`<p>` recall=`<r>` f1=`<f>`
      a verdict this section doesn't mention was either never raised or was
      dropped for a stated, mechanical reason, never silently.
 
-     Reused instead of re-run (core/skills/verify/SKILL.md §3's
-     skip-if-subset check): replace the Attacked/kept/dropped lines below
-     with a single line, `REUSED (blast radius unchanged, prior clean
-     verdict from <ran_at>)` — this means the prior run's blast radius
-     already covered this run's, and that prior verdict had zero kept
-     findings; it never means a narrowed or partial pass. -->
+     Adversary re-run caching (core/skills/verify/SKILL.md §3) has three
+     outcomes, not two:
+
+     - Skipped (REUSED): replace the Attacked/kept/dropped lines below
+       with a single line, `REUSED (content and blast radius unchanged,
+       prior clean-enough verdict from <ran_at>)` — every blast-radius
+       file matched a prior pass's recorded content hash, and that prior
+       verdict kept no medium/high finding (empty or low-only both
+       qualify). Never means a narrowed or partial pass — the prior pass
+       itself saw the full diff.
+     - Focused re-run: keep the normal Attacked/kept/dropped lines and
+       findings below, but prepend one line above Attacked: `Focused
+       re-run — budget ~<used> of a normal ~<class-based figure>; <n> of
+       <m> blast-radius files unchanged since <ran_at>: <short list or
+       count>.` The adversary still received the full current diff and
+       full authority; only its wall-clock budget was reduced.
+     - Full re-run: normal Attacked/kept/dropped lines and findings,
+       no extra line — this is the default, unremarked case. -->
 
 ### Falsifier
 

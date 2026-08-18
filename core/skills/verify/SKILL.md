@@ -193,44 +193,81 @@ to 0 (`profile-check` rejects that).
 
 ## 3. Run the adversaries
 
-**Skip an adversary entirely when its last verdict from this task is still
-clean and its recorded coverage is a superset of the current blast
-radius — this is the only sound form of adversary re-run caching**
-(`docs/tradeoffs.md`, "design-mode adversary cost tiers"). Before
+**Adversary re-run caching: content-aware, severity-aware, budget-tiered —
+never a scope-narrowing shortcut** (`docs/tradeoffs.md`, "design-mode
+adversary cost tiers" and its "content-hash correction" addendum). Before
 dispatching `falsifier` (and `security`, if running), check for a prior
 `work/<task-id>/artifacts/<agent>-coverage.json` and `<agent>-verdict.json`
 left by an earlier `/verify` pass on this same task — whether that was a
 fresh invocation after a `FAIL`-and-fix cycle, or this run's own mid-verify
-re-check below:
+re-check below.
 
-- **Clean and covered → skip.** `<agent>-verdict.json`'s `verdicts` array
-  is empty *and* the current blast radius — the diff's changed-file set
-  (step 1's, bookkeeping already excluded) union this run's fresh
-  `callers.md` file list, plus `dep-diff.md`'s for `security`, plus
-  (multi-repo) any `contract-touch.json` touched-contract names for
-  `falsifier`'s cross-repo mandate — is a **subset** of
-  `<agent>-coverage.json`'s recorded set. Don't dispatch that adversary;
-  carry its existing `<agent>-verdict.json` forward unchanged, and record
-  in `verify.md` (§5) `REUSED (blast radius unchanged, prior clean verdict
-  from <its ran_at timestamp>)` in place of an Attacked/kept/dropped line.
-- **Anything else → full re-run, never a narrowed one.** A prior finding
-  (verdicts non-empty), a missing coverage file, or a blast radius that
-  grew even partially all mean: dispatch the adversary fresh, with the
-  *full* current diff and *full* current `callers.md`/`dep-diff.md` — same
-  as a first run. There is no sound middle tier that re-checks only the
-  new files; the risk these agents exist to catch is precisely in how a
-  new change interacts with code that didn't change, so a partial pass
-  can't be trusted to see that interaction (this is why per-finding or
-  per-file caching was rejected, not just whole-adversary caching accepted
-  — see `docs/tradeoffs.md`).
+`<agent>-coverage.json` keys each file on a **content hash, not a bare
+path**: `{"files": {"<path>": "<sha256 of that file's content as given to
+the adversary>", ...}, "contracts": [...], "ran_at": "<ISO timestamp>"}`.
+This is load-bearing, not decoration: a path-only version of this cache
+made "the fix's blast radius stayed inside what was already covered" true
+for the single most common case this feature exists to serve — an in-place
+fix to a file that was already part of the diff — even though the fix is
+exactly the new content no adversary has seen. Fixing a bug in a file
+already sitting in the diff does not shrink what needs checking; it *is*
+what needs checking. Keying on content hash instead of path means "already
+covered" now means "byte-identical to what the adversary actually read,"
+not "a file with this name happened to appear before."
+
+Three outcomes, not two:
+
+- **Skip entirely (REUSED).** Every file in the current blast radius — the
+  diff's changed-file set (step 1's, bookkeeping already excluded) union
+  this run's fresh `callers.md` file list, plus `dep-diff.md`'s for
+  `security`, plus (multi-repo) any `contract-touch.json` touched-contract
+  names for `falsifier`'s cross-repo mandate — is present in
+  `<agent>-coverage.json` with an **identical content hash**, *and* that
+  prior run's `<agent>-verdict.json` kept no `medium`/`high` severity
+  verdict (empty, or `low`-only, both qualify). Low-severity findings are
+  informational by the adversary's own classification, not evidence of the
+  cross-file-interaction risk this ceremony exists to catch — requiring a
+  literal empty verdict array made this tier fire close to never in
+  practice, since a real adversary pass over a nontrivial diff almost
+  always surfaces at least one low-severity or informational note even
+  when nothing blocking remains. Don't dispatch; carry the existing
+  `<agent>-verdict.json` forward, record `REUSED (content and blast radius
+  unchanged, prior clean-enough verdict from <ran_at>)` in place of an
+  Attacked/kept/dropped line (§5).
+- **Focused re-run — full diff, full authority, reduced budget.** Some but
+  not all of the current blast radius matches recorded coverage by hash: a
+  real fix or genuinely new content exists somewhere, so a dispatch is
+  required, but part of what the adversary would look at is provably
+  identical to what a prior clean-enough pass already covered. Dispatch
+  with the **full** current diff — never narrowed, same non-negotiable
+  rule as always — but name explicitly, in the delegation message, which
+  files are unchanged-since-last-clean-pass (with that pass's timestamp),
+  so the adversary weights its limited time toward what's actually new,
+  and reduce its wall-clock budget below the normal Class-based figure
+  roughly in proportion to how much of the blast radius is unchanged (a
+  judgment call stated as "roughly," matching this section's other budget
+  language, not a formula). The adversary keeps full authority to flag
+  anything anywhere, including a cross-file interaction between changed
+  and unchanged files — this tier narrows *effort allocation*, never
+  *scope*, which is exactly the distinction the rejected per-file-caching
+  alternative collapsed (`docs/tradeoffs.md`).
+- **Full re-run, full budget.** No coverage file, every blast-radius file
+  changed, or the prior verdict had a `medium`/`high` finding: dispatch
+  fresh, full diff, full budget, same as a first pass.
+
+There is still no tier that re-checks only the new files in isolation —
+every outcome above except REUSED hands the adversary the complete current
+diff. The risk these agents exist to catch is precisely in how a new
+change interacts with code that didn't change, so a pass that never sees
+the unchanged code can't be trusted to see that interaction; only *effort*
+is ever tiered, never *input* (this is why per-finding or per-file input
+caching stays rejected — see `docs/tradeoffs.md`).
 
 Record coverage at dispatch time, not after: whenever an adversary *is*
-dispatched (below), write `work/<task-id>/artifacts/<agent>-coverage.json`
-as `{"files": [...the file set actually given to it, sorted, deduped...],
-"contracts": [...touched-contract names if any...], "ran_at": "<ISO
-timestamp>"}` alongside its verdict files, so the *next* `/verify` pass on
-this task — or this run's own mid-verify re-check a few paragraphs below —
-has something to compare against.
+dispatched (fully or focused, below), write `work/<task-id>/artifacts/
+<agent>-coverage.json` in the shape above, alongside its verdict files, so
+the *next* `/verify` pass on this task — or this run's own mid-verify
+re-check a few paragraphs below — has something to compare against.
 
 Each adversary is a fresh subagent (Agent tool) — give it only the plan
 path, the diff (`git diff <base>..HEAD` — default base `HEAD`, i.e.
@@ -307,13 +344,19 @@ already fixed mid-verify). So: dispatch all adversaries, **wait for every one to
 return** (or hit its budget), filter the verdicts, and only *then* apply fixes.
 If the fixes are substantive (more than a comment or rename), recompute
 `callers.md`/`dep-diff.md` against the fixed tree and apply the same
-skip-if-subset check from step 3's top: your fix is itself a change no
-adversary has seen, but if the fix's own blast radius stayed inside what
-that adversary already covered, its clean verdict on everything *else*
-still holds and only needs recording as `REUSED`, not a full second
-dispatch — if the fix's blast radius grew at all (e.g. it touched a file
-outside the original diff to satisfy an invariant), re-run that adversary
-fully, same "no narrowed pass" rule as above. (Worktree note: the falsifier runs the project's `worktree-prep` adapter, if
+three-outcome content-hash check from step 3's top. A fix changes the
+content of whatever file it touches, so that file's hash no longer matches
+`<agent>-coverage.json` by construction — **REUSED never applies to a file
+you just fixed**, regardless of whether that file's path was already
+sitting in the diff; fixing a bug is exactly the new content an adversary
+needs to see. What the check still buys you: if the fix touched only
+file(s) already accounted for this way and the rest of the blast radius is
+still hash-identical to a prior clean-enough pass, that's a **focused
+re-run** (full diff, reduced budget, changed files named in the delegation
+message) rather than a full-budget one; if the fix's blast radius grew
+into a file outside anything previously covered (e.g. it touched a file
+outside the original diff to satisfy an invariant), that's a full re-run,
+same as a first pass. (Worktree note: the falsifier runs the project's `worktree-prep` adapter, if
 one is `implemented`, as step 0 of its stub-out probe — a single bounded
 declared command to make its isolated worktree's toolchain resolvable
 (`core/ADAPTER-CONTRACT.md §3.6`). When no such adapter is implemented, the
