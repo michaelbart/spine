@@ -3,6 +3,8 @@
 This project runs on the spine — an AI-development workflow with
 deterministic gates. Full docs: `<spine checkout path>/README.md`.
 
+**Lost? Run `/spine`** — it tells you where you are and what to do next.
+
 ## The task system
 
 Non-trivial work goes through `/task <description>`: classify → research →

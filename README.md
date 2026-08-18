@@ -223,7 +223,7 @@ core/scripts/    the deterministic layer — q, floor, conformance, ledger,
 core/hooks/      the three PreToolUse gates (phase, protected-path, dependency)
 core/rules/      path-scoped discipline (currently: migrations, contracts)
 core/skills/     /bootstrap /adopt /design /workspace /task /verify /ship
-                 /ratchet /remap /costs /tasks
+                 /ratchet /remap /costs /tasks /spine
 core/agents/     researcher, falsifier, security — fresh-context, read-only
 core/templates/  every artifact format the skills above produce
 work/.build/     this build's own phase handoffs — the install's decision record
@@ -258,6 +258,7 @@ you type them; the model doesn't reach for one on its own.
 
 | Command | Args | What it does |
 |---|---|---|
+| `/spine` | *(none)* | Front desk — "where am I, what do I do next." Read-only: the active task's status and single next action, or (when idle) the commands available, or (when the install is broken) exactly what to fix. The command to run when you're not sure what to run. |
 | `/tasks` | *(none)* | Lists every open task in the registry — owner, class, phase, claims, flags. Read-only; exists so a human sees the same picture `claims-check`/`propagate` do. |
 | `/costs` | `[--since <git-date>]` | Reports cost instrumentation: untracked-commit ratio first, then per-task/per-engineer ledger aggregates. An instrument for spotting drift early, not a leaderboard. |
 | `/ratchet` | `<description of the recurring finding>` | Converts a finding that's genuinely recurred twice (two deviations, two adversary verdicts, two relayed review comments) into a deterministic check, deleting the prose rule it supersedes. The only command allowed to grow `CLAUDE.md` or the rules directory. |
