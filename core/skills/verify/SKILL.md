@@ -201,6 +201,22 @@ the artifact paths from step 1. Never summarize the implementation session
 into the delegation message — that defeats the independence the fresh-
 context property exists for (build prompt §2.5 Layer 3).
 
+**Bound each adversary's run — new, and load-bearing in `auto`.** An adversary
+with no budget can run unbounded; in `guided` a watching human interrupts, but
+`auto`/`checkpointed` have no such human, so the budget *is* the backstop. Give
+each adversary a wall-clock budget proportional to blast radius, not to how
+interesting it finds the code: roughly ~5 min for a Class 1 `auto` task, ~10 min
+for Class 1 `checkpointed`/`guided`, ~20–30 min for Class 2. Size its scope to
+match — a trivial Class 1 change gets a focused pass, not the full-ceremony sweep
+a Class 2 warrants (this resolves the long-open "design-mode adversary cost
+tiers" question for the normal path too, `docs/tradeoffs.md`). If an adversary
+exceeds its budget, **stop it** (cancel the subagent) and record it in
+`verify.md` as `adversary: <name> exceeded budget — not a clean pass` — never
+silently treat a killed or timed-out adversary as PASS. In `guided`/
+`checkpointed` that's a note for the human to act on; **in `auto` a budget breach
+is an exception-stop** (`core/skills/task/SKILL.md` §5) — pull the human in
+rather than shipping on an incomplete adversarial pass.
+
 - `subagent_type: falsifier` — delegation message points at
   `work/<task-id>/plan.md`, the diff, and `work/<task-id>/artifacts/
   callers.md` (single-repo) or, multi-repo, each edited repo's own
@@ -236,6 +252,22 @@ ${CLAUDE_SKILL_DIR}/../../scripts/verdict-filter \
 **Only ever read the filtered file when assembling `verify.md`.** The raw
 file exists for audit, not for you to reason about — a verdict
 `verdict-filter` dropped is not a verdict, regardless of how it reads.
+
+**Collect every adversary's verdict before applying any fix — never mutate the
+tree while an adversary is still running.** Each adversary reasons about the
+snapshot it was dispatched against; fix a finding (edit the tree) while another
+adversary is still running and that one is now verifying stale code — it will
+re-report a defect you've already fixed, burning its whole budget on it. This is
+real, not hypothetical: it's the exact waste the `auto` fire-test surfaced (a
+falsifier spending 30 min rigorously confirming a lint error the main session had
+already fixed mid-verify). So: dispatch all adversaries, **wait for every one to
+return** (or hit its budget), filter the verdicts, and only *then* apply fixes.
+If the fixes are substantive (more than a comment or rename), re-run the affected
+adversary against the new snapshot — your fix is itself a change no adversary has
+seen. (Worktree note: an adversary needs its toolchain resolvable in its isolated
+worktree — if the floor's own tools aren't reachable there, the adversary wastes
+budget fighting tooling instead of the code; that's an install/agent-setup
+concern to watch, tracked in `docs/tradeoffs.md`.)
 
 ## 4. Conformance
 

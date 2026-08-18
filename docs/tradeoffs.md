@@ -2074,3 +2074,48 @@ worst object the system can produce — a gate that looks like it runs but
 doesn't — narrowed here to "unexercised," not "known-broken," but it is the
 honest state and the next thing to close: an `auto` task, run end to end,
 against a real installed project.
+
+### The `auto` fire-test happened — what it validated and what it exposed
+
+The "honest validation state" above named an `auto` task run end-to-end as the
+next thing to close. It ran (2026-08-18, `g1-tee-waitlist`, ticket GN1-4821 — a
+Class 1 `auto` display-only ordinal-formatting change). Result: **the `auto`
+flow works.** `/intake` sized it correctly (Class 1 / `auto`, evidence-backed),
+ran research → plan (written, no approval stop) → implement → verify with **no
+scheduled human stops**, and the checks stayed on — the floor ran and the
+security adversary caught a **real regression** (a null-position blank render
+introduced by an over-eager null-guard), which was fixed. That is exactly the
+bargain `auto` promises: fewer interruptions, not fewer checks.
+
+It also exposed three real defects in the **adversary layer** — none a Phase 4
+regression (the adversaries always had these properties), but all of which
+`auto` makes matter because no human is watching:
+
+1. **Adversaries had no budget or timeout.** The falsifier ran ~30 min / ~90k
+   tokens on a ~20-line change while the security agent finished the same-scope
+   job in 3.5 min. In `guided` a human would have interrupted; `auto` removed
+   that human.
+2. **The adversary snapshot goes stale when the main session fixes things
+   mid-verify.** The adversary reasons about the diff it was dispatched against.
+   The main session fixed the security finding *and* a lint failure while the
+   falsifier was still running against the pre-fix snapshot — so the falsifier
+   spent its whole run rigorously re-confirming a lint error that no longer
+   existed on the live tree. Real waste, real confusion (a "strong finding"
+   that was already fixed).
+3. **Worktree tooling fragility.** The falsifier's isolated worktree didn't have
+   the toolchain reliably resolvable (`node_modules`/eslint), so it burned time
+   getting the linter to run at all.
+
+**Fixed here** (`core/skills/verify/SKILL.md` §3): (a) each adversary now gets a
+wall-clock budget proportional to class (~5 min Class 1 `auto`, ~10 min Class 1
+otherwise, ~20–30 min Class 2), with its scope tiered to match — resolving the
+long-open "design-mode adversary cost tiers" question for the normal path too;
+a breach is recorded as "exceeded budget — not a clean pass," never a silent
+PASS, and in `auto` it is an **exception-stop** that pulls the human in. (b)
+verify now collects **every** adversary's verdict before applying any fix —
+never mutating the tree while an adversary still runs against its snapshot —
+and re-runs an adversary if a substantive fix changed the code it reviewed.
+(3) is disclosed as an install/agent-setup concern to watch, not yet mechanically
+closed — an adversary worktree that can't run the project's own toolchain is a
+real degradation, and the honest state is that nothing yet verifies the worktree
+is tool-complete before dispatch.
