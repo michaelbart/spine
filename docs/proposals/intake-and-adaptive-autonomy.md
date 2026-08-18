@@ -6,7 +6,9 @@ Revised 2026-08-18 after the user noted the org already enforces ticket-in-commi
 and ticket-in-branch (`feature/GN1-#####`): the blocking `commit-msg` hook is
 **dropped** — spine derives the ticket instead of re-enforcing it (§5) — and a
 **dashboard-at-scale** phase is added (§9). A **commit-trailer rule** binding
-spine-written commits to their JIRA ticket is added (§5, extends `ADAPTER-CONTRACT.md` §6). Not yet built.
+spine-written commits to their JIRA ticket is added (§5, extends `ADAPTER-CONTRACT.md` §6), and the
+PR-creation decision is resolved (§6.2 — `/ship` opens a draft PR via a new
+`open-pr` adapter, autonomy-aware, never auto-merging). Not yet built.
 
 Origin: raised in a design session about scaling spine to any task size so
 multiple engineering teams at the company (GolfNow One / G1) can adopt one
@@ -270,6 +272,29 @@ reviewing and merging, with the written plan, adversary findings, floor result,
 and any deviations attached. The final human decision (merge) is preserved, just
 relocated from scattered phase-boundary stops to one PR review.
 
+### 6.2 PR creation (new `open-pr` capability)
+
+`/ship` today commits **locally** and writes `pr-description.md`, then
+deliberately stops — "pushing or opening a PR is the human's call" (§5/§6 of
+`core/skills/ship/SKILL.md`). This proposal changes that, autonomy-aware:
+
+- **`auto` requires PR creation.** Its single human touchpoint is reviewing the
+  finished PR, so `/ship` must push the ticket-derived branch (`feature/GN1-#####`,
+  from §5's ticket derivation) and open a **draft** PR with `pr-description.md` as
+  the body, then stop. This **reverses** the current "human opens the PR" stance
+  for `auto` — disclosed, not silent.
+- **`checkpointed` / `guided`** — opening a draft PR is offered too (the org opens a
+  PR for every change; the body is already written; a draft carries no merge
+  claim), **profile-gated**, default-on for a PR-driven shop, off to keep today's
+  "I'll open my own PR" behavior.
+- **Never auto-merge**, any mode. `auto` produces the draft; the human reviews,
+  marks ready, and merges — the final decision stays human.
+- **Host-agnostic via adapter.** Opening a PR is host-specific, so it goes through
+  a new `.spine/adapters/open-pr` capability (abstract title/body/base/head -> URL)
+  added to `core/ADAPTER-CONTRACT.md`; nothing in `core/` names a host tool. The G1
+  adapter wraps the existing `g1-ship` skill, which already pushes and
+  creates/updates a draft PR.
+
 ## 7. Gap handling (resolved)
 
 - **`auto` widens the plan-adequacy gap.** Do not add a human stop back. Backstop
@@ -376,7 +401,8 @@ Measure all with `/costs`.
 
 From `~/g1-agent-tools` (highest justification — the company's own proven
 standard): reuse `g1-jira-intake`'s ingestion chain behind the `ticket-fetch`
-adapter; adopt its complexity-score->auto-split rubric for sizing; adopt its
+adapter; reuse `g1-ship`'s push + draft-PR creation behind the new `open-pr` adapter
+(§6.2); adopt its complexity-score->auto-split rubric for sizing; adopt its
 "blocking only if it changes an outcome AND is expensive to discover later" rigor
 calibration for the halt tier. The integration is complementary: spine supplies
 the real verify/ship gate `g1-workflows` explicitly lacks, and could receive a
@@ -410,6 +436,9 @@ deliberate and portable, and spine's real floor is better than g1's missing one)
 - **Unified entrypoint** is a larger refactor of the front of `/task` than the
   fallback (intake records, human types `/task`); chosen for the low-friction
   goal, cost disclosed.
+- **PR-creation reverses `/ship`'s current "human opens the PR" stance** (§6.2).
+  Necessary for `auto`; profile-gated for the rest, so a team can keep the old
+  behavior. A draft PR never implies merge-readiness.
 - **Profiles are repo-level only.** Multiple teams sharing one repo at different
   strictness is unsupported in v1.
 - **Dashboard windowing** makes older history a deliberate second click; the
