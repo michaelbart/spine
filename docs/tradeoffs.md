@@ -2133,3 +2133,23 @@ with the project's toolchain so the stub-out probe *can* run — is inherently
 stack-specific (node_modules vs .venv vs target/), so it belongs in a project's
 adapters/install, not stack-blind core; core can only degrade honestly, which it
 now does.
+
+### Update: the `auto` task shipped clean — flow validated, fixes still await a re-run
+
+GN1-4821 (`20260818-ordinal-position`) went on to **ship**, state `done`. `/verify`
+PASS: floor fully green, the security adversary's null-position regression caught
+and fixed, ship-time re-grounding / claims-check / decision-index all clean, two
+decisions updated with implementing paths and one (D-13) distilled from the
+resolved smoke-fixture-copy deviation. The `open-pr` degradation worked as
+designed — no adapter installed, so it committed on the feature branch and left
+the PR for the human, noted plainly in the briefing. **The `auto` flow is now
+validated end to end: no scheduled stops, checks stayed on, a real bug caught,
+guardrails held.**
+
+The honest caveat: this run *predates the adversary fixes taking effect*. The
+falsifier was stopped **by hand**, not by the new budget/exception-stop, and its
+partial finding was resolved manually — so the run validates the flow and the
+*principle* (a stuck adversary pulling the human in, which the manual kill
+effectively was), but the budget, lane-discipline, and wait-then-fix fixes
+themselves are still unexercised. A clean re-run of the same ticket — falsifier
+bounded and in-lane — is what confirms those hold.
