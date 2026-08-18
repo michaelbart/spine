@@ -1992,3 +1992,85 @@ to know that weren't obvious from the files. Deleting it would not shrink
 the system's always-loaded surface (it's never loaded by anything at
 runtime) and would destroy exactly the kind of "why this shape" context
 the whole system exists to preserve for everything else it produces.
+
+## The adaptive-autonomy build (intake, autonomy, traced-trivial, profiles, dashboard, /spine)
+
+A third build (2026-08-17/18, `docs/proposals/intake-and-adaptive-autonomy.md`,
+Phases 1–5 + dashboard §9), against the system described above. It scales spine
+to any task size so multiple teams can adopt one standard without heavyweight
+ceremony on every task: a `/spine` front desk, a `/intake` ticket door that
+sizes work against the real code and proposes a class *and* an autonomy, a
+traced-trivial Class 0 that leaves a one-line trace (not a document), three
+autonomy modes (`guided`/`checkpointed`/`auto`) that scale *human stops* down
+while keeping *checks* on, team `.spine/profile.json` profiles with a
+mechanically-enforced floor, and a windowed/faceted dashboard. `guided` is the
+default and is unchanged — everything is additive and opt-in.
+
+### What it costs
+
+The point is to cut *human minutes* on small-but-real work, not token cost.
+`auto` has no scheduled stops (the engineer's one touchpoint is reviewing the
+draft PR); `checkpointed` collapses verify+ship to one finish action; `guided`
+is the pre-existing flow. Token cost is roughly unchanged from the Class 1
+estimate above (2–4x), because **checks never scale down with autonomy** — the
+floor and adversaries run regardless; `auto` only moves the human's time to PR
+review. `/intake` adds a bounded code-grounded pre-scan and a sizing menu (a
+few extra tokens + one human decision), offset by removing the cold classify
+prompt. Traced-trivial adds essentially nothing — a commit trailer and a
+`ledger trace` line. All estimates, not measured; `/costs` (now with the
+active-profile line, traced-trivial count, and below-recommendation-downgrade
+count) is the intended source of truth once real data exists.
+
+### What it concedes, by design
+
+- **`auto` widens the plan-adequacy gap — the sharpest trade.** The original
+  build already named plan review as "the one link with no backstop"; `auto`
+  removes even the *human* plan-approval stop, trading pre-implementation
+  review for PR-time review. Backstops: the Class-1 cap (never `auto` at Class
+  2), the plan still written and attached to the PR, and the falsifier's
+  stub-out probe made *mandatory* in `auto` (it catches the core "tests assert
+  nothing" failure). Real, disclosed, and instrumented (`/costs` `auto` revert
+  rate is the falsifiable signal to lower the ceiling).
+- **The `/verify` human-relay is deliberately relaxed for `auto`/`checkpointed`.**
+  Those modes follow `verify`/`ship`'s instructions *inline* rather than waiting
+  for a human-typed command. The independence `/verify` protects survives —
+  it comes from the falsifier/security agents being fresh, isolated subagents,
+  not from who typed the command — but the belt-and-suspenders human gate is
+  gone for modes the engineer explicitly opted into. Named, not hidden.
+- **The intake class is a guess that can under-scope.** It is grounded in a
+  *bounded* pre-scan, so a change whose true blast radius only surfaces deep in
+  implementation relies on revocation, not the initial guess: `path-escalate`
+  (mechanical, against the real diff) and a post-research re-check. A purely
+  semantic risk both miss would let `auto` proceed — the same class as the
+  "semantic collisions between sequential tasks" gap above.
+- **Profiles are repo-level and their floor is un-disableable.** `profile-check`
+  rejects any unknown key (a smuggled `"floor": false`) and out-of-range value
+  (adversaries < 1, oversized Class 0 thresholds), fail-closed, at every
+  `setup --check`. Multiple teams sharing one repo at different strictness is
+  unsupported in v1.
+- **Dashboard windowing makes older history a deliberate second click**
+  (`--all`/`--since`); the "Covers `<window>`" banner exists so a windowed-empty
+  view is never mistaken for nothing-happened.
+
+### The honest validation state — this build's worst-risk finding
+
+Most of this build is **instruction-level**, and the discipline the original
+build set ("the worked example is your integration test") is only *partly*
+met here. What is tested for real: every new/changed script —
+`ledger trace`/`ticket-from-branch`, the `scan-untracked-ratio` reframe,
+`profile-check`'s invariant enforcement (smuggled `floor:false`, zero
+adversaries, everything-trivial, malformed JSON all correctly rejected), and
+`render-dashboard`'s windowing/banner/facets (default vs `--all` vs `--since`
+verified to window and label correctly) — plus `/spine`, fire-tested live in a
+real installed project, which caught and fixed a real ordering bug.
+
+What is **not** yet exercised by a real end-to-end run: `/intake`'s
+fetch→clarify→pre-scan→menu→route path, the `auto` verify/ship-inline flow
+(the single most important untested path), the `checkpointed` finish action,
+and the profile readers in `verify`/`intake`/`task`/`ship`. These are prose
+instructions a model follows; whether it branches correctly only proves out in
+a live task. This is the same *shape* of risk the original build named as the
+worst object the system can produce — a gate that looks like it runs but
+doesn't — narrowed here to "unexercised," not "known-broken," but it is the
+honest state and the next thing to close: an `auto` task, run end to end,
+against a real installed project.
