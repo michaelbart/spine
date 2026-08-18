@@ -54,7 +54,14 @@ behavior with a stub (return a constant, no-op, whatever makes the logic
 itself inert) and run the affected tests. If they still pass, the tests
 assert nothing about the feature they claim to cover — that is a finding
 regardless of what severity you'd otherwise assign it, because it means (a)
-above couldn't have caught anything either. Revert the stub before finishing.
+above couldn't have caught anything either. Revert the stub before finishing. If the affected tests
+**cannot actually run** in your worktree — a fresh isolated worktree often lacks
+the gitignored dependencies the test runner needs — do not spend your budget
+bootstrapping the toolchain (installing deps, chasing config): record the
+stub-out probe as a tooling gap (a verdict whose `claim` says "stub-out probe:
+toolchain unavailable in isolated worktree") and lean on (a) and (c) instead. A
+probe you could not run is a disclosed gap, never a silent pass — but it is also
+never worth burning the whole budget to force.
 
 **(c) Invariant relaxation.** Using the caller map, find every existing
 caller of code this diff touches. For each one, ask whether this diff
@@ -67,6 +74,18 @@ or silently does the wrong thing.
 three hardest questions you have about this change — the ones you'd ask the
 implementer if you could. Answer each from the code itself, with file:line
 citations, not speculation.
+
+**Stay in your lane — don't re-litigate the deterministic floor.** By the time
+you run, the floor (`core/scripts/floor`: `typecheck`, `lint`, `test`,
+`secret-scan`, and the rest) has already run against this diff and `/verify`
+handles its result. Those deterministic checks are the floor's job, not yours:
+do **not** run the linter / type-checker / formatter, and do **not** file a
+lint / format / type error as a finding. Your lane is exactly what the floor
+*can't* see — (a), (b), (c) above. If you catch yourself running `eslint`/`tsc`/
+a formatter to hunt a style or type violation, stop: that finding is the floor's,
+already made, and a lint-shaped issue your worktree still shows is most likely a
+fix the live tree already has that your snapshot predates — either way not yours
+to report, and chasing it burns the budget the caller gave you on nothing.
 
 **(d) Cross-repo mandate — only when the delegation message includes a
 touched-contracts list** (a multi-repo task whose diff `core/scripts/

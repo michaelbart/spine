@@ -2119,3 +2119,17 @@ and re-runs an adversary if a substantive fix changed the code it reviewed.
 closed — an adversary worktree that can't run the project's own toolchain is a
 real degradation, and the honest state is that nothing yet verifies the worktree
 is tool-complete before dispatch.
+
+Two further fixes in the falsifier agent itself (`core/agents/falsifier.md`), from
+reading what it actually spent 30 minutes on: **lane discipline** — it now knows
+the deterministic floor (lint/typecheck/format/secret-scan) already ran and owns
+those checks, and must not re-run them or file a lint/type/format error as a
+finding (that lint error was where its budget went); its lane is the semantic
+gaps only it can see. And **graceful tooling degradation** — if the stub-out
+probe's test runner can't run in the isolated worktree (a fresh worktree lacks
+gitignored deps), it records a tooling gap and leans on the other mandates rather
+than burning the budget bootstrapping. The deeper fix — provisioning the worktree
+with the project's toolchain so the stub-out probe *can* run — is inherently
+stack-specific (node_modules vs .venv vs target/), so it belongs in a project's
+adapters/install, not stack-blind core; core can only degrade honestly, which it
+now does.
