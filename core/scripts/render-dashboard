@@ -11,17 +11,32 @@
 # instrument. Pure aggregation of what /task/verify/ship/design already
 # write — no new instrumentation. Never a gate.
 #
-# Usage: render-dashboard --project <path> [--out <path>]
+# Usage: render-dashboard --project <path> [--out <path>] [--since <date> | --all]
+#
+# Windowing (Phase 9, "dashboard at scale"): after months of multi-engineer
+# use a flat Gantt + event feed + task list grow unbounded and stop being
+# usable. By default this renders a BOUNDED window — every not-yet-done task
+# plus any task with ledger activity in the last ~14 days — so a fresh render
+# stays legible. --since <date> widens that window back to <date>; --all
+# reproduces the full historical render (every task, every event) exactly as
+# before, so any windowing regression is detectable by diffing against --all.
+# The window is applied server-side to the task-derived sections (Gantt strip,
+# event feed, traced-trivial). Everything the window keeps is then further
+# sliceable client-side (facet/filter/search/collapse) with no re-render.
 set -uo pipefail
 
-usage() { echo "usage: render-dashboard --project <path> [--out <path>]" >&2; exit 2; }
+usage() { echo "usage: render-dashboard --project <path> [--out <path>] [--since <date> | --all]" >&2; exit 2; }
 
 project=""
 out_path=""
+window_mode="default"   # default | since | all
+since_date=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project) project="$2"; shift 2 ;;
     --out) out_path="$2"; shift 2 ;;
+    --since) window_mode="since"; since_date="$2"; shift 2 ;;
+    --all) window_mode="all"; shift ;;
     *) usage ;;
   esac
 done
@@ -77,6 +92,80 @@ fmt_ts() {
   local e
   e="$(to_epoch "$1")" || { printf '%s' "$1"; return; }
   TZ="${DASHBOARD_TZ:-America/New_York}" date -r "$e" "+%b %d, %Y %I:%M %p %Z" 2>/dev/null || printf '%s' "$1"
+}
+
+fmt_day() {
+  # fmt_day <timestamp> — the calendar day a timestamp falls on, in
+  # DASHBOARD_TZ, e.g. "Aug 15, 2026". Used to group the event feed into
+  # per-day collapsible sections. Falls back to the raw value if unparseable.
+  local e
+  e="$(to_epoch "$1")" || { printf '%s' "$1"; return; }
+  TZ="${DASHBOARD_TZ:-America/New_York}" date -r "$e" "+%b %d, %Y" 2>/dev/null || printf '%s' "$1"
+}
+
+parse_since_epoch() {
+  # parse_since_epoch <git-date> — resolve a --since argument to an epoch.
+  # Mirrors the flexible date forms `/costs --since` (core/scripts/ledger)
+  # accepts. GNU date parses every git-date shape natively; BSD date (macOS
+  # /bin/bash 3.2) does not, so fall through a fixed set of the shapes a
+  # human actually types: ISO with zone (reuse to_epoch), a bare YYYY-MM-DD,
+  # and "N days|weeks|months ago" relative forms. Prints epoch, or fails.
+  local s="$1" e
+  date -d "$s" +%s 2>/dev/null && return          # GNU date (no-op on BSD)
+  e="$(to_epoch "$s")" && { printf '%s' "$e"; return; }
+  date -j -f "%Y-%m-%d %H:%M:%S" "$s 00:00:00" "+%s" 2>/dev/null && return
+  if [[ "$s" =~ ^([0-9]+)[[:space:]]+(day|days|week|weeks|month|months)[[:space:]]+ago$ ]]; then
+    local n="${BASH_REMATCH[1]}" unit="${BASH_REMATCH[2]}" flag=""
+    case "$unit" in
+      day|days) flag="-${n}d" ;;
+      week|weeks) flag="-$((n * 7))d" ;;
+      month|months) flag="-${n}m" ;;
+    esac
+    date -v"$flag" "+%s" 2>/dev/null && return
+  fi
+  return 1
+}
+
+# --- resolve the window cutoff once. Empty cutoff == no windowing (--all):
+# every task and event renders, reproducing the pre-Phase-9 full history so a
+# regression is detectable by diffing --all against the old output. In the
+# windowed modes the cutoff is an epoch; a done task is kept only if its last
+# ledger activity is at or after it (open tasks are always kept regardless). ---
+now_epoch="$(date +%s)"
+window_cutoff=""
+window_words=""
+case "$window_mode" in
+  all)
+    window_words="all tasks (full history)"
+    ;;
+  since)
+    if window_cutoff="$(parse_since_epoch "$since_date")"; then
+      window_words="open tasks + activity since $since_date"
+    else
+      echo "render-dashboard: could not parse --since date '$since_date' (try YYYY-MM-DD or 'N days ago')" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    window_cutoff=$((now_epoch - 14 * 86400))
+    window_words="open tasks + activity in the last 14 days"
+    ;;
+esac
+
+task_in_window() {
+  # task_in_window <state> <last_ts> — 0 (in) / 1 (out) for the default and
+  # --since modes; always 0 under --all (empty cutoff). Open tasks (state !=
+  # done) are always in. A done task is in only if its last ledger mark is at
+  # or after the cutoff. A done task with no datable ledger mark is treated as
+  # older-than-window (out) — it cannot be proven recent, and the "showing N
+  # of M" banner + --all disclose exactly what the window drops.
+  local st="$1" last="$2" le
+  [[ -z "$window_cutoff" ]] && return 0
+  [[ "$st" != "done" ]] && return 0
+  [[ -n "$last" ]] || return 1
+  le="$(to_epoch "$last")" || return 1
+  [[ "$le" -ge "$window_cutoff" ]] && return 0
+  return 1
 }
 
 fmt_duration() {
@@ -203,9 +292,17 @@ owner_display() {
 declare_task_summary() {
   local t="$1" wd="$project/work/$t"
   local class="unknown" state="" verify_result="" first_ts="" last_ts="" tokens=0 has_report=0
+  local autonomy="guided" ticket="" milestone=""
   [[ -f "$wd/class" ]] && class="$(cat "$wd/class")"
   [[ -f "$wd/state" ]] && state="$(cat "$wd/state")"
   [[ -f "$wd/report.html" ]] && has_report=1
+  # autonomy/ticket are Phase 2/4 fields — a task predating them is a real
+  # absence: autonomy defaults to the most-supervised mode (guided), ticket
+  # to empty (off-ticket / no linkage), never invented.
+  [[ -f "$wd/autonomy" ]] && autonomy="$(cat "$wd/autonomy")"
+  [[ -n "$autonomy" ]] || autonomy="guided"
+  [[ -f "$wd/ticket" ]] && ticket="$(cat "$wd/ticket")"
+  [[ -f "$wd/milestone" ]] && milestone="$(cat "$wd/milestone")"
   if [[ -f "$wd/verify.md" ]]; then
     verify_result="$(sed -n 's/.*Result: `\([A-Za-z]*\)`.*/\1/p' "$wd/verify.md" | head -1)"
   fi
@@ -215,7 +312,7 @@ declare_task_summary() {
     tokens="$(jq '[.phases[] | .tokens // {input:0,output:0,cache_create:0,cache_read:0} | (.input+.output+.cache_create+.cache_read)] | add // 0' "$wd/ledger.json")"
   fi
   local owner; owner="$(owner_display "$t")"
-  printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' "$t" "$class" "$state" "$verify_result" "$first_ts" "$last_ts" "$tokens" "$has_report" "$owner"
+  printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\n' "$t" "$class" "$state" "$verify_result" "$first_ts" "$last_ts" "$tokens" "$has_report" "$owner" "$autonomy" "$ticket" "$milestone"
 }
 
 task_rows=()
@@ -223,12 +320,20 @@ for t in "${task_ids[@]}"; do
   task_rows+=("$(declare_task_summary "$t")")
 done
 
-# --- overall time span across every task's own first/last ledger mark,
-# for the Gantt strip's percentage-of-span positioning. ---
+# --- overall time span for the Gantt strip's percentage-of-span positioning.
+# Computed over the WINDOWED set only, so bars spread across the visible span
+# rather than being crushed against months of hidden history; under --all the
+# windowed set is every task, so the span (and every downstream position)
+# reproduces the pre-Phase-9 render exactly. task_shown/task_total also feed
+# the "showing N of M" banner. ---
 span_min=""
 span_max=""
+task_total="${#task_rows[@]}"
+task_shown=0
 for row in "${task_rows[@]}"; do
-  IFS=$'\x1f' read -r t cls st vr first last tok rep own <<<"$row"
+  IFS=$'\x1f' read -r t cls st vr first last tok rep own auto tkt ms <<<"$row"
+  task_in_window "$st" "$last" || continue
+  task_shown=$((task_shown + 1))
   [[ -n "$first" ]] || continue
   e_first="$(to_epoch "$first")"
   e_last="$(to_epoch "${last:-$first}")"
@@ -280,6 +385,50 @@ design_review="$project/work/design/design-review.md"
 has_design_review=0
 [[ -f "$design_review" ]] && has_design_review=1
 
+# --- active team strictness profile (Phase 5). Absent file == the built-in
+# `standard` default. Shown in the header so the drift numbers below have
+# context — a team running `prototype` (one adversary, auto allowed) is
+# expected to look lighter than one running `regulated`. ---
+profile_file="$project/.spine/profile.json"
+profile_name="standard (default)"
+profile_adv=""
+profile_ceil=""
+if [[ -f "$profile_file" ]]; then
+  profile_name="$(jq -r '.profile // "standard"' "$profile_file" 2>/dev/null || echo "standard")"
+  profile_adv="$(jq -r '.class1_adversaries // empty' "$profile_file" 2>/dev/null)"
+  profile_ceil="$(jq -r '.autonomy_ceiling // empty' "$profile_file" 2>/dev/null)"
+fi
+
+# --- traced-trivial (Class 0) entries — .spine/trace.jsonl, one JSON object
+# per line ({ticket, note, class, at, engineer}, written by `ledger trace`).
+# This is how trivial committed work becomes visible on the dashboard at all.
+# Windowed by `at` under the same rule as tasks (kept if at >= cutoff; all
+# kept under --all). Absent file => the section is omitted entirely. ---
+trace_file="$project/.spine/trace.jsonl"
+trace_rows=()
+trace_total=0
+trace_present=0
+if [[ -f "$trace_file" ]]; then
+  trace_present=1
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    tk="$(jq -r '.ticket // ""' <<<"$line" 2>/dev/null)" || continue
+    nt="$(jq -r '.note // ""' <<<"$line" 2>/dev/null)"
+    at="$(jq -r '.at // ""' <<<"$line" 2>/dev/null)"
+    eng="$(jq -r '.engineer // ""' <<<"$line" 2>/dev/null)"
+    # strip the "<email>" tail the same way owner_display does, for a plain name
+    eng="$(sed -E 's/[[:space:]]*<[^>]*>[[:space:]]*$//' <<<"$eng")"
+    trace_total=$((trace_total + 1))
+    # window by `at`
+    if [[ -n "$window_cutoff" ]]; then
+      ate="$(to_epoch "$at")" || ate=""
+      [[ -n "$ate" && "$ate" -ge "$window_cutoff" ]] || continue
+    fi
+    esrch="$(printf '%s %s' "$tk" "$nt" | tr '[:upper:]' '[:lower:]')"
+    trace_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s' "$tk" "$nt" "$at" "$eng" "$esrch")")
+  done < "$trace_file"
+fi
+
 # --- cost/drift instrument: shell out to the existing ledger script
 # itself, same numbers /costs reports, never re-derived by hand. ---
 ledger_aggregate_json="{}"
@@ -300,7 +449,7 @@ fi
 # resolves — reuses render-task, never a second parser. ---
 if [[ -x "$render_task_bin" ]]; then
   for row in "${task_rows[@]}"; do
-    IFS=$'\x1f' read -r t cls st vr first last tok rep own <<<"$row"
+    IFS=$'\x1f' read -r t cls st vr first last tok rep own auto tkt ms <<<"$row"
     [[ "$rep" -eq 0 ]] && "$render_task_bin" --task "$t" --project "$project" >/dev/null 2>&1 || true
   done
 fi
@@ -318,6 +467,16 @@ event_rows=()
 for t in "${task_ids[@]}"; do
   wd="$project/work/$t"
   [[ -f "$wd/ledger.json" ]] || continue
+  # A task's phase rows are windowed as a unit — a task in the window shows
+  # its whole timeline; a task out of it contributes no feed rows at all.
+  ev_state=""; [[ -f "$wd/state" ]] && ev_state="$(cat "$wd/state")"
+  ev_last="$(jq -r '[.phases[].marked_at] | map(select(. != null)) | sort | .[-1] // empty' "$wd/ledger.json")"
+  task_in_window "$ev_state" "$ev_last" || continue
+  ev_class="unknown"; [[ -f "$wd/class" ]] && ev_class="$(cat "$wd/class")"
+  ev_autonomy="guided"; [[ -f "$wd/autonomy" ]] && ev_autonomy="$(cat "$wd/autonomy")"; [[ -n "$ev_autonomy" ]] || ev_autonomy="guided"
+  ev_ticket=""; [[ -f "$wd/ticket" ]] && ev_ticket="$(cat "$wd/ticket")"
+  ev_milestone=""; [[ -f "$wd/milestone" ]] && ev_milestone="$(cat "$wd/milestone")"
+  ev_search="$(printf '%s %s' "$t" "$ev_ticket" | tr '[:upper:]' '[:lower:]')"
   href="${link_prefix}work/$t/report.html"
   prev_ts=""
   verify_result_for_t=""
@@ -370,8 +529,9 @@ for t in "${task_ids[@]}"; do
       bypass_detail="$(printf '%s' "$bypass_reason" | cut -c1-160)"
     fi
     subject="$t — $phase"
-    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
-      "$e" "phase" "$ts" "$subject" "$href" "${dur:-}" "$tok" "$outcome" "$is_bypass" "$bypass_detail" "$task_owner")")
+    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+      "$e" "phase" "$ts" "$subject" "$href" "${dur:-}" "$tok" "$outcome" "$is_bypass" "$bypass_detail" "$task_owner" \
+      "$ev_class" "$ev_autonomy" "$phase" "$ev_milestone" "$ev_ticket" "$ev_search")")
     prev_ts="$ts"
   done
 done
@@ -383,11 +543,18 @@ if [[ "$is_git_repo" -eq 1 ]]; then
     [[ -n "$task_trailer" ]] && continue
     e="$(to_epoch "$ts")"
     [[ -n "$e" ]] || continue
+    # Non-task project commits (bootstrap, design, milestone bookkeeping) are
+    # windowed by their own timestamp: a months-old bootstrap commit is out of
+    # a 14-day view, present under --all. Under --all window_cutoff is empty.
+    [[ -z "$window_cutoff" || "$e" -ge "$window_cutoff" ]] || continue
     bypass="$(commit_trailer "$sha" "Spine-Bypass")"
     is_bypass=0; bypass_detail=""
     if [[ -n "$bypass" ]]; then is_bypass=1; bypass_detail="$(printf '%s' "$bypass" | cut -c1-160)"; fi
-    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
-      "$e" "commit" "$ts" "$subject" "" "" "" "" "$is_bypass" "$bypass_detail" "$author")")
+    commit_ticket="$(commit_trailer "$sha" "Spine-Ticket")"
+    commit_search="$(printf '%s %s' "$subject" "$commit_ticket" | tr '[:upper:]' '[:lower:]')"
+    event_rows+=("$(printf '%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s' \
+      "$e" "commit" "$ts" "$subject" "" "" "" "" "$is_bypass" "$bypass_detail" "$author" \
+      "" "" "commit" "" "$commit_ticket" "$commit_search")")
   done < <(git -C "$project" log --format='%H%x09%aI%x09%an%x09%s' --reverse 2>/dev/null)
 fi
 
@@ -489,8 +656,65 @@ cat <<HTML
   .instrument-note { font-size: 0.85em; color: var(--muted); margin-top: 12px; }
 
   footer.page { color: var(--muted); font-size: 0.85em; margin-top: 20px; }
+
+  /* Coverage banner + profile line */
+  .coverage { background: var(--panel); border: 1px solid var(--accent); border-left-width: 4px;
+    border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; font-size: 0.9em; }
+  .coverage strong { color: var(--accent); }
+  .profile-line { color: var(--muted); font-size: 0.88em; margin-bottom: 20px; }
+  .profile-line code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+
+  /* Filter bar */
+  .filterbar { position: sticky; top: 0; z-index: 5; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; display: flex; flex-wrap: wrap;
+    gap: 8px; align-items: center; }
+  .filterbar input[type=search], .filterbar input.search { flex: 1 1 220px; min-width: 160px;
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg);
+    color: var(--text); font: inherit; font-size: 0.9em; }
+  .filterbar select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 0.85em; }
+  .filterbar label.toggle { font-size: 0.85em; color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+  .filterbar button { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit; font-size: 0.85em; cursor: pointer; }
+  .filterbar button:hover { border-color: var(--accent); }
+
+  /* Landing summary */
+  .summary-line { font-size: 0.9em; color: var(--muted); margin-bottom: 18px; line-height: 1.7; }
+  .summary-line .pill { display: inline-block; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 999px; padding: 1px 10px; margin: 0 4px 4px 0; font-size: 0.92em; }
+  .summary-line .pill b { color: var(--text); }
+
+  /* Generic filter/collapse mechanics */
+  .is-hidden { display: none !important; }
+  .task-row.task-done { opacity: 0.72; }
+  .collapse-toggle { cursor: pointer; user-select: none; }
+  .collapse-toggle::before { content: "▾ "; display: inline-block; width: 1em; color: var(--muted); }
+  .collapsed > .collapse-toggle::before, .collapse-toggle.collapsed::before { content: "▸ "; }
+  .count-note { color: var(--muted); font-size: 0.82em; font-weight: 400; }
+
+  /* Event feed day grouping */
+  .feed-day { margin-bottom: 4px; }
+  .feed-day-header { font-size: 0.82em; font-weight: 600; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.03em; padding: 6px 0 6px 8px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  .feed-day.collapsed .feed-day-body { display: none; }
+
+  /* Wide content scrolls inside its own box; the page body never scrolls sideways */
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .gantt { min-width: 640px; }
+
+  /* Traced-trivial table */
+  table.trace { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+  table.trace th, table.trace td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.trace th { color: var(--muted); font-weight: 600; font-size: 0.82em; text-transform: uppercase; letter-spacing: 0.02em; }
+  table.trace code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+
   @media (prefers-color-scheme: dark) {
     :root { --bg: #16171a; --panel: #1e1f23; --border: #33343a; --text: #e8e8ea; --muted: #8b8b96; }
+  }
+  @media (max-width: 640px) {
+    .filterbar { position: static; }
+    .gantt-label { position: static; width: auto; display: block; margin-bottom: 4px; }
+    .gantt-track, .gantt-caption { margin-left: 0; }
   }
 </style>
 </head>
@@ -502,16 +726,68 @@ cat <<HTML
 </header>
 HTML
 
+# ---- profile line (context for the drift numbers) ----
+profile_extra=""
+[[ -n "$profile_adv" ]] && profile_extra="${profile_extra} · class-1 adversaries: $profile_adv"
+[[ -n "$profile_ceil" ]] && profile_extra="${profile_extra} · autonomy ceiling: $profile_ceil"
+printf '<div class="profile-line">Active profile: <code>%s</code>%s</div>\n' \
+  "$(html_escape <<<"$profile_name")" "$(html_escape <<<"$profile_extra")"
+
+# ---- coverage banner (so a windowed-empty view is never read as "nothing
+# happened"): states the exact window in words + how many tasks it kept. ----
+if [[ "$window_mode" == "all" ]]; then
+  printf '<div class="coverage"><strong>Covers %s</strong> — showing all %s task(s). This is the full historical render.</div>\n' \
+    "$(html_escape <<<"$window_words")" "$task_total"
+else
+  printf '<div class="coverage"><strong>Covers %s</strong> — showing %s of %s task(s). Run with <code>--all</code> (or <code>--since &lt;date&gt;</code>) to include older, already-done work.</div>\n' \
+    "$(html_escape <<<"$window_words")" "$task_shown" "$task_total"
+fi
+
+# ---- landing summary (counts by class/status/owner) — the numbers here are
+# recomputed live by the filter script as facets are applied. ----
+echo '<div id="summary" class="summary-line">Loading summary…</div>'
+
+# ---- filter bar: facets + free-text search + completed/collapse toggle. The
+# <select>s are populated client-side from the data-* attributes actually
+# present, so they only ever offer values that exist in this windowed render. ----
+cat <<'HTML'
+<div class="filterbar" id="filterbar">
+  <input type="search" class="search" id="f-search" placeholder="Search task id, title, ticket, decision…" aria-label="Search">
+  <select id="f-owner" aria-label="Owner"><option value="">owner: all</option></select>
+  <select id="f-class" aria-label="Class"><option value="">class: all</option></select>
+  <select id="f-autonomy" aria-label="Autonomy"><option value="">autonomy: all</option></select>
+  <select id="f-status" aria-label="Status or phase"><option value="">status/phase: all</option></select>
+  <select id="f-milestone" aria-label="Milestone"><option value="">milestone: all</option></select>
+  <select id="f-ticket" aria-label="Ticket"><option value="">ticket: all</option></select>
+  <label class="toggle"><input type="checkbox" id="f-showdone"> show completed tasks</label>
+  <button type="button" id="f-reset">Reset</button>
+</div>
+HTML
+
 # ---- Gantt strip ----
+# gantt_data_attrs — the data-* blob the client filter matches every task row
+# on (Gantt rows and, below, the milestone list reuse the same shape). Emitted
+# per row so facet/search hides rows without a re-render.
+gantt_data_attrs() {
+  local t="$1" cls="$2" st="$3" auto="$4" ms="$5" tkt="$6" own="$7"
+  local search; search="$(printf '%s %s' "$t" "$tkt" | tr '[:upper:]' '[:lower:]')"
+  printf 'data-owner="%s" data-class="%s" data-autonomy="%s" data-status="%s" data-milestone="%s" data-ticket="%s" data-search="%s"' \
+    "$(html_escape <<<"$own")" "$(html_escape <<<"$cls")" "$(html_escape <<<"$auto")" \
+    "$(html_escape <<<"$st")" "$(html_escape <<<"$ms")" "$(html_escape <<<"$tkt")" "$(html_escape <<<"$search")"
+}
+
 echo '<section id="gantt"><h2>Task timeline</h2>'
 if [[ "${#task_rows[@]}" -eq 0 ]]; then
   echo '<p class="omitted">No tasks found under work/.</p>'
 elif [[ -z "$span_min" ]]; then
-  echo '<p class="omitted">No task has a ledger.json with phase timestamps yet — nothing to position on a timeline.</p>'
+  echo '<p class="omitted">No task in this window has a ledger.json with phase timestamps yet — nothing to position on a timeline.</p>'
 else
-  echo '<div class="gantt">'
+  echo '<div class="scroll-x"><div class="gantt">'
   for row in "${task_rows[@]}"; do
-    IFS=$'\x1f' read -r t cls st vr first last tok rep own <<<"$row"
+    IFS=$'\x1f' read -r t cls st vr first last tok rep own auto tkt ms <<<"$row"
+    task_in_window "$st" "$last" || continue
+    done_cls=""; [[ "$st" == "done" ]] && done_cls=" task-done"
+    dattrs="$(gantt_data_attrs "$t" "$cls" "$st" "$auto" "$ms" "$tkt" "$own")"
     label="$t"
     [[ -n "$own" ]] && label="$t <span class=\"gantt-owner\">$(html_escape <<<"$own")</span>"
     if [[ -n "$first" ]]; then
@@ -529,29 +805,39 @@ else
       # a label, and hovering isn't how this dashboard is meant to be read.
       caption="$(fmt_ts "$first") – $(fmt_ts "${last:-$first}") · took $(fmt_duration $((e_last - e_first)))"
       [[ -n "$vr" ]] && caption="$caption · verify: $vr"
-      printf '<div class="gantt-row">\n<span class="gantt-label">%s</span>\n<div class="gantt-track">\n<div class="gantt-bar %s" style="left:%s%%;width:%s%%;">\n<a href="%s" title="%s"></a>\n</div>\n</div>\n<div class="gantt-caption">%s</div>\n</div>\n' \
-        "$label" "$bar_class" "$left" "$width" "$(html_escape <<<"$href")" "$(html_escape <<<"$tip")" "$(html_escape <<<"$caption")"
+      printf '<div class="gantt-row task-row%s" %s>\n<span class="gantt-label">%s</span>\n<div class="gantt-track">\n<div class="gantt-bar %s" style="left:%s%%;width:%s%%;">\n<a href="%s" title="%s"></a>\n</div>\n</div>\n<div class="gantt-caption">%s</div>\n</div>\n' \
+        "$done_cls" "$dattrs" "$label" "$bar_class" "$left" "$width" "$(html_escape <<<"$href")" "$(html_escape <<<"$tip")" "$(html_escape <<<"$caption")"
     else
-      printf '<div class="gantt-row"><span class="gantt-label">%s</span><div class="gantt-track"></div></div>\n' "$label"
+      printf '<div class="gantt-row task-row%s" %s><span class="gantt-label">%s</span><div class="gantt-track"></div></div>\n' \
+        "$done_cls" "$dattrs" "$label"
     fi
   done
-  echo '</div>'
+  echo '</div></div>'
 fi
 echo '</section>'
 
-# ---- Event feed ----
+# ---- Event feed (grouped by day, each day collapsible) ----
 echo '<section id="events"><h2>Event feed</h2>'
 if [[ "${#sorted_events[@]}" -eq 0 ]]; then
-  echo '<p class="omitted">No events to show yet.</p>'
+  echo '<p class="omitted">No events in this window. Run with <code>--all</code> or <code>--since &lt;date&gt;</code> to see older activity.</p>'
 else
-  echo '<div class="feed">'
   feed_prev_epoch=""
+  cur_day=""
   for ev in "${sorted_events[@]}"; do
-    IFS=$'\x1f' read -r e kind ts subject href dur tok outcome is_bypass bypass_detail author <<<"$ev"
+    IFS=$'\x1f' read -r e kind ts subject href dur tok outcome is_bypass bypass_detail author ecls eauto estatus ems etkt esearch <<<"$ev"
+    day="$(fmt_day "$ts")"
+    if [[ "$day" != "$cur_day" ]]; then
+      [[ -n "$cur_day" ]] && echo '</div></div></div>'
+      cur_day="$day"
+      printf '<div class="feed-day"><div class="feed-day-header collapse-toggle" role="button" tabindex="0">%s</div><div class="feed-day-body"><div class="feed">\n' \
+        "$(html_escape <<<"$day")"
+    fi
     item_class="$kind-event"
     [[ "$is_bypass" == "1" ]] && item_class="$item_class bypass"
-    printf '<div class="feed-item %s">\n<div class="feed-ts">%s%s</div>\n<div class="feed-subject">' \
-      "$item_class" "$(html_escape <<<"$(fmt_ts "$ts")")" \
+    printf '<div class="feed-item feed-row %s" data-owner="%s" data-class="%s" data-autonomy="%s" data-status="%s" data-milestone="%s" data-ticket="%s" data-search="%s">\n<div class="feed-ts">%s%s</div>\n<div class="feed-subject">' \
+      "$item_class" "$(html_escape <<<"$author")" "$(html_escape <<<"$ecls")" "$(html_escape <<<"$eauto")" \
+      "$(html_escape <<<"$estatus")" "$(html_escape <<<"$ems")" "$(html_escape <<<"$etkt")" "$(html_escape <<<"$esearch")" \
+      "$(html_escape <<<"$(fmt_ts "$ts")")" \
       "$( [[ -n "$author" ]] && printf ' <span class=\"feed-author\">%s</span>' "$(html_escape <<<"$author")" )"
     if [[ -n "$href" ]]; then
       printf '<a href="%s">%s</a>' "$(html_escape <<<"$href")" "$(html_escape <<<"$subject")"
@@ -585,9 +871,36 @@ else
     echo '</div>'
     feed_prev_epoch="$e"
   done
-  echo '</div>'
+  [[ -n "$cur_day" ]] && echo '</div></div></div>'
 fi
 echo '</section>'
+
+# ---- Traced-trivial (Class 0) ----
+# Only rendered when .spine/trace.jsonl exists — this is how trivial committed
+# work (no work folder, no phases) becomes visible on the dashboard at all.
+# Collapsed by default; rows carry the same data-* shape as tasks so the one
+# filter bar drives them too. Windowed by each entry's `at` timestamp.
+if [[ "$trace_present" -eq 1 ]]; then
+  echo '<section id="traced"><h2 class="collapse-toggle collapsed" role="button" tabindex="0">Traced-trivial (Class 0) <span class="count-note" id="traced-count"></span></h2>'
+  echo '<div class="collapsible-body is-hidden">'
+  if [[ "${#trace_rows[@]}" -eq 0 ]]; then
+    if [[ "$trace_total" -gt 0 ]]; then
+      printf '<p class="omitted">%s Class 0 trace(s) recorded, none in this window. Run with <code>--all</code> or <code>--since &lt;date&gt;</code> to see them.</p>\n' "$trace_total"
+    else
+      echo '<p class="omitted">No Class 0 traces recorded yet.</p>'
+    fi
+  else
+    echo '<div class="scroll-x"><table class="trace"><thead><tr><th>Ticket</th><th>Note</th><th>When</th><th>Who</th></tr></thead><tbody>'
+    for trow in "${trace_rows[@]}"; do
+      IFS=$'\x1f' read -r tk nt at eng esrch <<<"$trow"
+      printf '<tr class="task-row trace-row" data-owner="%s" data-class="0" data-autonomy="" data-status="traced" data-milestone="" data-ticket="%s" data-search="%s"><td><code>%s</code></td><td>%s</td><td>%s</td><td>%s</td></tr>\n' \
+        "$(html_escape <<<"$eng")" "$(html_escape <<<"$tk")" "$(html_escape <<<"$esrch")" \
+        "$(html_escape <<<"${tk:-—}")" "$(html_escape <<<"$nt")" "$(html_escape <<<"$(fmt_ts "$at")")" "$(html_escape <<<"${eng:-—}")"
+    done
+    echo '</tbody></table></div>'
+  fi
+  echo '</div></section>'
+fi
 
 # ---- Decision store ----
 echo '<section id="decisions"><h2>Decision store</h2>'
@@ -610,8 +923,9 @@ else
       [[ -n "$chain" ]] && chain="$chain · "
       chain="${chain}superseded by $superseded_by"
     fi
-    printf '<div class="decision-row">\n<span class="decision-id">%s</span>\n<span class="decision-title">%s</span>\n<span class="badge %s">%s</span>\n' \
-      "$(html_escape <<<"$id")" "$(html_escape <<<"$title")" "$badge" "$(html_escape <<<"$status")"
+    dsearch="$(printf '%s %s' "$id" "$title" | tr '[:upper:]' '[:lower:]')"
+    printf '<div class="decision-row search-only" data-search="%s">\n<span class="decision-id">%s</span>\n<span class="decision-title">%s</span>\n<span class="badge %s">%s</span>\n' \
+      "$(html_escape <<<"$dsearch")" "$(html_escape <<<"$id")" "$(html_escape <<<"$title")" "$badge" "$(html_escape <<<"$status")"
     [[ -n "$chain" ]] && printf '<span class="decision-chain">%s</span>\n' "$(html_escape <<<"$chain")"
     echo '</div>'
   done
@@ -770,6 +1084,147 @@ else
   echo '<p class="instrument-note">A high untracked-commit ratio on a solo/no-remote project is expected: only the final /ship commit carries a Spine-Task: trailer, every intermediate task-bookkeeping commit does not. Read it alongside bypass count and tooling gaps, not in isolation.</p>'
 fi
 echo '</section>'
+
+# ---- client-side facet / filter / search / collapse ----
+# Self-contained, no network, no external scripts (strict CSP). Operates only
+# on the already-rendered (server-windowed) rows: shows/hides by matching
+# data-* attributes + a lowercased search blob, and keeps the landing summary
+# in sync. Never re-fetches or re-renders.
+cat <<'JS'
+<script>
+(function () {
+  var facets = ['owner', 'class', 'autonomy', 'status', 'milestone', 'ticket'];
+  var selects = {};
+  facets.forEach(function (f) { selects[f] = document.getElementById('f-' + f); });
+  var searchBox = document.getElementById('f-search');
+  var showDone = document.getElementById('f-showdone');
+  var resetBtn = document.getElementById('f-reset');
+  var summary = document.getElementById('summary');
+  var slice = function (nl) { return Array.prototype.slice.call(nl); };
+
+  var taskRows = slice(document.querySelectorAll('.task-row'));
+  var feedRows = slice(document.querySelectorAll('.feed-row'));
+  var searchOnly = slice(document.querySelectorAll('.search-only'));
+
+  // Populate each facet <select> only with values that actually occur, so the
+  // menu never offers a value that would match nothing in this window.
+  facets.forEach(function (f) {
+    var sel = selects[f];
+    if (!sel) return;
+    var seen = {};
+    taskRows.concat(feedRows).forEach(function (el) {
+      var v = el.getAttribute('data-' + f);
+      if (v) seen[v] = true;
+    });
+    Object.keys(seen).sort().forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v; o.textContent = f + ': ' + v;
+      sel.appendChild(o);
+    });
+  });
+
+  function matchFacets(el) {
+    for (var i = 0; i < facets.length; i++) {
+      var f = facets[i], want = selects[f] ? selects[f].value : '';
+      if (want && el.getAttribute('data-' + f) !== want) return false;
+    }
+    return true;
+  }
+  function matchSearch(el) {
+    var q = (searchBox.value || '').trim().toLowerCase();
+    if (!q) return true;
+    return ((el.getAttribute('data-search') || '').indexOf(q) !== -1);
+  }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  function apply() {
+    var statusFilterOn = selects.status && selects.status.value;
+    var counts = { total: 0, byClass: {}, byStatus: {}, byOwner: {} };
+    taskRows.forEach(function (el) {
+      var isDone = el.classList.contains('task-done');
+      var vis = matchFacets(el) && matchSearch(el);
+      // Completed tasks collapsed by default — revealed by the toggle, or when
+      // a status/phase facet is explicitly selected.
+      if (isDone && !showDone.checked && !statusFilterOn) vis = false;
+      el.classList.toggle('is-hidden', !vis);
+      if (vis && !el.classList.contains('trace-row')) {
+        counts.total++;
+        var c = el.getAttribute('data-class') || '?'; counts.byClass[c] = (counts.byClass[c] || 0) + 1;
+        var s = el.getAttribute('data-status') || '?'; counts.byStatus[s] = (counts.byStatus[s] || 0) + 1;
+        var o = el.getAttribute('data-owner') || ''; if (o) counts.byOwner[o] = (counts.byOwner[o] || 0) + 1;
+      }
+    });
+    feedRows.forEach(function (el) {
+      el.classList.toggle('is-hidden', !(matchFacets(el) && matchSearch(el)));
+    });
+    // Decisions respond to free-text search only (they carry no task facets).
+    searchOnly.forEach(function (el) {
+      el.classList.toggle('is-hidden', !matchSearch(el));
+    });
+    // Collapse day groups that have no visible rows left.
+    slice(document.querySelectorAll('.feed-day')).forEach(function (day) {
+      var visible = 0;
+      slice(day.querySelectorAll('.feed-row')).forEach(function (r) {
+        if (!r.classList.contains('is-hidden')) visible++;
+      });
+      day.classList.toggle('is-hidden', visible === 0);
+    });
+    renderSummary(counts);
+    updateTracedCount();
+  }
+
+  function renderSummary(c) {
+    var parts = ['<span class="pill"><b>' + c.total + '</b> task(s) shown</span>'];
+    ['0', '1', '2'].forEach(function (k) {
+      if (c.byClass[k]) parts.push('<span class="pill">class ' + k + ': <b>' + c.byClass[k] + '</b></span>');
+    });
+    Object.keys(c.byStatus).sort().forEach(function (k) {
+      parts.push('<span class="pill">' + esc(k) + ': <b>' + c.byStatus[k] + '</b></span>');
+    });
+    var owners = Object.keys(c.byOwner);
+    if (owners.length > 1) owners.sort().forEach(function (o) {
+      parts.push('<span class="pill">' + esc(o) + ': <b>' + c.byOwner[o] + '</b></span>');
+    });
+    summary.innerHTML = parts.join(' ');
+  }
+
+  function updateTracedCount() {
+    var el = document.getElementById('traced-count');
+    if (!el) return;
+    var vis = 0;
+    slice(document.querySelectorAll('.trace-row')).forEach(function (r) {
+      if (!r.classList.contains('is-hidden')) vis++;
+    });
+    el.textContent = '(' + vis + ')';
+  }
+
+  facets.forEach(function (f) { if (selects[f]) selects[f].addEventListener('change', apply); });
+  searchBox.addEventListener('input', apply);
+  showDone.addEventListener('change', apply);
+  resetBtn.addEventListener('click', function () {
+    facets.forEach(function (f) { if (selects[f]) selects[f].value = ''; });
+    searchBox.value = ''; showDone.checked = false; apply();
+  });
+
+  // Collapse toggles: per-day feed groups and the traced-trivial section.
+  slice(document.querySelectorAll('.collapse-toggle')).forEach(function (t) {
+    function toggle() {
+      var day = t.parentNode && t.classList.contains('feed-day-header') ? t.parentNode : null;
+      if (day && day.classList.contains('feed-day')) { day.classList.toggle('collapsed'); return; }
+      t.classList.toggle('collapsed');
+      var body = t.nextElementSibling;
+      if (body && body.classList.contains('collapsible-body')) body.classList.toggle('is-hidden');
+    }
+    t.addEventListener('click', toggle);
+    t.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+
+  apply();
+})();
+</script>
+JS
 
 cat <<HTML
 <footer class="page">
