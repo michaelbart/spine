@@ -1,11 +1,11 @@
 ---
 name: intake
-description: The front door for ticketed work — fetch a JIRA (or other tracker) ticket, size it against the real code, propose the right spine flow, and route into it. The first thing to run when you pick up a ticket.
+description: The front door for ticketed work — fetch an issue-tracker ticket, size it against the real code, propose the right spine flow, and route into it. The first thing to run when you pick up a ticket.
 disable-model-invocation: true
 argument-hint: <ticket-key-or-url> | (or paste the ticket text)
 ---
 
-You are running `/intake`. `$ARGUMENTS` is a ticket key/URL (e.g. `GN1-12345`)
+You are running `/intake`. `$ARGUMENTS` is a ticket key/URL (e.g. `ABC-1234`)
 or, if empty, a signal that the engineer will paste the ticket. Your job is to
 turn a ticket into the *right* amount of spine — no ceremony an engineer has
 to opt into, no rigor a real change should skip. You **classify and route**;
@@ -14,7 +14,13 @@ hypothesis (research and `path-escalate` can still overturn it downstream).
 
 Project root: the workspace root if `workspace.json` exists here, otherwise
 this project. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`; adapters
-at `<project root>/.spine/adapters/<name>`.
+at `<project root>/.spine/adapters/<name>`. `${CLAUDE_SKILL_DIR}` is a
+placeholder you expand to this skill's own directory; hand the resulting
+path — including the `../../` — to the shell verbatim. Do **not** lexically
+collapse `skills/intake/../..` to `.claude/`: `.claude/skills/intake` is a
+symlink into the spine core checkout, so the shell must resolve `../../`
+against the symlink's real target (`<spine>/core/...`). Collapsing it as text
+yields a nonexistent `.claude/scripts/...` path and a "no such file" error.
 
 ## 0. Preflight
 

@@ -83,12 +83,19 @@ predicted=`<n>` actual=`<n>` precision=`<p>` recall=`<r>` f1=`<f>`
 
 ## Adversary verdicts
 
-<!-- One subsection per adversary that ran (falsifier always; security per
-     Layer 1 ceremony calibration / Class 2). Quote the filtered output of
-     verdict-filter verbatim — never the raw pre-filter file. State the
-     dropped count from verdict-filter's own stderr line; a verdict this
-     section doesn't mention was either never raised or was dropped for a
-     stated, mechanical reason, never silently. -->
+<!-- One subsection per adversary that ran or was reused (falsifier always;
+     security per Layer 1 ceremony calibration / Class 2). Quote the
+     filtered output of verdict-filter verbatim — never the raw pre-filter
+     file. State the dropped count from verdict-filter's own stderr line;
+     a verdict this section doesn't mention was either never raised or was
+     dropped for a stated, mechanical reason, never silently.
+
+     Reused instead of re-run (core/skills/verify/SKILL.md §3's
+     skip-if-subset check): replace the Attacked/kept/dropped lines below
+     with a single line, `REUSED (blast radius unchanged, prior clean
+     verdict from <ran_at>)` — this means the prior run's blast radius
+     already covered this run's, and that prior verdict had zero kept
+     findings; it never means a narrowed or partial pass. -->
 
 ### Falsifier
 

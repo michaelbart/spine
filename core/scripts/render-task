@@ -90,8 +90,8 @@ class_val="unknown"
 [[ -f "$work_dir/class" ]] && class_val="$(cat "$work_dir/class")"
 owner_val=""
 [[ -f "$work_dir/owner" ]] && owner_val="$(cat "$work_dir/owner")"
-# Drop the trailing "<email>" or bare email token — "Mike Bart
-# mike.bart@golfchannel.com" reads as "Mike Bart" here; the plain-name
+# Drop the trailing "<email>" or bare email token — "Jane Doe
+# jane.doe@example.com" reads as "Jane Doe" here; the plain-name
 # form is what a report's header should show a human, not the raw
 # git-identity string /task wrote for its own bookkeeping.
 owner_val="$(sed -E 's/[[:space:]]*<[^>]*>[[:space:]]*$//; s/[[:space:]]+[^[:space:]]+@[^[:space:]]+[[:space:]]*$//' <<<"$owner_val")"

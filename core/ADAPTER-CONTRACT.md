@@ -8,12 +8,13 @@ a language, framework, or tool — this document, like the core, is stack-blind.
 
 A capability is an executable at `.spine/adapters/<name>` in the installed
 project. The core never calls a tool directly; it calls a capability name.
-Seventeen capabilities exist:
+Eighteen capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
 `clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`,
 `migrate-rehearse`, `contract-check` (Extension B — §3.2), `ui-render`
-(§3.3), `ticket-fetch` (intake — §3.4), `open-pr` (ship — §3.5).
+(§3.3), `ticket-fetch` (intake — §3.4), `open-pr` (ship — §3.5),
+`worktree-prep` (falsifier — §3.6).
 
 `contract-check` only ever exists in a repo that is a workspace member and
 party (producer or consumer) to at least one declared contract
@@ -50,13 +51,24 @@ ticket was fetched (JSON on stdout), non-zero means it couldn't be (→ manual
 paste). See §3.4.
 
 `open-pr` only ever exists in a project whose engineers ship through pull
-requests on a host `gh`/`glab`/etc. can reach (`core/skills/ship/SKILL.md` §5a) —
+requests on a host the project's own PR tooling can reach (`core/skills/ship/SKILL.md` §5a) —
 a project with no PR host, or one where PRs are always opened by hand, marks it
 `not-applicable` and `/ship` falls back to committing locally and leaving the PR
 to the human. Like `ticket-fetch`, it is invoked only by a skill (`/ship`), never
 by `floor`, and it is an *action* adapter, not a gate: exit 0 means a **draft** PR
 was opened (its URL on stdout), non-zero means it couldn't be. It **never** opens
 a ready-to-merge PR and never merges — the human marks ready and merges. See §3.5.
+
+`worktree-prep` only ever exists in a project with gitignored dependencies
+(`node_modules`, `.venv`, `target/`, or equivalent) and a runnable test
+suite — a project with neither marks it `not-applicable` with reason
+"nothing to provision" (nothing a fresh worktree would be missing). It is
+**never invoked by `floor`** — the falsifier alone runs it, once, as the
+first bounded step of its stub-out probe (`core/agents/falsifier.md`
+mandate (b)), never `security` (read-only, no worktree isolation). Like
+`open-pr`, it is an *action* adapter, not a gate: exit 0 means the
+project's toolchain is now resolvable in the current (isolated) worktree,
+non-zero means it couldn't be. See §3.6.
 
 `.spine/capabilities.json` marks each `implemented`, `unavailable`, or
 `not-applicable`, each with a `reason`. Only capabilities marked `implemented`
@@ -214,7 +226,7 @@ back, so this adapter deliberately breaks the two §2/§3 rules that only make
 sense for pass/fail gates, and no others:
 
 - **Input**: the ticket key or URL as its **single positional argument** (e.g.
-  `GN1-12345`). This is the one adapter whose positional carries an *input*, not
+  `ABC-1234`). This is the one adapter whose positional carries an *input*, not
   an output-artifact path (§3) — it fetches data rather than producing a check
   artifact. No stdin.
 - **Output on success (exit 0)**: a single JSON object on stdout — `{key, title,
@@ -228,8 +240,7 @@ sense for pass/fail gates, and no others:
   opens, just by hand.
 - The §2 rules that still apply: never prompts, never reads a TTY, never mutates
   the tree. Credentials come from whatever environment the adapter's own
-  implementation arranges (the G1 adapter wraps `g1-jira-intake`'s `acli` /
-  Atlassian chain), never an interactive prompt.
+  implementation arranges (it wraps whatever tracker CLI or API the project uses), never an interactive prompt.
 
 **Self-test** (§4): `--self-test pass` returns a well-formed fixture ticket JSON
 (exit 0); `--self-test fail` returns malformed/empty output with a non-zero exit
@@ -258,12 +269,62 @@ output-artifact path and more than one input):
   `guided` behavior (commit already made locally — push and open by hand) and
   records the gap. A failed PR-open is never a lost commit.
 - The §2 rules that apply: never prompts, never reads a TTY. Credentials come from
-  whatever environment the adapter arranges (the G1 adapter wraps the existing
-  `g1-ship` skill, which already pushes and creates/updates a draft PR).
+  whatever environment the adapter arranges (it wraps whatever push-and-PR tooling the project already uses).
 
 **Self-test** (§4): `--self-test pass` prints a well-formed fixture PR URL and
 exits 0; `--self-test fail` exits non-zero — proving `/ship` can tell a real open
 from a failure without a live host. (Neither self-test contacts a real host.)
+
+### 3.6 `worktree-prep` — an action, not a gate
+
+The falsifier runs in an isolated git worktree (`core/agents/falsifier.md`,
+`isolation: worktree`) so it can stub code and run mutated tests without
+touching the implementer's real tree. But a fresh worktree lacks the
+project's gitignored dependencies, so the stub-out probe's test runner
+often can't resolve at all — the `auto` fire-test's finding
+(`docs/tradeoffs.md`, "The `auto` fire-test happened"). `worktree-prep`
+closes that gap the same way every other stack-specific action does: a
+capability adapter the project owns, invoked by name only.
+
+`worktree-prep` sits in §3's "operates on nothing" row: no stdin, no
+positional argument, exit code alone governs pass/fail (§2). It runs with
+CWD at the isolated worktree the falsifier is already in, and is
+responsible for making that worktree's test runner resolvable — typically
+by symlinking or otherwise reusing the gitignored dependency dir(s) from
+the **source checkout**, discoverable stack-blind via `git worktree list`
+(which, run from inside a worktree, names the main worktree it was cloned
+from). Symlink/reuse is strongly preferred over a clean install: it's
+near-instant, and the entire point of this capability is to *not* burn the
+adversary's budget re-provisioning what the source checkout already has.
+A clean install is an acceptable fallback only when reuse isn't safe (e.g.
+a dependency dir that itself needs to be built per-worktree).
+
+**Output on success (exit 0)**: one line on stdout (§2) — the toolchain is
+now resolvable. **Output on failure (non-zero)**: full diagnostics on
+stderr; the falsifier records the existing "stub-out probe: toolchain
+unavailable in isolated worktree" tooling-gap verdict and leans on its
+other mandates, exactly as it does today when no adapter exists at all. A
+failed prep is never fatal to the falsifier's run — it is a disclosed
+degradation, same shape as every other capability's absence (§1).
+
+The §2 rules that apply: never prompts, never reads a TTY, never mutates
+anything outside the worktree it's running in.
+
+**Eligibility**: `not-applicable` for a stack with no gitignored
+dependencies or no runnable test suite (nothing to provision);
+`unavailable` if there's a real need but no viable mechanism for this
+stack. Same disclosed-degradation shape every other capability uses (§1).
+
+**Self-test** (§4): `--self-test pass` proves that a depless scratch
+checkout, built inside the adapter's own temp scratch space, has its
+toolchain resolvable *after* the adapter runs against it (exit 0, one
+line) — never the project's real worktree. `--self-test fail` proves the
+adapter detects a scratch checkout it cannot provision (a dependency shape
+it doesn't recognize, for instance): non-zero exit, diagnostics on stderr.
+Both modes route through the same provisioning logic normal mode uses —
+never a parallel check that happens to agree with it on the fixture (§4's
+general rule, the exact one finding #7 in `docs/tradeoffs.md` was written
+after).
 
 ## 4. The self-test convention (what makes conformance possible)
 
@@ -426,7 +487,7 @@ trailer with a hook: the surrounding org already requires a ticket on every
 commit, so a second gate would be redundant — a spine value `/ratchet` and the
 stack-independence rule both reject. The trailer is spine's own convention so
 `scan-untracked-ratio` can distinguish a traced Class 0 commit from genuinely
-off-spine work, and so the dashboard can surface trivial work that JIRA linkage
+off-spine work, and so the dashboard can surface trivial work that tracker linkage
 alone never would. **Every `/ship` commit (Class 1/2) also carries `Spine-Ticket:
 <key>` alongside its `Spine-Task:` trailer when a ticket is available** — same
 derivation, same composing rule; the spine task id and the ticket key travel

@@ -101,7 +101,7 @@ render. If no: leave `.spine/ui-paths.conf` absent (mirrors
 and mark `ui-render` `not-applicable` in `.spine/capabilities.json` with
 reason "no browser UI in this project's runtime shape."
 
-For each of the 17 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
+For each of the 18 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
 invocation exists for the confirmed stack, write
 `<project>/.spine/adapters/<name>` as a real, executable script — exit
 0/non-zero, one line on success, full diagnostics on failure, plus a working
@@ -112,17 +112,21 @@ reason. If the capability doesn't apply to this project's shape at all
 (e.g. `smoke-*` with nothing to run yet), mark `not-applicable`, also with a
 specific reason — never leave a capability unmentioned.
 
-**Two of the seventeen are workflow adapters, not floor gates** (§3.4/§3.5) —
-generate them from the team's own tools. `ticket-fetch`: wrap the tracker the
-engineers actually use (for G1, `g1-jira-intake`'s `acli`/Atlassian chain);
-mark `not-applicable`, reason "no ticket source", if tickets are always pasted
-by hand. `open-pr`: wrap the PR-host tool (`gh`/`glab`/the org's `g1-ship`);
-mark `not-applicable`, reason "no PR host", if PRs are opened by hand. If a
-`ticket-fetch` adapter is written, also write
+**Three of the eighteen are workflow adapters, not floor gates** (§3.4/§3.5/§3.6)
+— generate them from the team's own tools, no separate interview question for
+any of them. `ticket-fetch`: wrap the tracker the engineers actually use — its
+own CLI or REST API; mark `not-applicable`, reason "no ticket source", if
+tickets are always pasted by hand. `open-pr`: wrap the project's PR-host
+tooling (its CLI or API); mark `not-applicable`, reason "no PR host", if PRs
+are opened by hand. If a `ticket-fetch` adapter is written, also write
 `<project>/.spine/ticket-pattern.conf` — one extended-regex line matching this
-tracker's key shape (e.g. `[A-Z][A-Z0-9]+-[0-9]+` for `GN1-12345`), which
+tracker's key shape (e.g. `[A-Z][A-Z0-9]+-[0-9]+` for `ABC-1234`), which
 `ledger ticket-from-branch` reads to derive a ticket from the branch; absent, it
-falls back to that same default.
+falls back to that same default. `worktree-prep`: the package manager and
+gitignored-deps shape needed to write it are already known from the earlier
+stack questions — symlink/reuse the relevant dir(s) from the source checkout
+into a fresh worktree; mark `not-applicable`, reason "nothing to provision",
+if this stack has no gitignored dependencies or no runnable test suite.
 
 Then:
 

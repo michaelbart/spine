@@ -55,7 +55,7 @@ step). If yes: confirm the view/component glob(s) for
 `.spine/ui-paths.conf` and the dev-server start command + port. If no:
 mark `ui-render` `not-applicable`, reason "no browser UI in this
 project's runtime shape." Generate `.spine/adapters/<name>` for each of
-the 17 capabilities per `core/ADAPTER-CONTRACT.md`, mark `unavailable`/
+the 18 capabilities per `core/ADAPTER-CONTRACT.md`, mark `unavailable`/
 `not-applicable` with real reasons where nothing viable exists, then:
 
 ```
@@ -65,11 +65,13 @@ ${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance --all --project <project>
 Same rule as bootstrap: nothing gets marked `implemented` without passing
 its own known-pass/known-fail run.
 
-Include the two workflow adapters the same way `core/skills/bootstrap/SKILL.md`
+Include the three workflow adapters the same way `core/skills/bootstrap/SKILL.md`
 §4 describes — infer them from the repo: `ticket-fetch` (the tracker the repo's
 commits/branches already reference — write `.spine/ticket-pattern.conf` from the
-observed key shape) and `open-pr` (the PR host the repo already uses); mark
-either `not-applicable` with a real reason if the repo shows no such tool.
+observed key shape), `open-pr` (the PR host the repo already uses), and
+`worktree-prep` (symlink/reuse the gitignored dependency dir(s) already visible
+in the repo's own lockfiles/`.gitignore`); mark any of them `not-applicable`
+with a real reason if the repo shows no such tool or nothing to provision.
 
 ## 4. The bounded survey
 

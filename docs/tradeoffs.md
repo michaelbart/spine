@@ -300,7 +300,7 @@ headless sessions alone.
 | Multi-workspace (a repo belonging to more than one workspace) | `workspace.json`'s repo list assumes one workspace per member repo; nothing prevents authoring a second workspace pointing at the same repo, but nothing coordinates the two either |
 | Anything depending on `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` | Explicitly out of scope per build prompt §0.3 — per-repo context reaches sessions through skills reading files instead, deliberately not through this env flag |
 | Full `/costs` aggregation across a workspace and its member repos' independent task histories | Open question 6 (above) — mechanism named (`loop over workspace.json`'s repos + workspace root, sum `ledger aggregate`), zero code written |
-| Design-mode adversary cost tiers | Open question 7 (above) — left unresolved through both Phase C and Phase E; no tiering exists, every design review pays full adversary ceremony regardless of decision-set size |
+| Design-mode adversary cost tiers | Open question 7 (above) — left unresolved through both Phase C and Phase E; no tiering exists, every design review pays full adversary ceremony regardless of decision-set size. Partial mitigation for the normal `/task` path: adversary re-run caching (below) skips a re-verify entirely when blast radius didn't grow, but design mode's own review has no analogous re-run yet. |
 
 ## The seven open questions (build prompt §5), answered and defended
 
@@ -2115,10 +2115,20 @@ PASS, and in `auto` it is an **exception-stop** that pulls the human in. (b)
 verify now collects **every** adversary's verdict before applying any fix —
 never mutating the tree while an adversary still runs against its snapshot —
 and re-runs an adversary if a substantive fix changed the code it reviewed.
-(3) is disclosed as an install/agent-setup concern to watch, not yet mechanically
-closed — an adversary worktree that can't run the project's own toolchain is a
-real degradation, and the honest state is that nothing yet verifies the worktree
-is tool-complete before dispatch.
+(3) is now closed via a declared adapter seam: core adds an eighteenth
+capability, `worktree-prep` (`core/ADAPTER-CONTRACT.md §3.6`), which the
+falsifier runs as a single bounded step 0 of its stub-out probe
+(`core/agents/falsifier.md` mandate (b)) to make its isolated worktree's
+toolchain resolvable — typically by symlinking the gitignored dependency
+dir(s) from the source checkout, discoverable via `git worktree list`. The
+provisioning logic itself is stack-specific and lives in the project's own
+`.spine/adapters/worktree-prep`, exactly where the rest of this paragraph
+said it belonged; core stays stack-blind and still degrades honestly (the
+existing "stub-out probe: toolchain unavailable in isolated worktree" gap)
+when no such adapter is implemented for a project. `worktree-prep` is never
+in `floor`'s dispatch loop and never invoked by `security` (read-only, no
+worktree isolation) — only the falsifier calls it, and only as that one
+declared command.
 
 Two further fixes in the falsifier agent itself (`core/agents/falsifier.md`), from
 reading what it actually spent 30 minutes on: **lane discipline** — it now knows
@@ -2129,10 +2139,11 @@ gaps only it can see. And **graceful tooling degradation** — if the stub-out
 probe's test runner can't run in the isolated worktree (a fresh worktree lacks
 gitignored deps), it records a tooling gap and leans on the other mandates rather
 than burning the budget bootstrapping. The deeper fix — provisioning the worktree
-with the project's toolchain so the stub-out probe *can* run — is inherently
-stack-specific (node_modules vs .venv vs target/), so it belongs in a project's
-adapters/install, not stack-blind core; core can only degrade honestly, which it
-now does.
+with the project's toolchain so the stub-out probe *can* run — was inherently
+stack-specific (node_modules vs .venv vs target/), so it now lives in a
+project's own `worktree-prep` adapter (`core/ADAPTER-CONTRACT.md §3.6`), run
+as a single declared step 0 before the probe; core stays stack-blind and
+still degrades honestly when no such adapter is implemented for a project.
 
 ### Update: the `auto` task shipped clean — flow validated, fixes still await a re-run
 
@@ -2151,5 +2162,44 @@ falsifier was stopped **by hand**, not by the new budget/exception-stop, and its
 partial finding was resolved manually — so the run validates the flow and the
 *principle* (a stuck adversary pulling the human in, which the manual kill
 effectively was), but the budget, lane-discipline, and wait-then-fix fixes
-themselves are still unexercised. A clean re-run of the same ticket — falsifier
-bounded and in-lane — is what confirms those hold.
+themselves are still unexercised.
+
+### Adversary re-run caching: skip-if-subset, never a narrowed pass
+
+A task that fails `/verify`, gets fixed, and re-verifies pays full adversary
+ceremony again — both `falsifier` and `security` re-spun from scratch, even
+when a fix touched one file and the rest of a large diff already came back
+clean. Worth caching, but not at any granularity: the two safe-looking shortcuts
+turn out to differ sharply.
+
+**Rejected: per-finding or per-file caching.** "This file already passed, only
+re-check what changed" is unsound by construction — falsifier and security
+exist specifically to catch cross-file interactions a file-local view can't
+see (the same reasoning behind lane discipline: they don't own lint/type
+checks because those are file-local and mechanical). A fix in file B can
+invalidate an invariant file A depended on; caching "A passed" independently
+of B hides exactly the defect class these adversaries are for. There is no
+sound middle tier between "skip the whole adversary" and "re-run it against
+the full current diff" — narrowing the input is where the unsoundness would
+live.
+
+**Adopted: whole-adversary skip, gated on blast radius, not on diff text.**
+An adversary's clean verdict can be carried forward on the next `/verify` pass
+(same task, after a fix) *iff* the current blast radius — changed-file set
+plus fresh `callers.md`/`dep-diff.md`, i.e. what `floor` step 1 already
+computes, not the raw diff — is a **subset** of what that adversary was
+actually given last time. Recorded per-adversary at dispatch time
+(`<agent>-coverage.json`: the file set it saw, contract names if any,
+timestamp), compared before the next dispatch. Subset → skip, carry the old
+verdict forward as `REUSED (blast radius unchanged, prior clean verdict from
+<ran_at>)`. Anything else — grew even partially, or the prior verdict wasn't
+clean — → full re-run, same as a first pass; never a narrowed one.
+
+This composes with the mid-verify wait-then-fix rule already in place
+(`core/skills/verify/SKILL.md` §3): after applying fixes post-adversary-return,
+the same subset check decides whether a substantive fix needs a full
+re-dispatch or whether its own blast radius stayed inside what was already
+covered. Implemented in `core/skills/verify/SKILL.md` §3 and
+`core/templates/verify.md`'s adversary section; unexercised against a real
+multi-pass `/verify` run so far — same caveat as the budget/lane-discipline
+fixes above, principle plausible, not yet fire-tested.

@@ -1,0 +1,7 @@
+# Machine-local, never shared — see core/scripts/setup's own note on this file
+.claude/settings.local.json
+
+# OS/editor cruft
+.DS_Store
+*.swp
+*~

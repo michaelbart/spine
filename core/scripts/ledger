@@ -284,8 +284,8 @@ case "$cmd" in
   ticket-from-branch)
     while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
     # First non-comment line of .spine/ticket-pattern.conf is the extended-regex
-    # for this project's ticket keys; absent conf falls back to a JIRA-style
-    # default (GN1-12345, ABC-42). Pattern-agnostic per ADAPTER-CONTRACT stack rule.
+    # for this project's ticket keys; absent conf falls back to a
+    # generic default (ABC-42, PROJ-1234). Pattern-agnostic per ADAPTER-CONTRACT stack rule.
     conf="$project/.spine/ticket-pattern.conf"
     pattern='[A-Z][A-Z0-9]+-[0-9]+'
     if [[ -f "$conf" ]]; then

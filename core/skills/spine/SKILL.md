@@ -13,6 +13,13 @@ No arguments.
 
 Project root: the workspace root if `workspace.json` exists here, otherwise
 this project. Scripts live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
+`${CLAUDE_SKILL_DIR}` is a placeholder you expand to this skill's own
+directory; hand the resulting path — including the `../../` — to the shell
+verbatim. Do **not** lexically collapse `skills/spine/../..` to `.claude/`:
+`.claude/skills/spine` is a symlink into the spine core checkout, so the
+shell must resolve `../../` against the symlink's real target
+(`<spine>/core/...`). Collapsing it as text yields a nonexistent
+`.claude/scripts/...` path and a "no such file" error.
 
 ## 1. Are you in the spine core checkout, not a project?
 
@@ -64,9 +71,35 @@ and reported a problem," and "could not run at all":
 If `.spine/current-task` does **not** exist -> idle, show the menu (§3.1). If
 it **does** exist -> a task is in progress, show the status (§3.2).
 
-### 3.1 Idle — the menu
+### 3.1 Idle — milestone check, then the menu
 
-Give a short, plain menu — one sentence each, the starting move first. List
+"Idle" only means no task is *currently open* — it doesn't mean there's
+nothing in flight. Before the generic menu, check whether the project is
+mid-milestone, read-only, exactly like every other check in this skill:
+
+1. Glob `work/M*/milestone.md`. None exist -> this project isn't using
+   milestones; skip straight to the menu below.
+2. For each one found, read its `## Member tasks` numbered list. Each entry
+   names either a real task id or the literal `TBD`.
+3. A milestone is **complete** when every member entry is a real task id and
+   each of those tasks' `work/<task-id>/state` reads `done`. Find the
+   lowest-numbered milestone that is *not* complete — that's the current one.
+   If every milestone is complete, say so in one line, then fall through to
+   the menu.
+4. Report the current milestone plainly: its id and title (the file's `#`
+   heading), and progress as "`<n>` of `<total>` member tasks done." Then name
+   **the single next action**:
+   - If the first non-done member entry is still `TBD`, quote that member
+     task's own description from `milestone.md` and give the exact command to
+     open it: `` /task <description> --milestone <id> ``.
+   - If it's a real task id whose `state` isn't `done`, name that task and its
+     phase and point at `/task` (no argument) to resume it, or the
+     phase-appropriate next command per §3.2's transition table.
+5. This is a report, not a gate (§4 applies here too) — it never opens the
+   task itself, only names the command that would.
+
+After the milestone callout (or immediately, if there is none), give the
+short, plain menu — one sentence each, the starting move first. List
 only commands that exist in this install (they're symlinked under
 `.claude/skills/`; don't advertise one that isn't there):
 
@@ -132,7 +165,8 @@ how, but `/spine` itself never advances anything.
 ## 4. Never editorialize
 
 Like `/tasks`, this skill reports and stops. It never blocks, never fixes,
-never decides. "No active task — here's how to start" and "you're mid-verify
-and it passed, run `/ship <id>` next" are both complete, useful answers. If the
-install is healthy and idle, the menu *is* the whole output — don't manufacture
-a status for a task that doesn't exist.
+never decides. "No active task — here's how to start," "you're mid-M1, next
+member task is X," and "you're mid-verify and it passed, run `/ship <id>` next"
+are all complete, useful answers. If the install is healthy, idle, and no
+milestone is in flight, the menu *is* the whole output — don't manufacture a
+status for a task or milestone that doesn't exist.
