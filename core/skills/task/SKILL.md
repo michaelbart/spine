@@ -186,7 +186,9 @@ class. Two things ride along in the setup step below: write
 `work/<task-id>/ticket` = the ticket key (one line; omit the file if the ticket
 was null), which `/ship` reads for the `Spine-Ticket:` trailer; write
 `work/<task-id>/autonomy` = the handoff's `autonomy` (a Class 2 task is forced
-to `guided` regardless of what the handoff says — the ceiling); and if
+to `guided` regardless of what the handoff says — the ceiling); for a direct
+`/task` with no handoff, write the autonomy the human just chose in the step
+above (Class 2 / a downgraded task ⇒ `guided`); and if
 `class_below_recommended` is true, when you record `class_declared` (§6) also
 `ledger set <task-id> class_downgraded_from <recommended_class>` and add a
 `notes.md` line — the downgrade stays visible without consuming a
@@ -196,9 +198,9 @@ deviation, so it is **not** a `deviations.md` record). Then **delete
 only for a `/task` invoked directly, with no intake handoff.
 
 Every task gets a class, and the human confirms it — not the model alone
-(build prompt §2.7). Suggest one, don't decide it unilaterally (a direct
-`/task` with no intake handoff runs `guided` — write `work/<task-id>/autonomy`
-= `guided` at setup; the lighter autonomies are chosen at `/intake`):
+(build prompt §2.7). Suggest one, don't decide it unilaterally (for a direct `/task` you also
+confirm an autonomy right after the class — see "Autonomy for a direct
+`/task`" below; `/intake` instead proposes it from a code-grounded pre-scan):
 
 - **Class 0 (trivial):** suggest when the change looks like it will touch
   ≤2 files, ≈15 lines or fewer (or this project's `.spine/profile.json`
@@ -229,6 +231,20 @@ Every task gets a class, and the human confirms it — not the model alone
   your way into Class 2 silently. (It can also be triggered automatically
   later, at plan time, if the predicted-touch list turns out to intersect a
   protected path — see step 3.)
+
+**Autonomy for a direct `/task`** (no intake handoff; the choice only exists at
+Class 1 — Class 0 is `traced`, Class 2 is always `guided`, the ceiling). Once the
+class is confirmed, ask the human how autonomous the flow should run: `guided`
+(stop at each phase — the default and the safe choice), `checkpointed` (approve
+the plan, then one finish action), or `auto` (no scheduled stops; you review the
+finished PR). Default to `guided` if they express no preference. **If you had
+suggested a higher class than the human chose** (e.g. you suggested Class 2, they
+picked Class 1), lean `guided` and say why — a change you read as
+higher-blast-radius is exactly the kind to keep a human in the loop on, even at
+the class they chose. Cap the offer at `.spine/profile.json`'s `autonomy_ceiling`
+if set. You'll write the result to `work/<task-id>/autonomy` in the setup step
+below, the same place the class file is written. (`/intake` proposes this from
+its pre-scan; a direct `/task` does none, so it simply asks.)
 
 Once confirmed, for Class 1/2: generate the task ID
 `<YYYYMMDD>-<kebab-slug>` (today's date, a short slug from the description),
