@@ -300,7 +300,7 @@ headless sessions alone.
 | Multi-workspace (a repo belonging to more than one workspace) | `workspace.json`'s repo list assumes one workspace per member repo; nothing prevents authoring a second workspace pointing at the same repo, but nothing coordinates the two either |
 | Anything depending on `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` | Explicitly out of scope per build prompt §0.3 — per-repo context reaches sessions through skills reading files instead, deliberately not through this env flag |
 | Full `/costs` aggregation across a workspace and its member repos' independent task histories | Open question 6 (above) — mechanism named (`loop over workspace.json`'s repos + workspace root, sum `ledger aggregate`), zero code written |
-| Design-mode adversary cost tiers | Open question 7 (above) — left unresolved through both Phase C and Phase E; no tiering exists, every design review pays full adversary ceremony regardless of decision-set size |
+| Design-mode adversary cost tiers | Open question 7 (above) — left unresolved through both Phase C and Phase E; no tiering exists, every design review pays full adversary ceremony regardless of decision-set size. Partial mitigation for the normal `/task` path: adversary re-run caching (below) skips a re-verify entirely when blast radius didn't grow, but design mode's own review has no analogous re-run yet. |
 
 ## The seven open questions (build prompt §5), answered and defended
 
@@ -2151,5 +2151,44 @@ falsifier was stopped **by hand**, not by the new budget/exception-stop, and its
 partial finding was resolved manually — so the run validates the flow and the
 *principle* (a stuck adversary pulling the human in, which the manual kill
 effectively was), but the budget, lane-discipline, and wait-then-fix fixes
-themselves are still unexercised. A clean re-run of the same ticket — falsifier
-bounded and in-lane — is what confirms those hold.
+themselves are still unexercised.
+
+### Adversary re-run caching: skip-if-subset, never a narrowed pass
+
+A task that fails `/verify`, gets fixed, and re-verifies pays full adversary
+ceremony again — both `falsifier` and `security` re-spun from scratch, even
+when a fix touched one file and the rest of a large diff already came back
+clean. Worth caching, but not at any granularity: the two safe-looking shortcuts
+turn out to differ sharply.
+
+**Rejected: per-finding or per-file caching.** "This file already passed, only
+re-check what changed" is unsound by construction — falsifier and security
+exist specifically to catch cross-file interactions a file-local view can't
+see (the same reasoning behind lane discipline: they don't own lint/type
+checks because those are file-local and mechanical). A fix in file B can
+invalidate an invariant file A depended on; caching "A passed" independently
+of B hides exactly the defect class these adversaries are for. There is no
+sound middle tier between "skip the whole adversary" and "re-run it against
+the full current diff" — narrowing the input is where the unsoundness would
+live.
+
+**Adopted: whole-adversary skip, gated on blast radius, not on diff text.**
+An adversary's clean verdict can be carried forward on the next `/verify` pass
+(same task, after a fix) *iff* the current blast radius — changed-file set
+plus fresh `callers.md`/`dep-diff.md`, i.e. what `floor` step 1 already
+computes, not the raw diff — is a **subset** of what that adversary was
+actually given last time. Recorded per-adversary at dispatch time
+(`<agent>-coverage.json`: the file set it saw, contract names if any,
+timestamp), compared before the next dispatch. Subset → skip, carry the old
+verdict forward as `REUSED (blast radius unchanged, prior clean verdict from
+<ran_at>)`. Anything else — grew even partially, or the prior verdict wasn't
+clean — → full re-run, same as a first pass; never a narrowed one.
+
+This composes with the mid-verify wait-then-fix rule already in place
+(`core/skills/verify/SKILL.md` §3): after applying fixes post-adversary-return,
+the same subset check decides whether a substantive fix needs a full
+re-dispatch or whether its own blast radius stayed inside what was already
+covered. Implemented in `core/skills/verify/SKILL.md` §3 and
+`core/templates/verify.md`'s adversary section; unexercised against a real
+multi-pass `/verify` run so far — same caveat as the budget/lane-discipline
+fixes above, principle plausible, not yet fire-tested.

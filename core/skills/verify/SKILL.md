@@ -193,6 +193,45 @@ to 0 (`profile-check` rejects that).
 
 ## 3. Run the adversaries
 
+**Skip an adversary entirely when its last verdict from this task is still
+clean and its recorded coverage is a superset of the current blast
+radius — this is the only sound form of adversary re-run caching**
+(`docs/tradeoffs.md`, "design-mode adversary cost tiers"). Before
+dispatching `falsifier` (and `security`, if running), check for a prior
+`work/<task-id>/artifacts/<agent>-coverage.json` and `<agent>-verdict.json`
+left by an earlier `/verify` pass on this same task — whether that was a
+fresh invocation after a `FAIL`-and-fix cycle, or this run's own mid-verify
+re-check below:
+
+- **Clean and covered → skip.** `<agent>-verdict.json`'s `verdicts` array
+  is empty *and* the current blast radius — the diff's changed-file set
+  (step 1's, bookkeeping already excluded) union this run's fresh
+  `callers.md` file list, plus `dep-diff.md`'s for `security`, plus
+  (multi-repo) any `contract-touch.json` touched-contract names for
+  `falsifier`'s cross-repo mandate — is a **subset** of
+  `<agent>-coverage.json`'s recorded set. Don't dispatch that adversary;
+  carry its existing `<agent>-verdict.json` forward unchanged, and record
+  in `verify.md` (§5) `REUSED (blast radius unchanged, prior clean verdict
+  from <its ran_at timestamp>)` in place of an Attacked/kept/dropped line.
+- **Anything else → full re-run, never a narrowed one.** A prior finding
+  (verdicts non-empty), a missing coverage file, or a blast radius that
+  grew even partially all mean: dispatch the adversary fresh, with the
+  *full* current diff and *full* current `callers.md`/`dep-diff.md` — same
+  as a first run. There is no sound middle tier that re-checks only the
+  new files; the risk these agents exist to catch is precisely in how a
+  new change interacts with code that didn't change, so a partial pass
+  can't be trusted to see that interaction (this is why per-finding or
+  per-file caching was rejected, not just whole-adversary caching accepted
+  — see `docs/tradeoffs.md`).
+
+Record coverage at dispatch time, not after: whenever an adversary *is*
+dispatched (below), write `work/<task-id>/artifacts/<agent>-coverage.json`
+as `{"files": [...the file set actually given to it, sorted, deduped...],
+"contracts": [...touched-contract names if any...], "ran_at": "<ISO
+timestamp>"}` alongside its verdict files, so the *next* `/verify` pass on
+this task — or this run's own mid-verify re-check a few paragraphs below —
+has something to compare against.
+
 Each adversary is a fresh subagent (Agent tool) — give it only the plan
 path, the diff (`git diff <base>..HEAD` — default base `HEAD`, i.e.
 whatever's currently uncommitted, since implementation work isn't committed
@@ -262,9 +301,15 @@ real, not hypothetical: it's the exact waste the `auto` fire-test surfaced (a
 falsifier spending 30 min rigorously confirming a lint error the main session had
 already fixed mid-verify). So: dispatch all adversaries, **wait for every one to
 return** (or hit its budget), filter the verdicts, and only *then* apply fixes.
-If the fixes are substantive (more than a comment or rename), re-run the affected
-adversary against the new snapshot — your fix is itself a change no adversary has
-seen. (Worktree note: an adversary needs its toolchain resolvable in its isolated
+If the fixes are substantive (more than a comment or rename), recompute
+`callers.md`/`dep-diff.md` against the fixed tree and apply the same
+skip-if-subset check from step 3's top: your fix is itself a change no
+adversary has seen, but if the fix's own blast radius stayed inside what
+that adversary already covered, its clean verdict on everything *else*
+still holds and only needs recording as `REUSED`, not a full second
+dispatch — if the fix's blast radius grew at all (e.g. it touched a file
+outside the original diff to satisfy an invariant), re-run that adversary
+fully, same "no narrowed pass" rule as above. (Worktree note: an adversary needs its toolchain resolvable in its isolated
 worktree — if the floor's own tools aren't reachable there, the adversary wastes
 budget fighting tooling instead of the code; that's an install/agent-setup
 concern to watch, tracked in `docs/tradeoffs.md`.)
@@ -314,10 +359,12 @@ this document quotes scripts, it doesn't paraphrase them:
   isn't `implemented`.
 - Conformance line from `conformance.json` (or one line per
   `conformance-<repo>.json`, multi-repo).
-- One subsection per adversary that ran, from its filtered verdict file:
-  the `attacked` list, then each kept verdict, then the kept/dropped counts
-  (dropped count comes from `verdict-filter`'s own stderr line, capture it
-  when you run step 3).
+- One subsection per adversary that ran *or was reused*, from its filtered
+  verdict file: the `attacked` list, then each kept verdict, then the
+  kept/dropped counts (dropped count comes from `verdict-filter`'s own
+  stderr line, capture it when you run step 3) — or, for a reused verdict,
+  `REUSED (blast radius unchanged, prior clean verdict from <ran_at>)` in
+  place of that line, per step 3's skip condition.
 - Capability gaps: every capability in `.spine/capabilities.json` marked
   `unavailable`/`not-applicable` that this class would otherwise have run
   (Class 2 also implies `mutate` and, per the migration lane,

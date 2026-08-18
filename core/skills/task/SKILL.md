@@ -134,6 +134,13 @@ before proceeding.
 
 Scripts referenced below live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
 Templates live at `${CLAUDE_SKILL_DIR}/../../templates/<name>`.
+`${CLAUDE_SKILL_DIR}` is a placeholder you expand to this skill's own
+directory; hand the resulting path — including the `../../` — to the shell
+verbatim. Do **not** lexically collapse `skills/task/../..` to `.claude/`:
+`.claude/skills/task` is a symlink into the spine core checkout, so the shell
+must resolve `../../` against the symlink's real target (`<spine>/core/...`).
+Collapsing it as text yields a nonexistent `.claude/scripts/...` path and a
+"no such file" error.
 
 **Tooling-gap discipline (applies to every script invocation below, not
 just ledger):** every time you invoke a core script, distinguish three

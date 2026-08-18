@@ -18,7 +18,23 @@ quiet week.
 ${CLAUDE_SKILL_DIR}/../../scripts/ledger scan-untracked-ratio [--since <date>]
 ```
 
-Report that line first, verbatim, before anything else. Then:
+Report that line first, verbatim, before anything else. **Immediately follow
+it with the same caveat `core/scripts/render-dashboard` already carries in
+its own instrument-note** (don't let this exist in only one of the two
+surfaces): only the final `/ship` commit for a task carries a `Spine-Task:`
+trailer (`core/ADAPTER-CONTRACT.md` §6) — every intermediate task-bookkeeping
+commit the `task` skill's own `registry-sync` calls produce (`task: open`,
+`task: plan approved`, `task: verify complete, PASS`, `task: done`, etc.)
+legitimately carries none of the three trailers and is *not* off-spine work.
+On a project running every task through spine, expect this ratio to look
+high by construction — dominated by spine's own lifecycle commits, not by
+real gaps. Say this before the number invites the wrong conclusion, not
+after: a bare ratio reads as an indictment; this caveat is what keeps it an
+instrument. It does not excuse a genuinely high ratio on a project with real
+off-spine work mixed in — the caveat explains the mechanical *source* of
+inflation, it doesn't zero it out; if bypass count or tooling gaps are also
+nonzero, or the project has commits with no task association at all, still
+say so plainly. Then:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/ledger aggregate [--since <date>]

@@ -14,7 +14,13 @@ hypothesis (research and `path-escalate` can still overturn it downstream).
 
 Project root: the workspace root if `workspace.json` exists here, otherwise
 this project. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`; adapters
-at `<project root>/.spine/adapters/<name>`.
+at `<project root>/.spine/adapters/<name>`. `${CLAUDE_SKILL_DIR}` is a
+placeholder you expand to this skill's own directory; hand the resulting
+path — including the `../../` — to the shell verbatim. Do **not** lexically
+collapse `skills/intake/../..` to `.claude/`: `.claude/skills/intake` is a
+symlink into the spine core checkout, so the shell must resolve `../../`
+against the symlink's real target (`<spine>/core/...`). Collapsing it as text
+yields a nonexistent `.claude/scripts/...` path and a "no such file" error.
 
 ## 0. Preflight
 
