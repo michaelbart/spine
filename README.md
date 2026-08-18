@@ -223,7 +223,7 @@ core/scripts/    the deterministic layer — q, floor, conformance, ledger,
 core/hooks/      the three PreToolUse gates (phase, protected-path, dependency)
 core/rules/      path-scoped discipline (currently: migrations, contracts)
 core/skills/     /bootstrap /adopt /design /workspace /task /verify /ship
-                 /ratchet /remap /costs /tasks /spine
+                 /ratchet /remap /costs /tasks /spine /intake
 core/agents/     researcher, falsifier, security — fresh-context, read-only
 core/templates/  every artifact format the skills above produce
 work/.build/     this build's own phase handoffs — the install's decision record
@@ -250,6 +250,7 @@ you type them; the model doesn't reach for one on its own.
 
 | Command | Args | What it does |
 |---|---|---|
+| `/intake` | `<ticket-key-or-url>` | The front door for ticketed work: fetches a JIRA (or other tracker) ticket via the `ticket-fetch` adapter, clarifies it, sizes it against the real code, proposes a class with its evidence (and alternatives, since the guess can be wrong), then routes into the right flow — trivial gets a trace, standard/governed continue as a `/task`. Falls back to manual paste if no adapter. |
 | `/task` | `<description> [--milestone <id>]` | The default way any non-trivial change gets made: classify → research → plan (you approve it) → implement → verify → ship. This is the one you actually type most days. |
 | `/verify` | `<task-id>` | Runs the deterministic floor plus the adversary agents (falsifier, and security per class/ceremony) and assembles `verify.md`. `disable-model-invocation: true` means `/task` cannot call this itself — at the verify phase it asks you to type `/verify <task-id>` yourself, waits, then reads the result back from `work/<task-id>/verify.md` rather than assuming. |
 | `/ship` | `<task-id> [--bypass <reason>]` | Gates (floor passed, no open deviations, second approver if Class 2), commits, and writes the delta briefing plus a PR description assembled from the task's own verified record for a task that's passed verification. Same `disable-model-invocation: true` rule as `/verify` — `/task` asks you to run it yourself once verify passes, or you can run it directly with `--bypass` for a genuine emergency that can't wait — loud and recorded, never silent. |

@@ -166,6 +166,23 @@ sections — notes.md is this task's running log until then.
 
 ## 1. Classify — the first recurring human touchpoint
 
+**If `.spine/current-intake` exists, this task came through `/intake`**
+(`core/skills/intake/SKILL.md`). Read it — `{ticket, class, description,
+class_below_recommended, recommended_class}` — and treat the class as already
+confirmed: the human confirmed it in `/intake`'s menu, so do **not** re-suggest
+or re-prompt the class below. Use `description` as the task description if
+`$ARGUMENTS` carried none. Proceed straight to task-ID generation with that
+class. Two things ride along in the setup step below: write
+`work/<task-id>/ticket` = the ticket key (one line; omit the file if the ticket
+was null), which `/ship` reads for the `Spine-Ticket:` trailer; and if
+`class_below_recommended` is true, when you record `class_declared` (§6) also
+`ledger set <task-id> class_downgraded_from <recommended_class>` and add a
+`notes.md` line — the downgrade stays visible without consuming a
+circuit-breaker slot (it is a classification choice, not a plan-vs-reality
+deviation, so it is **not** a `deviations.md` record). Then **delete
+`.spine/current-intake`** and continue to §2. The class-suggestion list below is
+only for a `/task` invoked directly, with no intake handoff.
+
 Every task gets a class, and the human confirms it — not the model alone
 (build prompt §2.7). Suggest one, don't decide it unilaterally:
 

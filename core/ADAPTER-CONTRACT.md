@@ -8,12 +8,12 @@ a language, framework, or tool — this document, like the core, is stack-blind.
 
 A capability is an executable at `.spine/adapters/<name>` in the installed
 project. The core never calls a tool directly; it calls a capability name.
-Fifteen capabilities exist:
+Sixteen capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
 `clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`,
 `migrate-rehearse`, `contract-check` (Extension B — §3.2), `ui-render`
-(§3.3).
+(§3.3), `ticket-fetch` (intake — §3.4).
 
 `contract-check` only ever exists in a repo that is a workspace member and
 party (producer or consumer) to at least one declared contract
@@ -38,6 +38,16 @@ runtime shape." Like `contract-check`, `ui-render` is never invoked by
 invokes it directly, and only when `core/scripts/ui-touch` reports the
 task's diff actually touched a UI-file-shape path (`.spine/ui-paths.conf`).
 See §3.3.
+
+`ticket-fetch` only ever exists in a project whose engineers work from an issue
+tracker (`/intake`, `core/skills/intake/SKILL.md`) — a project with no tracker,
+or one where tickets are always pasted by hand, marks it `not-applicable` with
+reason "no ticket source" and `/intake` falls back to a manual paste. Like
+`contract-check` and `ui-render`, it is never invoked by `floor`'s dispatch loop
+— only `/intake` calls it, once, to fetch the ticket it was handed. Unlike every
+other capability it is a *data source*, not a pass/fail gate: exit 0 means the
+ticket was fetched (JSON on stdout), non-zero means it couldn't be (→ manual
+paste). See §3.4.
 
 `.spine/capabilities.json` marks each `implemented`, `unavailable`, or
 `not-applicable`, each with a `reason`. Only capabilities marked `implemented`
@@ -187,6 +197,35 @@ capability the rule was written after finding broken elsewhere): the pass
 fixture renders visible, non-blank text; the fail fixture renders an
 empty/blank body, and the adapter's self-test must actually detect that
 via its real check, not a simplified stand-in.
+
+### 3.4 `ticket-fetch` (intake) — a data source, not a gate
+
+`/intake` hands `ticket-fetch` a single ticket identifier and expects the ticket
+back, so this adapter deliberately breaks the two §2/§3 rules that only make
+sense for pass/fail gates, and no others:
+
+- **Input**: the ticket key or URL as its **single positional argument** (e.g.
+  `GN1-12345`). This is the one adapter whose positional carries an *input*, not
+  an output-artifact path (§3) — it fetches data rather than producing a check
+  artifact. No stdin.
+- **Output on success (exit 0)**: a single JSON object on stdout — `{key, title,
+  description, url}` required, `{status, comments, links}` optional — the
+  clarified-brief source `/intake` reads. (The one adapter whose pass-mode stdout
+  is structured data, not the one-line summary §2 requires of a gate.)
+- **Output on failure (non-zero)**: diagnostics on stderr; `/intake` treats any
+  non-zero exit (no such ticket, auth failure, tracker unreachable, or no adapter
+  installed at all) as "couldn't fetch" and falls back to asking the human to
+  paste the ticket. A fetch failure is never a hard stop — the front door still
+  opens, just by hand.
+- The §2 rules that still apply: never prompts, never reads a TTY, never mutates
+  the tree. Credentials come from whatever environment the adapter's own
+  implementation arranges (the G1 adapter wraps `g1-jira-intake`'s `acli` /
+  Atlassian chain), never an interactive prompt.
+
+**Self-test** (§4): `--self-test pass` returns a well-formed fixture ticket JSON
+(exit 0); `--self-test fail` returns malformed/empty output with a non-zero exit
+— proving `/intake` can tell a real fetch from a failed one without a live
+tracker.
 
 ## 4. The self-test convention (what makes conformance possible)
 

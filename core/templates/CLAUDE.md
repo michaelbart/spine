@@ -8,7 +8,8 @@ deterministic gates. Full docs: `<spine checkout path>/README.md`.
 ## The task system
 
 Non-trivial work goes through `/task <description>`: classify → research →
-plan (you approve it) → implement → verify → ship. A trivial one-off edit
+plan (you approve it) → implement → verify → ship. Working from a ticket?
+`/intake <KEY>` is the front door — it sizes the change and routes it. A trivial one-off edit
 is fine to make directly — but if a hook halts you mid-edit, that's the
 spine telling you it stopped being trivial; stop and run `/task` instead of
 forcing the edit through some other way.

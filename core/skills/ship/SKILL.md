@@ -387,9 +387,10 @@ further mark follows `ship` in this task, harvest `ship` itself right now:
 `ledger harvest <task-id> ship --transcript <path> --from <the ship mark
 timestamp> --to <now>`.
 
-**Derive the ticket, add its trailer.** Run
+**Derive the ticket, add its trailer.** **Prefer `work/<task-id>/ticket`** if
+present (recorded by `/intake`); otherwise run
 `${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch --project <project
-root>`; if it prints a key, add `Spine-Ticket: <key>` as an additional trailer
+root>`. If either yields a key, add `Spine-Ticket: <key>` as an additional trailer
 line on this task's commit(s) — every repo, in the multi-repo case — alongside
 `Spine-Task:`, per `core/ADAPTER-CONTRACT.md` §6's composing-trailer rule. If it
 prints nothing (off-ticket), omit that line.

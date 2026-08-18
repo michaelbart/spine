@@ -70,9 +70,11 @@ Give a short, plain menu — one sentence each, the starting move first. List
 only commands that exist in this install (they're symlinked under
 `.claude/skills/`; don't advertise one that isn't there):
 
-- **`/task <description>`** — the way to start a piece of work: classify ->
-  research -> plan (you approve it) -> implement -> verify -> ship. *This is
-  the one to reach for first.*
+- **`/intake <ticket>`** — the front door for ticketed work: fetch the ticket,
+  size it against the real code, and route it into the right flow. *Reach for
+  this first when you pick up a ticket.*
+- **`/task <description>`** — start work directly, without a ticket: classify ->
+  research -> plan (you approve it) -> implement -> verify -> ship.
 - **`/visualize`** — open the project dashboard (timeline, decisions,
   capabilities, drift) in a browser.
 - **`/tasks`** — list every open task and its phase.
