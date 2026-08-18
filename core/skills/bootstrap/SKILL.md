@@ -114,13 +114,13 @@ specific reason — never leave a capability unmentioned.
 
 **Two of the seventeen are workflow adapters, not floor gates** (§3.4/§3.5) —
 generate them from the team's own tools. `ticket-fetch`: wrap the tracker the
-engineers actually use (for G1, `g1-jira-intake`'s `acli`/Atlassian chain);
+engineers actually use — its own CLI or REST API;
 mark `not-applicable`, reason "no ticket source", if tickets are always pasted
-by hand. `open-pr`: wrap the PR-host tool (`gh`/`glab`/the org's `g1-ship`);
+by hand. `open-pr`: wrap the project's PR-host tooling (its CLI or API);
 mark `not-applicable`, reason "no PR host", if PRs are opened by hand. If a
 `ticket-fetch` adapter is written, also write
 `<project>/.spine/ticket-pattern.conf` — one extended-regex line matching this
-tracker's key shape (e.g. `[A-Z][A-Z0-9]+-[0-9]+` for `GN1-12345`), which
+tracker's key shape (e.g. `[A-Z][A-Z0-9]+-[0-9]+` for `ABC-1234`), which
 `ledger ticket-from-branch` reads to derive a ticket from the branch; absent, it
 falls back to that same default.
 

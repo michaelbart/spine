@@ -50,7 +50,7 @@ ticket was fetched (JSON on stdout), non-zero means it couldn't be (→ manual
 paste). See §3.4.
 
 `open-pr` only ever exists in a project whose engineers ship through pull
-requests on a host `gh`/`glab`/etc. can reach (`core/skills/ship/SKILL.md` §5a) —
+requests on a host the project's own PR tooling can reach (`core/skills/ship/SKILL.md` §5a) —
 a project with no PR host, or one where PRs are always opened by hand, marks it
 `not-applicable` and `/ship` falls back to committing locally and leaving the PR
 to the human. Like `ticket-fetch`, it is invoked only by a skill (`/ship`), never
@@ -214,7 +214,7 @@ back, so this adapter deliberately breaks the two §2/§3 rules that only make
 sense for pass/fail gates, and no others:
 
 - **Input**: the ticket key or URL as its **single positional argument** (e.g.
-  `GN1-12345`). This is the one adapter whose positional carries an *input*, not
+  `ABC-1234`). This is the one adapter whose positional carries an *input*, not
   an output-artifact path (§3) — it fetches data rather than producing a check
   artifact. No stdin.
 - **Output on success (exit 0)**: a single JSON object on stdout — `{key, title,
@@ -228,8 +228,7 @@ sense for pass/fail gates, and no others:
   opens, just by hand.
 - The §2 rules that still apply: never prompts, never reads a TTY, never mutates
   the tree. Credentials come from whatever environment the adapter's own
-  implementation arranges (the G1 adapter wraps `g1-jira-intake`'s `acli` /
-  Atlassian chain), never an interactive prompt.
+  implementation arranges (it wraps whatever tracker CLI or API the project uses), never an interactive prompt.
 
 **Self-test** (§4): `--self-test pass` returns a well-formed fixture ticket JSON
 (exit 0); `--self-test fail` returns malformed/empty output with a non-zero exit
@@ -258,8 +257,7 @@ output-artifact path and more than one input):
   `guided` behavior (commit already made locally — push and open by hand) and
   records the gap. A failed PR-open is never a lost commit.
 - The §2 rules that apply: never prompts, never reads a TTY. Credentials come from
-  whatever environment the adapter arranges (the G1 adapter wraps the existing
-  `g1-ship` skill, which already pushes and creates/updates a draft PR).
+  whatever environment the adapter arranges (it wraps whatever push-and-PR tooling the project already uses).
 
 **Self-test** (§4): `--self-test pass` prints a well-formed fixture PR URL and
 exits 0; `--self-test fail` exits non-zero — proving `/ship` can tell a real open
@@ -426,7 +424,7 @@ trailer with a hook: the surrounding org already requires a ticket on every
 commit, so a second gate would be redundant — a spine value `/ratchet` and the
 stack-independence rule both reject. The trailer is spine's own convention so
 `scan-untracked-ratio` can distinguish a traced Class 0 commit from genuinely
-off-spine work, and so the dashboard can surface trivial work that JIRA linkage
+off-spine work, and so the dashboard can surface trivial work that tracker linkage
 alone never would. **Every `/ship` commit (Class 1/2) also carries `Spine-Ticket:
 <key>` alongside its `Spine-Task:` trailer when a ticket is available** — same
 derivation, same composing rule; the spine task id and the ticket key travel
