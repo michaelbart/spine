@@ -1,6 +1,6 @@
 ---
 name: spine
-description: Front desk — "where am I, what do I do next." Read-only. Reports the active task's status and single next action; or, when idle, the commands available; or, when the install is broken, exactly what to fix. The "lost? run this" command.
+description: Front desk — "where am I, what do I do next." Read-only. Checks install health, then reports the active task's status and single next action; or, when idle, the commands available; or, when the install is broken, exactly what to fix. The "lost? run this" command.
 disable-model-invocation: true
 argument-hint: []
 ---
@@ -14,79 +14,81 @@ No arguments.
 Project root: the workspace root if `workspace.json` exists here, otherwise
 this project. Scripts live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
 
-## 1. First, figure out which of four states you're in
+## 1. Are you in the spine core checkout, not a project?
 
-Check, in this order, and act on the first that matches:
-
-**A — you're in the spine core checkout itself, not an installed project.**
 If the current directory has `core/skills/` and `core/ADAPTER-CONTRACT.md`
 (this repo's own shape) and no `.spine/` of its own, say so plainly: this is
-the portable core, not a project that runs on it. Point them at
-`/bootstrap --project <path>` (brand-new project) or `/adopt --project
-<path>` (existing code), and stop. Nothing below applies.
+the portable core, not a project that runs on it. Point them at `/bootstrap
+--project <path>` (brand-new project) or `/adopt --project <path>` (existing
+code), and stop. Nothing below applies.
 
-**B — a project that hasn't been installed (or whose install is broken).**
-Run the cheap health check and let it tell you:
+## 2. Check install health first — always
+
+Before reporting anything else, run the cheap health check — the same one
+`core/skills/task/SKILL.md`'s step 0 runs, for the same reason: a core skew or
+a missing enforcement layer matters *most* when there's active work, not
+least.
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/setup --check --project <project root>
 ```
 
-Interpret its outcome using the same three-way discipline every skill uses
+Interpret its outcome with the three-way discipline every skill uses
 (`core/skills/task/SKILL.md`'s tooling-gap section) — "ran and passed," "ran
 and reported a problem," and "could not run at all":
 
-- Exit 2 / "project isn't installed" / "no `.claude/hook-guard`" — this
-  project isn't set up yet (or its enforcement layer is missing). Explain in
-  one or two sentences that spine installs by symlink from a core checkout,
-  and give the exact command: a second engineer on an already-installed
-  project runs `<spine>/core/scripts/setup --project <project root>`; a brand
-  new project needs `/bootstrap` or `/adopt` from a session in the spine repo.
-  Then stop — there's no task state to report yet.
-- "CORE VERSION SKEW" (warn or strict) or "hook-guard … differs / stale" —
-  the install works but this machine's core is out of sync. Relay the exact
-  message and the fix command it printed (`git pull` in the spine checkout,
-  then `setup`), verbatim. Don't soften a strict skew into a warning.
+- **Not installed** (exit 2 / "capabilities.json not found" / "no
+  `.claude/hook-guard`") — this project isn't set up (or its enforcement layer
+  is missing). Explain in a sentence or two that spine installs by symlink
+  from a core checkout, and give the exact command: a second engineer on an
+  already-installed project runs `<spine>/core/scripts/setup --project
+  <project root>`; a brand-new project needs `/bootstrap` or `/adopt` from a
+  session in the spine repo. Then **stop** — there's no task state to report.
+- **Core skew** ("CORE VERSION SKEW", warn or strict) **or hook-guard
+  differs/stale** — the install works but this machine's core is out of sync.
+  **Relay the exact message and the fix command it printed, verbatim** (`git
+  pull` in the spine checkout, then `setup`); don't soften a strict skew into a
+  warning. This is a warning, not a stop — surface it, then **continue** to the
+  report below, because the engineer still needs to know their task status
+  (and needs the skew warning precisely because they may be about to ship).
+- **Clean** (exit 0, no skew, guard present) — say nothing about it. A healthy
+  install needs no announcement. Continue.
 - **Could not run at all** (the call was blocked/denied/errored before the
-  script's own logic) — say that plainly ("couldn't run the install check,
-  so I can't confirm this machine's core is in sync") rather than reporting a
-  clean bill. This is low-stakes and read-only, so continue to the state
-  report below on what's on disk — just don't claim health you couldn't
-  verify.
+  script's own logic) — say so plainly ("couldn't run the install check, so I
+  can't confirm this machine's core is in sync") rather than reporting a clean
+  bill. Low-stakes and read-only, so continue to the report below — just don't
+  claim health you couldn't verify.
 
-If the check came back clean (exit 0, no skew, guard present), don't narrate
-it — a clean install needs no announcement. Move on.
+## 3. Now report: idle, or a task in progress
 
-**C — installed, nothing in progress.** No `.spine/current-task` file. Show
-the menu (§2).
+If `.spine/current-task` does **not** exist -> idle, show the menu (§3.1). If
+it **does** exist -> a task is in progress, show the status (§3.2).
 
-**D — installed, a task is in progress.** `.spine/current-task` exists. Show
-the status (§3).
+### 3.1 Idle — the menu
 
-## 2. Idle — the menu
+Give a short, plain menu — one sentence each, the starting move first. List
+only commands that exist in this install (they're symlinked under
+`.claude/skills/`; don't advertise one that isn't there):
 
-Read `.spine/current-task`'s absence as "no active task." Give a short,
-plain menu — one sentence each, the starting move first. List only commands
-that exist in this install (they're symlinked under `.claude/skills/`; don't
-advertise one that isn't there):
-
-- **`/task <description>`** — the way to start a piece of work: classify →
-  research → plan (you approve it) → implement → verify → ship. *This is the
-  one to reach for first.*
+- **`/task <description>`** — the way to start a piece of work: classify ->
+  research -> plan (you approve it) -> implement -> verify -> ship. *This is
+  the one to reach for first.*
 - **`/visualize`** — open the project dashboard (timeline, decisions,
   capabilities, drift) in a browser.
 - **`/tasks`** — list every open task and its phase.
 - **`/costs`** — what spine is costing, drift first.
-- **`/design`**, **`/ratchet`**, **`/remap`** — foundational design,
-  converting a recurring friction into a check, and regenerating the map;
-  mention these only briefly, as "also available."
+- **`/design`**, **`/ratchet`**, **`/remap`** — foundational design, converting
+  a recurring friction into a check, and regenerating the map; mention these
+  only briefly, as "also available."
 
-Keep it to what a confused engineer needs: the front door and the two or
-three things they'd want next. Don't reproduce the whole README.
+Keep it to what a confused engineer needs: the front door and the two or three
+things they'd want next. Don't reproduce the whole README.
 
-## 3. In progress — status and the single next action
+### 3.2 In progress — status and the single next action
 
-Read the active task's real state — never from memory, always from disk:
+Read the active task's real state — never from memory, always from disk (some
+of these files may be absent; a missing `deviations.md` just means no
+deviations, not an error):
 
 - `.spine/current-task` — the task id.
 - `work/<task-id>/state` — the phase (`research` / `plan` / `implement` /
@@ -104,30 +106,31 @@ question this command exists to answer. Derive the next action from the phase
 and the blockers, mirroring `core/skills/task/SKILL.md`'s own transitions:
 
 - **Any unacknowledged flag** — this blocks the next phase advance right now.
-  Lead with it: quote what changed and tell them it must be acknowledged
-  before the task can move on. This outranks the phase-based next action.
-- **Any `open` halt-tier deviation** — the task is waiting on a human
-  decision; point them at `work/<task-id>/deviations.md`.
-- Otherwise, by phase: `research`/`plan` — spine is grounding or drafting; if
-  a `work/<task-id>/plan.md` exists and the phase is `plan`, the next action
-  is to review and approve it. `implement` — work is underway; nothing for
-  them unless a deviation opens. `verify` — the next action is to run
-  `/verify <task-id>` themselves (it can't be auto-invoked), or if
-  `work/<task-id>/verify.md` already exists, read its `Result:` line.
-  `ship` — the next action is to run `/ship <task-id>`.
+  Lead with it: quote what changed and say it must be acknowledged before the
+  task can move on. This outranks the phase-based next action.
+- **Any `open` halt-tier deviation** — the task is waiting on a human decision;
+  point them at `work/<task-id>/deviations.md`.
+- Otherwise, by phase: `research`/`plan` — spine is grounding or drafting; if a
+  `work/<task-id>/plan.md` exists and the phase is `plan`, the next action is to
+  review and approve it. `implement` — work is underway; nothing for them unless
+  a deviation opens. `verify` — if `work/<task-id>/verify.md` does not exist yet,
+  the next action is to run `/verify <task-id>` (it can't be auto-invoked); if it
+  exists and its `Result:` line reads `PASS`, the next action is to run `/ship
+  <task-id>`; if `FAIL`, the task needs fixes and a re-run of `/verify`. `ship` —
+  the next action is to run `/ship <task-id>`.
 
 If a `workspace.json` is present, note that this is a workspace-root task and
-name the member repos it touches (from the plan's `## Ship order` or
-`## Predicted touch`) so they know its scope isn't a single repo.
+name the member repos it touches (from the plan's `## Ship order` or `##
+Predicted touch`) so they know its scope isn't a single repo.
 
-Resuming is `/task`'s job, not yours — if they want to continue the work,
-the next action you name (or `/task` with no argument, which offers to
-resume) is how, but `/spine` itself never advances anything.
+Resuming is `/task`'s job, not yours — if they want to continue the work, the
+next action you name (or `/task` with no argument, which offers to resume) is
+how, but `/spine` itself never advances anything.
 
 ## 4. Never editorialize
 
 Like `/tasks`, this skill reports and stops. It never blocks, never fixes,
-never decides. "No active task — here's how to start" and "you're mid-verify,
-run `/verify <id>` next" are both complete, useful answers. If the install is
-healthy and idle, the menu *is* the whole output — don't manufacture a status
-for a task that doesn't exist.
+never decides. "No active task — here's how to start" and "you're mid-verify
+and it passed, run `/ship <id>` next" are both complete, useful answers. If the
+install is healthy and idle, the menu *is* the whole output — don't manufacture
+a status for a task that doesn't exist.
