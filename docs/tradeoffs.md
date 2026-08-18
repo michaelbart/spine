@@ -2115,10 +2115,20 @@ PASS, and in `auto` it is an **exception-stop** that pulls the human in. (b)
 verify now collects **every** adversary's verdict before applying any fix —
 never mutating the tree while an adversary still runs against its snapshot —
 and re-runs an adversary if a substantive fix changed the code it reviewed.
-(3) is disclosed as an install/agent-setup concern to watch, not yet mechanically
-closed — an adversary worktree that can't run the project's own toolchain is a
-real degradation, and the honest state is that nothing yet verifies the worktree
-is tool-complete before dispatch.
+(3) is now closed via a declared adapter seam: core adds an eighteenth
+capability, `worktree-prep` (`core/ADAPTER-CONTRACT.md §3.6`), which the
+falsifier runs as a single bounded step 0 of its stub-out probe
+(`core/agents/falsifier.md` mandate (b)) to make its isolated worktree's
+toolchain resolvable — typically by symlinking the gitignored dependency
+dir(s) from the source checkout, discoverable via `git worktree list`. The
+provisioning logic itself is stack-specific and lives in the project's own
+`.spine/adapters/worktree-prep`, exactly where the rest of this paragraph
+said it belonged; core stays stack-blind and still degrades honestly (the
+existing "stub-out probe: toolchain unavailable in isolated worktree" gap)
+when no such adapter is implemented for a project. `worktree-prep` is never
+in `floor`'s dispatch loop and never invoked by `security` (read-only, no
+worktree isolation) — only the falsifier calls it, and only as that one
+declared command.
 
 Two further fixes in the falsifier agent itself (`core/agents/falsifier.md`), from
 reading what it actually spent 30 minutes on: **lane discipline** — it now knows
@@ -2129,10 +2139,11 @@ gaps only it can see. And **graceful tooling degradation** — if the stub-out
 probe's test runner can't run in the isolated worktree (a fresh worktree lacks
 gitignored deps), it records a tooling gap and leans on the other mandates rather
 than burning the budget bootstrapping. The deeper fix — provisioning the worktree
-with the project's toolchain so the stub-out probe *can* run — is inherently
-stack-specific (node_modules vs .venv vs target/), so it belongs in a project's
-adapters/install, not stack-blind core; core can only degrade honestly, which it
-now does.
+with the project's toolchain so the stub-out probe *can* run — was inherently
+stack-specific (node_modules vs .venv vs target/), so it now lives in a
+project's own `worktree-prep` adapter (`core/ADAPTER-CONTRACT.md §3.6`), run
+as a single declared step 0 before the probe; core stays stack-blind and
+still degrades honestly when no such adapter is implemented for a project.
 
 ### Update: the `auto` task shipped clean — flow validated, fixes still await a re-run
 

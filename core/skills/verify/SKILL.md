@@ -267,6 +267,10 @@ rather than shipping on an incomplete adversarial pass.
   arms `core/agents/falsifier.md`'s "Cross-repo mandate (d)." Say
   explicitly in the delegation message that this list is present so
   mandate (d) applies; falsifier never infers it from the diff alone.
+  Also say explicitly whether `.spine/adapters/worktree-prep` exists and is
+  `implemented` (read from `capabilities.json`) and its path — this is what
+  arms mandate (b)'s step 0; falsifier never infers availability from the
+  diff or from probing the filesystem itself.
 - `subagent_type: security` (if running) — same, plus each edited repo's
   own `work/<task-id>/artifacts/dep-diff.md`.
 
@@ -309,10 +313,14 @@ that adversary already covered, its clean verdict on everything *else*
 still holds and only needs recording as `REUSED`, not a full second
 dispatch — if the fix's blast radius grew at all (e.g. it touched a file
 outside the original diff to satisfy an invariant), re-run that adversary
-fully, same "no narrowed pass" rule as above. (Worktree note: an adversary needs its toolchain resolvable in its isolated
-worktree — if the floor's own tools aren't reachable there, the adversary wastes
-budget fighting tooling instead of the code; that's an install/agent-setup
-concern to watch, tracked in `docs/tradeoffs.md`.)
+fully, same "no narrowed pass" rule as above. (Worktree note: the falsifier runs the project's `worktree-prep` adapter, if
+one is `implemented`, as step 0 of its stub-out probe — a single bounded
+declared command to make its isolated worktree's toolchain resolvable
+(`core/ADAPTER-CONTRACT.md §3.6`). When no such adapter is implemented, the
+stub-out probe degrades to a recorded tooling-gap verdict rather than the
+falsifier burning budget hand-bootstrapping — surfaced in `verify.md` per the
+"never silently skip a gate" discipline, same as any other degraded
+capability.)
 
 ## 4. Conformance
 
