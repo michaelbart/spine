@@ -1,9 +1,10 @@
 #!/bin/bash
 # ledger — cost instrumentation. Writes/aggregates work/<id>/ledger.json and
 # scans git log for the untracked-commit ratio (build prompt §2.6): since
-# every /ship commit carries a `Spine-Task:` trailer (core/ADAPTER-CONTRACT.md
-# §6), any commit without one is Class 0 or bypass work by definition — no
-# model judgment involved.
+# every /ship commit carries a `Spine-Task:` trailer and every traced Class 0
+# commit a `Spine-Ticket:` trailer (core/ADAPTER-CONTRACT.md §6); a commit with
+# none of Spine-Task/Spine-Ticket/Spine-Bypass is off-spine work by definition —
+# no model judgment involved.
 #
 # `hand_tracked` (Phase E): a skill that cannot invoke this script at all
 # (e.g. `ledger init` itself is unreachable) hand-authors a same-shaped
@@ -26,6 +27,8 @@
 #   ledger harvest   <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
 #   ledger set       <task-id> <key> <value> [--project <path>]
 #   ledger note-gap  <task-id> <script> <consequence> [--project <path>]
+#   ledger trace     <ticket> <one-line-note> [--project <path>]           (Class 0 in-project trace; no work folder)
+#   ledger ticket-from-branch [--project <path>]                           (print the ticket key parsed from the current branch)
 #   ledger scan-untracked-ratio [--since <git-date>] [--project <path>]
 #   ledger aggregate [--since <git-date>] [--by-engineer] [--project <path>]
 set -uo pipefail
@@ -38,6 +41,8 @@ usage:
   ledger harvest   <task-id> <phase> --transcript <path> --from <ts> --to <ts> [--project <path>]
   ledger set       <task-id> <key> <value> [--project <path>]
   ledger note-gap  <task-id> <script> <consequence> [--project <path>]
+  ledger trace     <ticket> <one-line-note> [--project <path>]
+  ledger ticket-from-branch [--project <path>]
   ledger scan-untracked-ratio [--since <git-date>] [--project <path>]
   ledger aggregate [--since <git-date>] [--project <path>]
 EOF
@@ -152,7 +157,7 @@ case "$cmd" in
     total=0; tracked=0; bypassed=0
     while IFS= read -r -d '' body; do
       total=$((total+1))
-      if grep -q '^Spine-Task: ' <<<"$body"; then tracked=$((tracked+1)); fi
+      if grep -qE '^(Spine-Task|Spine-Ticket|Spine-Bypass): ' <<<"$body"; then tracked=$((tracked+1)); fi
       if grep -q '^Spine-Bypass: ' <<<"$body"; then bypassed=$((bypassed+1)); fi
     done < <(cd "$project" && if [[ -n "$since" ]]; then git log --since="$since" --format='%B%x00'; else git log --format='%B%x00'; fi)
     if [[ "$total" -eq 0 ]]; then
@@ -161,7 +166,7 @@ case "$cmd" in
     fi
     untracked=$((total - tracked))
     ratio=$(awk -v u="$untracked" -v t="$total" 'BEGIN{printf "%.2f", u/t}')
-    echo "untracked-commit ratio: $ratio ($untracked/$total commits have no Spine-Task: trailer) — bypassed: $bypassed"
+    echo "untracked-commit ratio: $ratio ($untracked/$total commits have no Spine-Task/Spine-Ticket/Spine-Bypass trailer) — bypassed: $bypassed"
     ;;
 
   aggregate)
@@ -211,6 +216,36 @@ case "$cmd" in
         }
       ' "${files[@]}"
     fi
+    ;;
+
+  trace)
+    [[ $# -ge 2 ]] || usage
+    ticket="$1"; note="$2"; shift 2
+    while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
+    tp="$project/.spine/trace.jsonl"
+    mkdir -p "$(dirname "$tp")"
+    engineer_name="$(git -C "$project" config user.name 2>/dev/null || true)"
+    engineer_email="$(git -C "$project" config user.email 2>/dev/null || true)"
+    engineer="${engineer_name:+$engineer_name}${engineer_email:+ <$engineer_email>}"
+    jq -c -n --arg ticket "$ticket" --arg note "$note" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg eng "$engineer" \
+      '{ticket:$ticket, note:$note, class:0, at:$at, engineer:(if $eng == "" then null else $eng end)}' >>"$tp"
+    echo "ok: traced $ticket — $note"
+    ;;
+
+  ticket-from-branch)
+    while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
+    # First non-comment line of .spine/ticket-pattern.conf is the extended-regex
+    # for this project's ticket keys; absent conf falls back to a JIRA-style
+    # default (GN1-12345, ABC-42). Pattern-agnostic per ADAPTER-CONTRACT stack rule.
+    conf="$project/.spine/ticket-pattern.conf"
+    pattern='[A-Z][A-Z0-9]+-[0-9]+'
+    if [[ -f "$conf" ]]; then
+      p="$(grep -vE '^[[:space:]]*(#|$)' "$conf" | head -1 || true)"
+      [[ -n "$p" ]] && pattern="$p"
+    fi
+    branch="$(git -C "$project" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    key="$(grep -oE "$pattern" <<<"$branch" | head -1 || true)"
+    if [[ -n "$key" ]]; then echo "$key"; else exit 1; fi
     ;;
 
   *) usage ;;

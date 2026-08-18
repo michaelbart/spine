@@ -172,7 +172,18 @@ Every task gets a class, and the human confirms it — not the model alone
 - **Class 0 (trivial):** suggest when the change looks like it will touch
   ≤2 files, ≈15 lines or fewer, introduces no new public symbol, and (check
   against `.spine/protected-paths.conf`) touches no protected path. No work
-  folder, no ledger entry, no phases — just make the edit. The backstop is
+  folder, no per-task `ledger.json`, no phases — but not invisible: make the
+  edit, then leave a **trace** (traced-trivial, `docs/proposals/intake-and-
+  adaptive-autonomy.md` §5). Derive the ticket from the branch —
+  `${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch --project <project
+  root>` — and if it returns a key, commit the edit carrying a `Spine-Ticket:
+  <key>` trailer (composes with any subject convention, `core/ADAPTER-CONTRACT.md`
+  §6) and record it: `${CLAUDE_SKILL_DIR}/../../scripts/ledger trace <key> "<one
+  line: what changed>" --project <project root>`. That's the whole ceremony — one
+  commit, one trace line, no folder, no docs. If no ticket is derivable (genuinely
+  off-ticket), make the edit and skip the trailer/trace; spine doesn't chase
+  off-ticket one-offs — they stay visible via the org's own commit convention.
+  The backstop is
   `path-escalate`: with no active task it defaults to class 0, so if the
   edit turns out to touch a protected path, the hook halts it and you tell
   the human plainly: "this stopped being trivial" — then restart as a real

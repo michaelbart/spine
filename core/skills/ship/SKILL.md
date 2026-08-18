@@ -385,7 +385,16 @@ freeform; this adds no new schema to `core/scripts/ledger`).
 the `ship` timestamp you just wrote) into phase key `verify`. Then, since no
 further mark follows `ship` in this task, harvest `ship` itself right now:
 `ledger harvest <task-id> ship --transcript <path> --from <the ship mark
-timestamp> --to <now>`. Then, **single-repo**:
+timestamp> --to <now>`.
+
+**Derive the ticket, add its trailer.** Run
+`${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch --project <project
+root>`; if it prints a key, add `Spine-Ticket: <key>` as an additional trailer
+line on this task's commit(s) — every repo, in the multi-repo case — alongside
+`Spine-Task:`, per `core/ADAPTER-CONTRACT.md` §6's composing-trailer rule. If it
+prints nothing (off-ticket), omit that line.
+
+Then, **single-repo**:
 
 ```
 git add -A -- <the task's actual changed paths, work/<task-id>/, docs/decisions/>
@@ -397,6 +406,7 @@ them, it never replaces the subject-line grammar>
 <body, if useful>
 
 Spine-Task: <task-id>
+Spine-Ticket: <ticket-key>
 EOF
 )"
 ```

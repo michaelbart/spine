@@ -328,11 +328,33 @@ commit-message grammar and never fights it.
 
 This makes the untracked-commit ratio (§2.6 of the build prompt) mechanical:
 `core/scripts/ledger scan-untracked-ratio` greps `git log` trailers over a
-window and reports commits with no `Spine-Task:` trailer and no
-`Spine-Bypass:` trailer as Class 0 or off-spine work, by definition — no
+window and reports commits carrying none of `Spine-Task:`,
+`Spine-Ticket:`, or `Spine-Bypass:` as off-spine work, by definition — no
 model judgment involved. `/ship --bypass <reason>` writes `Spine-Bypass:
 <reason>` instead of (or alongside) the task trailer, so bypassed work is
 still mechanically visible and distinguishable from silent drift.
+
+**Class 0 (traced-trivial) and the `Spine-Ticket:` trailer.** A Class 0 change
+has no task folder and no `Spine-Task:` id, but it is not off-spine: the
+traced-trivial path (`core/skills/task/SKILL.md` §1) commits it carrying
+
+```
+Spine-Ticket: <ticket-key>
+```
+
+— the key derived from the branch/commit convention (`ledger
+ticket-from-branch`), never invented — and appends a one-line in-project record
+via `ledger trace` (to `.spine/trace.jsonl`). Spine does **not** enforce this
+trailer with a hook: the surrounding org already requires a ticket on every
+commit, so a second gate would be redundant — a spine value `/ratchet` and the
+stack-independence rule both reject. The trailer is spine's own convention so
+`scan-untracked-ratio` can distinguish a traced Class 0 commit from genuinely
+off-spine work, and so the dashboard can surface trivial work that JIRA linkage
+alone never would. **Every `/ship` commit (Class 1/2) also carries `Spine-Ticket:
+<key>` alongside its `Spine-Task:` trailer when a ticket is available** — same
+derivation, same composing rule; the spine task id and the ticket key travel
+together. When no ticket is derivable (genuinely off-ticket), the trailer is
+omitted and the commit counts as off-spine as before.
 
 **Multi-repo tasks (Extension B)** use the *same* task ID — generated once,
 at the workspace root, per `core/skills/task/SKILL.md` — as the
