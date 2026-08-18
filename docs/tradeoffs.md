@@ -2272,6 +2272,30 @@ time on ground already covered), not a coverage lever (nothing is hidden from
 the adversary) — the same distinction the rejected per-file *input* caching
 collapsed, deliberately not repeated here.
 
+**Second correction, caught immediately by the human reviewing this section
+before it shipped: the first draft of "focused re-run" had no severity gate
+at all.** It fired on file-content-stability alone — "some but not all of the
+blast radius is unchanged" — with no check on *what* the round being
+confirmed had fixed. That silently contradicted the whole reason this tier
+exists: a round confirming a fix for something the adversary rated `high`
+severity would have been downgraded to reduced budget purely because it
+happened to touch few files in a large diff, exactly backwards from "keep
+full weight for any high-severity fix, only drop weight for follow-up rounds
+closing out medium/low findings" — the actual design goal this tier was
+built to serve. The draft's "Full re-run" bullet had *also* independently
+listed "prior verdict had a `medium`/`high` finding" as a trigger, with no
+carve-out reconciling it against Focused's silence on severity — the two
+bullets overlapped and contradicted each other for exactly the case that
+mattered. Fixed by making Focused's eligibility require the prior verdict
+have no `high` severity finding (medium/low/empty all still qualify — only
+`high` forces full budget), independent of how stable the rest of the blast
+radius is. Re-traced against the same task to confirm this doesn't just
+theoretically fix the bug: pass 2's carried-forward verdicts (falsifier: one
+`low`; security: three `low`) contain no `high` finding, so pass 3 still
+correctly classifies as Focused under the tightened rule — the fix closes a
+real gap without changing this task's own outcome, which is the shape a
+correct tightening should take.
+
 Implemented in `core/skills/verify/SKILL.md` §3 and `core/templates/verify.md`'s
 adversary section. Status: the correction and the three-tier model are traced
 by hand against one real task's complete verdict history (not simulated,

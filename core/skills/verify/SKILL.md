@@ -235,25 +235,50 @@ Three outcomes, not two:
   unchanged, prior clean-enough verdict from <ran_at>)` in place of an
   Attacked/kept/dropped line (§5).
 - **Focused re-run — full diff, full authority, reduced budget.** Some but
-  not all of the current blast radius matches recorded coverage by hash: a
+  not all of the current blast radius matches recorded coverage by hash (a
   real fix or genuinely new content exists somewhere, so a dispatch is
   required, but part of what the adversary would look at is provably
-  identical to what a prior clean-enough pass already covered. Dispatch
-  with the **full** current diff — never narrowed, same non-negotiable
-  rule as always — but name explicitly, in the delegation message, which
-  files are unchanged-since-last-clean-pass (with that pass's timestamp),
-  so the adversary weights its limited time toward what's actually new,
-  and reduce its wall-clock budget below the normal Class-based figure
-  roughly in proportion to how much of the blast radius is unchanged (a
-  judgment call stated as "roughly," matching this section's other budget
-  language, not a formula). The adversary keeps full authority to flag
-  anything anywhere, including a cross-file interaction between changed
-  and unchanged files — this tier narrows *effort allocation*, never
-  *scope*, which is exactly the distinction the rejected per-file-caching
+  identical to what a prior clean-enough pass already covered) **and** the
+  prior verdict being carried into this round kept no `high` severity
+  finding — `medium` and `low` (or empty) both still qualify for this
+  tier, only `high` forces the next bullet instead. This is a deliberate,
+  separate bar from REUSED's stricter "no medium/high" — skipping a
+  dispatch entirely is the strongest trust claim this cache makes and
+  earns the strictest gate, but merely *reducing effort* on a round that's
+  only closing out medium/low findings is a smaller claim, and forcing
+  full budget onto that case too was undermining the entire reason this
+  tier exists: a round that fixed something genuinely dangerous (`high`)
+  always gets full scrutiny confirming it, full stop; a round only closing
+  out lower-stakes findings doesn't need the same weight redirected at
+  ground that's already provably unchanged. Dispatch with the **full**
+  current diff — never narrowed, same non-negotiable rule as always — but
+  name explicitly, in the delegation message, which files are
+  unchanged-since-last-clean-pass (with that pass's timestamp), so the
+  adversary weights its limited time toward what's actually new, and
+  reduce its wall-clock budget below the normal Class-based figure roughly
+  in proportion to how much of the blast radius is unchanged (a judgment
+  call stated as "roughly," matching this section's other budget language,
+  not a formula). The adversary keeps full authority to flag anything
+  anywhere, including a cross-file interaction between changed and
+  unchanged files — this tier narrows *effort allocation*, never *scope*,
+  which is exactly the distinction the rejected per-file-caching
   alternative collapsed (`docs/tradeoffs.md`).
-- **Full re-run, full budget.** No coverage file, every blast-radius file
-  changed, or the prior verdict had a `medium`/`high` finding: dispatch
-  fresh, full diff, full budget, same as a first pass.
+- **Full re-run, full budget — the catch-all.** Anything that doesn't
+  clearly qualify for one of the two bullets above: no coverage file
+  (first dispatch for this adversary on this task); no blast-radius file
+  matches by hash at all (nothing stable to point the adversary at, so
+  there's nothing a reduced budget could safely skip past); the prior
+  verdict carried a `high` severity finding, regardless of how much of the
+  blast radius is otherwise stable (a round confirming a high-severity fix
+  is never quietly downgraded to reduced effort); or — shouldn't arise
+  from a legitimate fix-and-reverify flow, but named rather than left
+  ambiguous — the blast radius is fully unchanged while a `medium` finding
+  from the prior pass is still formally open (nothing new to focus a
+  reduced pass on, and the open finding means the prior verdict was never
+  clean enough to skip either). When in doubt about which bullet a
+  situation matches, it belongs here, not in Focused — this bullet is the
+  default, not one option among equals. Dispatch fresh, full diff, full
+  budget, same as a first pass.
 
 There is still no tier that re-checks only the new files in isolation —
 every outcome above except REUSED hands the adversary the complete current
@@ -350,13 +375,17 @@ content of whatever file it touches, so that file's hash no longer matches
 you just fixed**, regardless of whether that file's path was already
 sitting in the diff; fixing a bug is exactly the new content an adversary
 needs to see. What the check still buys you: if the fix touched only
-file(s) already accounted for this way and the rest of the blast radius is
-still hash-identical to a prior clean-enough pass, that's a **focused
-re-run** (full diff, reduced budget, changed files named in the delegation
-message) rather than a full-budget one; if the fix's blast radius grew
-into a file outside anything previously covered (e.g. it touched a file
-outside the original diff to satisfy an invariant), that's a full re-run,
-same as a first pass. (Worktree note: the falsifier runs the project's `worktree-prep` adapter, if
+file(s) already accounted for this way, the rest of the blast radius is
+still hash-identical to a prior clean-enough pass, *and* the finding this
+fix addresses wasn't `high` severity, that's a **focused re-run** (full
+diff, reduced budget, changed files named in the delegation message)
+rather than a full-budget one. Either of the other two conditions failing
+means full budget: if the fix's blast radius grew into a file outside
+anything previously covered (e.g. it touched a file outside the original
+diff to satisfy an invariant), or if the finding it addresses was `high`
+severity, that's a full re-run at full budget, same as a first pass — a
+fix for something the adversary rated dangerous is never quietly
+confirmed at reduced effort just because the rest of the diff held still. (Worktree note: the falsifier runs the project's `worktree-prep` adapter, if
 one is `implemented`, as step 0 of its stub-out probe — a single bounded
 declared command to make its isolated worktree's toolchain resolvable
 (`core/ADAPTER-CONTRACT.md §3.6`). When no such adapter is implemented, the
