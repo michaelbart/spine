@@ -201,7 +201,9 @@ Every task gets a class, and the human confirms it — not the model alone
 = `guided` at setup; the lighter autonomies are chosen at `/intake`):
 
 - **Class 0 (trivial):** suggest when the change looks like it will touch
-  ≤2 files, ≈15 lines or fewer, introduces no new public symbol, and (check
+  ≤2 files, ≈15 lines or fewer (or this project's `.spine/profile.json`
+  `class0_max_files`/`class0_max_lines` if set), introduces no new public
+  symbol, and (check
   against `.spine/protected-paths.conf`) touches no protected path. No work
   folder, no per-task `ledger.json`, no phases — but not invisible: make the
   edit, then leave a **trace** (traced-trivial, `docs/proposals/intake-and-

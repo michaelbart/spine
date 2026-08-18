@@ -180,7 +180,11 @@ if [[ "$check_only" -eq 1 ]]; then
   report_pin
   print_pin_result
   check_hook_guard_staleness
-  [[ "$PIN_STATUS" == "mismatch-strict" ]] && exit 1
+  # Team strictness profile (Phase 5): a broken/illegal profile is a broken
+  # gate config, caught here loudly rather than silently enforced.
+  profile_bad=0
+  "$resolved_spine/core/scripts/profile-check" --project "$project" || profile_bad=1
+  { [[ "$PIN_STATUS" == "mismatch-strict" ]] || [[ "$profile_bad" -eq 1 ]]; } && exit 1
   exit 0
 fi
 

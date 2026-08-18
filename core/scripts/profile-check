@@ -1,0 +1,62 @@
+#!/bin/bash
+# profile-check — validate a project's .spine/profile.json (Phase 5, team
+# strictness profiles). The hard invariant: a profile tunes *ceremony* and
+# *stops*; it can never disable the mechanical floor, the protected-path hook,
+# or the autonomy-caps-class rule. Those are enforced two ways here:
+#   1. Unrepresentable — there is no field for them, so a profile literally
+#      cannot express "floor off". An unknown key is therefore rejected, so a
+#      hand-edit can't smuggle one in.
+#   2. Bounded — the tunable fields have ranges (adversaries >= 1, class-0
+#      thresholds capped) so "make everything trivial / run zero adversaries"
+#      is rejected the way adapter-conformance rejects a bad adapter.
+#
+# Absent profile = valid (built-in defaults apply). Exit 0 valid, 1 invalid
+# (prints every reason), 2 usage/tooling error.
+#
+# Usage: profile-check [--project <path>]
+set -uo pipefail
+
+project="$(pwd)"
+while [[ $# -gt 0 ]]; do
+  case "$1" in --project) project="$2"; shift 2;; *) echo "usage: profile-check [--project <path>]" >&2; exit 2;; esac
+done
+
+pf="$project/.spine/profile.json"
+if [[ ! -f "$pf" ]]; then
+  echo "profile-check: no .spine/profile.json — built-in defaults apply (standard)"
+  exit 0
+fi
+if ! jq -e . >/dev/null 2>&1 <"$pf"; then
+  echo "profile-check: $pf is not valid JSON" >&2
+  exit 1
+fi
+
+allowed='["profile","class1_adversaries","smoke_in_floor","class0_max_files","class0_max_lines","autonomy_ceiling","pr_open"]'
+errs=()
+
+# 1. unknown keys (this is how a smuggled "floor":false is caught)
+while IFS= read -r k; do
+  errs+=("unknown key \"$k\" — the profile schema has no field for it; the floor, protected-path hook, and autonomy cap are non-negotiable and deliberately not expressible here")
+done < <(jq -r --argjson allowed "$allowed" 'keys[] | select(. as $k | ($allowed | index($k)) | not)' "$pf")
+
+# 2. bounded/enumerated values
+val() { jq -r --arg k "$1" 'if has($k) then .[$k]|tostring else "" end' "$pf"; }
+adv="$(val class1_adversaries)"
+[[ -z "$adv" || "$adv" =~ ^[12]$ ]] || errs+=("class1_adversaries must be 1 or 2 (never 0 — the falsifier always runs); got \"$adv\"")
+ceil="$(val autonomy_ceiling)"
+[[ -z "$ceil" || "$ceil" =~ ^(guided|checkpointed|auto)$ ]] || errs+=("autonomy_ceiling must be guided|checkpointed|auto; got \"$ceil\"")
+pr="$(val pr_open)"
+[[ -z "$pr" || "$pr" =~ ^(never|auto-only|auto-checkpointed|all)$ ]] || errs+=("pr_open must be never|auto-only|auto-checkpointed|all; got \"$pr\"")
+smoke="$(val smoke_in_floor)"
+[[ -z "$smoke" || "$smoke" =~ ^(true|false)$ ]] || errs+=("smoke_in_floor must be true or false; got \"$smoke\"")
+cf="$(val class0_max_files)"
+[[ -z "$cf" || ( "$cf" =~ ^[0-9]+$ && "$cf" -le 10 ) ]] || errs+=("class0_max_files must be an integer 0..10 (a higher cap would let the profile make substantial changes 'trivial' and skip the pipeline); got \"$cf\"")
+cl="$(val class0_max_lines)"
+[[ -z "$cl" || ( "$cl" =~ ^[0-9]+$ && "$cl" -le 100 ) ]] || errs+=("class0_max_lines must be an integer 0..100; got \"$cl\"")
+
+if [[ ${#errs[@]} -gt 0 ]]; then
+  echo "profile-check: $pf is invalid —" >&2
+  for e in "${errs[@]}"; do echo "  - $e" >&2; done
+  exit 1
+fi
+echo "profile-check: ok — $pf (profile: $(val profile))"

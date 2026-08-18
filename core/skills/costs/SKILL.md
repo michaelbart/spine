@@ -47,6 +47,24 @@ it only counts gaps that got recorded; see `docs/tradeoffs.md`'s Auto Mode
 classifier wall section for the residual case where even the recording
 mechanism (`ledger`) was the thing that failed.
 
+**Team profile & drift (Phase 5).** Report the active profile so the numbers
+have context: read `<project root>/.spine/profile.json` (absent = built-in
+`standard`) and name it plus `class1_adversaries` / `autonomy_ceiling` — a team
+running `prototype` (one adversary, `auto` allowed) is *expected* to look
+lighter than one running `regulated`, and comparing the two without saying so
+misleads. Then two drift numbers, framed like the untracked ratio (surface, not
+judge):
+
+- **Traced-trivial count** — `wc -l < <project root>/.spine/trace.jsonl` (0 if
+  absent): how many Class 0 changes were traced this project's life. A high and
+  fast-rising count next to few real tasks is the same "sliding toward Class 0"
+  signal the untracked ratio catches one level up — worth naming, not alarming.
+- **Below-recommendation downgrades** — count `work/*/ledger.json` with a
+  `class_downgraded_from` field set (engineers who took `/intake`'s menu below
+  the recommended class). A few are normal judgment; a pattern in one area
+  means either the recommender is miscalibrated or rigor is being dodged — say
+  which the data can't tell you, and let the team decide.
+
 **Per-engineer view (Extension C §2.7), when more than one distinct
 `engineer` appears in the aggregate above:**
 

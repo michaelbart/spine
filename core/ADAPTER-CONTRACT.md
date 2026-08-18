@@ -444,3 +444,50 @@ scan-untracked-ratio` run against any one member repo's own `git log`
 still works unmodified, since it only ever inspects that repo's own
 commits for the trailer's presence; it does not need to know a commit's
 trailer also appears in a sibling repo.
+
+## 7. Team strictness profiles (`.spine/profile.json`, Phase 5)
+
+A profile is the one place a *team* sets its default strictness, so several
+teams can adopt one spine at different defaults without re-interviewing each
+engineer. It is committed, repo-level project state — the same shape as
+`.spine/capabilities.json` and `.spine/protected-paths.conf`. Absent = the
+built-in `standard` defaults apply. Fields, all optional (an absent field
+takes its `standard` value):
+
+| Field | Values | Governs |
+|---|---|---|
+| `profile` | `prototype` \| `standard` \| `regulated` \| `custom` | Label only (which preset this started from). |
+| `class1_adversaries` | `1` \| `2` | How many adversaries `/verify` runs on a Class 1 task (`1` = falsifier only; `2` = falsifier + security). Never `0` — the falsifier always runs. |
+| `smoke_in_floor` | `true` \| `false` | Whether smoke joins the floor when its runtime fits the budget. |
+| `class0_max_files` | `0`..`10` | The Class 0 (trivial) file-count threshold `/intake` and `/task` classify against. |
+| `class0_max_lines` | `0`..`100` | The Class 0 line-count threshold. |
+| `autonomy_ceiling` | `guided` \| `checkpointed` \| `auto` | The highest autonomy a Class 1 task may run at (`core/skills/task/SKILL.md`). Class 2 is always `guided` regardless. |
+| `pr_open` | `never` \| `auto-only` \| `auto-checkpointed` \| `all` | When `/ship` opens a draft PR (`§3.5`, `core/skills/ship/SKILL.md` §5a). `auto-checkpointed` (default) opens for `auto`/`checkpointed`; `all` also opens for `guided`; `auto-only` only for `auto`; `never` leaves every PR to the human. |
+
+**Presets** (a starting point `/bootstrap`/`/adopt` write, then the team edits):
+
+| | prototype | standard | regulated |
+|---|---|---|---|
+| `class1_adversaries` | 1 | 2 | 2 |
+| `smoke_in_floor` | false | true | true |
+| `class0_max_files` / `_lines` | 3 / 30 | 2 / 15 | 1 / 10 |
+| `autonomy_ceiling` | auto | auto | checkpointed |
+| `pr_open` | all | auto-checkpointed | auto-checkpointed |
+
+**The hard invariant, mechanically enforced by `core/scripts/profile-check`**
+(run at every `setup --check`, i.e. every `/task` step 0): a profile tunes
+*ceremony* and *stops*; it can **never** disable the mechanical floor, the
+protected-path hook, or the autonomy-caps-class rule. Those are not fields in
+the schema — they are *unrepresentable* — and `profile-check` rejects any
+unknown key (so a hand-edited `"floor": false` is caught) and any out-of-range
+value (adversaries `< 1`, an oversized `class0_max_*` that would make
+substantial changes "trivial"), the same fail-closed way `adapter-conformance`
+rejects a miscalibrated adapter. An invalid profile fails `setup --check` loudly
+rather than silently enforcing something no one chose.
+
+**Precedence**: for the two fields that overlap Layer 1 user-config
+(`class1_adversaries` ↔ `ceremony.class1_adversary_count`, `smoke_in_floor` ↔
+the smoke budget), the **team profile wins** when present — the point of a
+profile is one consistent standard per team regardless of who is working.
+Layer 1 remains for genuinely personal preferences. A field absent from the
+profile falls back to Layer 1, then to the built-in default.

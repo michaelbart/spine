@@ -1,0 +1,9 @@
+{
+  "profile": "standard",
+  "class1_adversaries": 2,
+  "smoke_in_floor": true,
+  "class0_max_files": 2,
+  "class0_max_lines": 15,
+  "autonomy_ceiling": "auto",
+  "pr_open": "auto-checkpointed"
+}

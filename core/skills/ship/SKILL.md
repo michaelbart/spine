@@ -467,8 +467,14 @@ the same way `contract-touch` is; what it writes (flags in *other* tasks'
 folders) is what later blocks *their* phase advance, via
 `core/skills/task/SKILL.md`'s flag-blocked-advance check, not this one.
 
-**Pushing and opening the PR is autonomy-aware** (read `work/<task-id>/
-autonomy`, `core/skills/task/SKILL.md`; absent = `guided`):
+**Pushing and opening the PR is autonomy-aware, gated by the team profile**
+(read `work/<task-id>/autonomy`, `core/skills/task/SKILL.md`, absent = `guided`;
+and `.spine/profile.json`'s `pr_open`, `core/ADAPTER-CONTRACT.md` §7, absent =
+`auto-checkpointed`). `pr_open` decides which autonomies get a draft PR opened
+here: `auto-checkpointed` (default) → `auto` and `checkpointed`; `all` → those
+plus `guided`; `auto-only` → only `auto`; `never` → none (every PR is the
+human's to open). For an autonomy `pr_open` does *not* cover, use the `guided`
+behavior below regardless of the task's own autonomy:
 
 - **`guided`** — do not push. Committing locally is this skill's job; pushing or
   opening a PR is the human's call, made after reading the briefing. This is the

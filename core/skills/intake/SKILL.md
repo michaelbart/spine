@@ -93,8 +93,9 @@ Never a bare label — carry the reason. Apply, in order:
   auth/authz, a data migration, an external/declared contract, ≥2 owned
   systems, or an irreversible release. These are non-negotiable — a change
   that touches them is Class 2 regardless of how few lines it is.
-- **Class 0 (trivial)** if it looks like ≤2 files, ≈15 lines, no new public
-  symbol, no protected path — and it's a real committed change, not a
+- **Class 0 (trivial)** if it looks like ≤2 files, ≈15 lines (or this project's
+  `.spine/profile.json` `class0_max_files`/`class0_max_lines` if set), no new
+  public symbol, no protected path — and it's a real committed change, not a
   question.
 - **Class 1 (standard)** otherwise — the default, and the sweet spot for a
   small bug or enhancement.
@@ -111,7 +112,10 @@ runs research→plan→implement→verify→ship and hands back a draft PR, no s
 stops); a substantial Class 1 → `checkpointed` (approve the plan, then one finish
 action); a Class 1 near the Class 2 boundary, or anything you're less sure of →
 `guided` (stop at each phase). Class 2 is always `guided` (the ceiling); Class 0
-is `traced`. Like the class, this is a proposal the menu can dial up or down.
+is `traced`. **Cap the proposal at `.spine/profile.json`'s `autonomy_ceiling`**
+if set (a `regulated` team caps at `checkpointed`, so `auto` is never offered
+there); absent = no team cap beyond the class rule. Like the class, this is a
+proposal the menu can dial up or down — but never above the ceiling.
 
 ## 6. The confidence-weighted menu
 

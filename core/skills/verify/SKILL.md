@@ -181,11 +181,15 @@ section (§5) — never folded into the floor table, same discipline as
 
 ## 2. Adversary count
 
-Class 2: always both, `falsifier` and `security`. Class 1: read
-`~/.spine/user-config.json`'s `ceremony.class1_adversary_count` (1 or 2; if
-the file or key is absent, default 2 — the calibrated default from Layer 1).
+Class 2: always both, `falsifier` and `security`. Class 1: how many adversaries
+is a team default first, a personal default second — read
+`<project root>/.spine/profile.json`'s `class1_adversaries` (1 or 2); if there
+is no profile or the field is absent, fall back to `~/.spine/user-config.json`'s
+`ceremony.class1_adversary_count`; if both are absent, default 2 (the team
+profile wins where both exist — `core/ADAPTER-CONTRACT.md` §7's precedence rule).
 1 means falsifier only — it's the one that proves the implementation against
-its own plan, which is why it's never optional.
+its own plan, which is why it's never optional and the profile can never set it
+to 0 (`profile-check` rejects that).
 
 ## 3. Run the adversaries
 

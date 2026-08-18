@@ -52,6 +52,28 @@ touch forces Class 2) and CI integration (default: mirror locally; wiring
 an actual CI pipeline is an addendum the engineer does themselves, not a
 dependency of this install).
 
+## 3.5 Layer 2.5 — team strictness profile
+
+Ask which strictness profile this repo's team runs — the default for how much
+ceremony and how many human stops a task gets — and write
+`<project>/.spine/profile.json` from
+`${CLAUDE_SKILL_DIR}/../../templates/profile.json`, adjusting its fields to the
+chosen preset (`core/ADAPTER-CONTRACT.md §7`'s table): **prototype** (one
+adversary, `auto` allowed, no smoke, looser Class 0), **standard** (the
+template's own values — two adversaries, `auto` allowed, smoke on), or
+**regulated** (two adversaries, `autonomy_ceiling: checkpointed` so `auto` is
+never offered, stricter Class 0). Default to **standard** unless the team says
+otherwise. Then validate it:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/profile-check --project <project>
+```
+
+It must pass — a profile tunes ceremony but can never disable the floor, the
+protected-path hook, or the autonomy cap (§7, enforced fail-closed). This one
+file is what lets several teams share one spine at different defaults; it's
+ordinary committed project state, edited later like anything else.
+
 ## 4. Layer 3 calibration and adapter generation
 
 Ask stack and commands (language, framework, test runner, typechecker,
@@ -79,7 +101,7 @@ render. If no: leave `.spine/ui-paths.conf` absent (mirrors
 and mark `ui-render` `not-applicable` in `.spine/capabilities.json` with
 reason "no browser UI in this project's runtime shape."
 
-For each of the 14 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
+For each of the 17 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
 invocation exists for the confirmed stack, write
 `<project>/.spine/adapters/<name>` as a real, executable script — exit
 0/non-zero, one line on success, full diagnostics on failure, plus a working
@@ -89,6 +111,18 @@ stack, mark it `unavailable` in `.spine/capabilities.json` with the specific
 reason. If the capability doesn't apply to this project's shape at all
 (e.g. `smoke-*` with nothing to run yet), mark `not-applicable`, also with a
 specific reason — never leave a capability unmentioned.
+
+**Two of the seventeen are workflow adapters, not floor gates** (§3.4/§3.5) —
+generate them from the team's own tools. `ticket-fetch`: wrap the tracker the
+engineers actually use (for G1, `g1-jira-intake`'s `acli`/Atlassian chain);
+mark `not-applicable`, reason "no ticket source", if tickets are always pasted
+by hand. `open-pr`: wrap the PR-host tool (`gh`/`glab`/the org's `g1-ship`);
+mark `not-applicable`, reason "no PR host", if PRs are opened by hand. If a
+`ticket-fetch` adapter is written, also write
+`<project>/.spine/ticket-pattern.conf` — one extended-regex line matching this
+tracker's key shape (e.g. `[A-Z][A-Z0-9]+-[0-9]+` for `GN1-12345`), which
+`ledger ticket-from-branch` reads to derive a ticket from the branch; absent, it
+falls back to that same default.
 
 Then:
 
@@ -166,7 +200,8 @@ Commit the symlinks, `.claude/settings.json`, `docs/charter.md`,
 `docs/map.md`, `docs/decisions/.gitkeep`, `work/.gitkeep`,
 `.spine/capabilities.json`, `.spine/protected-paths.conf`,
 `.spine/install-command-patterns.conf` (if written),
-`.spine/ui-paths.conf` (if written), and
+`.spine/ui-paths.conf` (if written), `.spine/profile.json`,
+`.spine/ticket-pattern.conf` (if written), and
 `.spine/adapters/` as one setup commit — this is the one commit any install
 mechanism requires (build prompt §3); everything after this is `git pull`
 inside `spine/` with zero further commits in `<project>`.

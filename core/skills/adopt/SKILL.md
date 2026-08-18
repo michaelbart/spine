@@ -32,6 +32,15 @@ engineer as something to edit, not a blank interview. Confirm risk posture
 (default: mirror locally; note what real CI already does, if any, so the
 floor can be checked against it for "mirror-or-exceed, never less").
 
+## 2.5 Layer 2.5 — team strictness profile
+
+Same as `core/skills/bootstrap/SKILL.md §3.5` — write and `profile-check`
+`<project>/.spine/profile.json`. Unlike greenfield, **infer a starting preset**
+from the repo and present it for confirmation: a codebase with real
+migrations/auth/payments leans **regulated**; a scratch or spike repo leans
+**prototype**; otherwise **standard**. On a recalibration, show the existing
+profile and confirm-or-edit rather than re-asking cold.
+
 ## 3. Layer 3 calibration and adapter generation
 
 Same process as `core/skills/bootstrap/SKILL.md` §4 — infer stack and
@@ -46,7 +55,7 @@ step). If yes: confirm the view/component glob(s) for
 `.spine/ui-paths.conf` and the dev-server start command + port. If no:
 mark `ui-render` `not-applicable`, reason "no browser UI in this
 project's runtime shape." Generate `.spine/adapters/<name>` for each of
-the 14 capabilities per `core/ADAPTER-CONTRACT.md`, mark `unavailable`/
+the 17 capabilities per `core/ADAPTER-CONTRACT.md`, mark `unavailable`/
 `not-applicable` with real reasons where nothing viable exists, then:
 
 ```
@@ -55,6 +64,12 @@ ${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance --all --project <project>
 
 Same rule as bootstrap: nothing gets marked `implemented` without passing
 its own known-pass/known-fail run.
+
+Include the two workflow adapters the same way `core/skills/bootstrap/SKILL.md`
+§4 describes — infer them from the repo: `ticket-fetch` (the tracker the repo's
+commits/branches already reference — write `.spine/ticket-pattern.conf` from the
+observed key shape) and `open-pr` (the PR host the repo already uses); mark
+either `not-applicable` with a real reason if the repo shows no such tool.
 
 ## 4. The bounded survey
 
