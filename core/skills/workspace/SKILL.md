@@ -18,6 +18,33 @@ every hook this skill's siblings extend falls back to exactly its
 pre-Extension-B behavior the moment `workspace.json` is absent. Verify that
 fallback for real before calling this skill done (§6 below).
 
+**Before proceeding — is a workspace actually the right tool?**
+
+A workspace earns its cost only when *all three* of the following are true:
+
+1. Work is **concurrent** across repos — both are being modified in the
+   same task or sprint, not sequentially.
+2. The change is **non-additive** — there's no safe intermediate state
+   where one repo can ship before the other; both sides must land together
+   or the system breaks.
+3. The coupling is **contract-level** — a shared data shape, behavioral
+   guarantee, or API contract that, if it drifts silently, produces bugs
+   that are hard to detect.
+
+**If the work is sequential** (backend first, then frontend wired to it),
+run spine separately in each repo. The "contract" is just the API spec or
+a line in each plan. No workspace needed.
+
+**If you want visibility into another repo** (reading its code during
+research, referencing its types) without coordinating a simultaneous
+change, add it to `additionalDirectories` in `.claude/settings.json`.
+No workspace needed.
+
+**If you're unsure**, start without a workspace. A workspace can always be
+added later if a genuinely atomic cross-repo change arises. Starting with
+one and not needing it is pure overhead; starting without one and needing
+it later is one `/workspace --root <path>` invocation.
+
 ## 0. Preflight — which mode
 
 **First, before either entry path below: does `<root>/workspace.json`

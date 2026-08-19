@@ -221,3 +221,17 @@ anything else.** Hook and skill wiring does not hot-reload mid-session
 (`phase-A-handoff.md` §2.1) — the session that ran this install will not see
 the newly-symlinked skills or armed hooks. From that fresh session, `/task`
 is the first real command to run.
+
+**If the engineer has a product spec, design handoff, or build plan** (a
+document describing what the product does and the intended build sequence),
+tell them two things: (1) save it as `docs/product-spec.md` — tasks will
+read it during research and implementation will be better for it; (2)
+extract the build sequence into `docs/vision.md` as a short milestone list
+— one line per milestone, e.g. "M0 — walking skeleton", "M1 — feature X",
+"M2 — feature Y." `/spine` reads `docs/vision.md` at idle to surface what's
+next after each milestone ships, and `/roadmap` (when run) uses it as the
+primary input for planning remaining milestones. Neither file has a
+required format — they are human-owned reference documents, not
+machine-generated. If the engineer has no such documents yet, they can
+always add them later; skip this note entirely for Jira-driven work where
+the ticket queue is the plan.
