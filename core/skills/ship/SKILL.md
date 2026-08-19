@@ -298,12 +298,18 @@ review needed.
 
 Read `work/<task-id>/milestone` (absent = this task isn't part of a
 milestone — skip §3a/§3b/§3c entirely, no note needed in the briefing). If
-present, all three steps below run against `work/<id>/milestone.md` — §3a
-and §3c on *every* member-task ship, §3b only on the milestone's completing
-ship. §3a and §3c can run in either order — they touch the same section
-but never the same entries (§3a only ever allocates new ids off the
-monotonic `next-gap-id` counter, §3c only ever removes ids this task's own
-plan cited), so there's no ordering hazard between them.
+present, resolve `work/<id>/milestone.md` using the same probe order the
+task skill used at creation time: **if `workspace.json` exists at the
+project root**, check (1) `work/<id>/milestone.md` at the project root,
+then (2) `<member-repo-path>/work/<id>/milestone.md` for each repo in
+`workspace.json`'s `repos` array in order; use the first path found. **If
+`workspace.json` is absent**, use `work/<id>/milestone.md` at the project
+root. All three steps below run against the resolved path — §3a and §3c on
+*every* member-task ship, §3b only on the milestone's completing ship. §3a
+and §3c can run in either order — they touch the same section but never
+the same entries (§3a only ever allocates new ids off the monotonic
+`next-gap-id` counter, §3c only ever removes ids this task's own plan
+cited), so there's no ordering hazard between them.
 
 ### 3a. Flagged-finding triage
 
