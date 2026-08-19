@@ -113,6 +113,12 @@ is_bookkeeping() {
     .spine/protected-paths.conf) return 0 ;;
     .spine/install-command-patterns.conf) return 0 ;;
     .spine/core-pin.json) return 0 ;;
+    # Claude Code meta-tooling config (settings, hooks, skills, scripts) is
+    # never reviewable application source — same rationale as .spine/** above.
+    # g1-tee-waitlist testbed finding: .claude/settings.json flagged as zero-
+    # callers during confirm/decline-mutation task when the user added an
+    # additionalDirectory mid-task (the edit was uncommitted at floor time).
+    .claude/*) return 0 ;;
     *) return 1 ;;
   esac
 }
