@@ -46,9 +46,17 @@ anything and belongs at tier 1–3 instead; reconsider before committing to
 tier 4. Options 1–3 carry no deletion obligation — they don't touch the
 taxed surface.
 
-If you touched `CLAUDE.md`, recount its lines — it must stay ≤60. If it
-doesn't after the paired deletion, the deletion wasn't equivalent; find a
-better trade, don't just truncate.
+If you touched `CLAUDE.md`, recount the lines inside its
+`<!-- spine:begin -->`/`<!-- spine:end -->` block — every CLAUDE.md
+bootstrap or `/adopt` ever writes has this block (`core/skills/bootstrap/
+SKILL.md` §5, `core/skills/adopt/SKILL.md` §5), never just a bare
+template — and the ≤60 cap applies only to lines inside it. This is the
+only skill allowed to edit inside the block, and never touch anything
+below `<!-- spine:end -->` — that's the engineer's own content (real, on
+an adopted project, or simply not yet written, on a bootstrapped one) and
+it never counts against the cap. If the count doesn't hold after the
+paired deletion, the deletion wasn't equivalent; find a better trade,
+don't just truncate.
 
 Report what you converted the finding into, what (if anything) you deleted,
 and the two prior instances that made this ratchet-eligible.

@@ -1,3 +1,17 @@
+<!-- spine:begin -->
+<!--
+  Everything between spine:begin and spine:end is generated/maintained by
+  spine (core/skills/bootstrap, core/skills/adopt, /ratchet). Both
+  bootstrap and adopt always write this block with these markers — even on
+  a brand-new project where CLAUDE.md doesn't exist yet — so a team is
+  never limited later just because the file started out empty. If the
+  project already had a CLAUDE.md when /adopt ran, this block sits at the
+  top and everything below spine:end is left byte-for-byte untouched —
+  spine never owns or edits a project's own pre-existing conventions doc,
+  it just adds a small, always-loaded pointer above it. The 60-line cap
+  (see "Editing this file" below) applies only to the content inside this
+  block, never to anything below spine:end.
+-->
 # <project name>
 
 This project runs on the spine — an AI-development workflow with
@@ -44,3 +58,6 @@ prose it supersedes with a deterministic check. Don't hand-add a rule here
 that could be a test, an adapter check, or a `protected-paths.conf` entry
 instead — this file is always loaded, so every line here taxes every turn,
 forever.
+<!-- spine:end -->
+<!-- If this project had its own pre-existing CLAUDE.md content before
+     /adopt ran, it starts immediately below this line, untouched. -->

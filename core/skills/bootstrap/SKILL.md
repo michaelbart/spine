@@ -184,10 +184,16 @@ mode `warn` (Extension C §2.1 — a maintainer bumps this deliberately after
 testing a newer core; see the README's "Staying installed" section).
 
 Write `<project>/CLAUDE.md` from
-`${CLAUDE_SKILL_DIR}/../../templates/CLAUDE.md`, filled with this project's
-real task-system pointer and floor invocation. **Count its lines — hard cap
-60.** If your fill-in pushed it over, cut, don't shrink the font: this file
-is always-loaded, every line taxes every future turn.
+`${CLAUDE_SKILL_DIR}/../../templates/CLAUDE.md` verbatim — including its
+`<!-- spine:begin -->`/`<!-- spine:end -->` markers, even on a brand-new
+project with no prior content — filled with this project's real
+task-system pointer and floor invocation. Never strip the markers just
+because the file is starting from empty: the moment this engineer adds
+their own content below `spine:end`, it must never be blocked by the
+60-line cap or need a later migration into markers. **Count the lines
+inside the markers — hard cap 60.** If your fill-in pushed it over, cut,
+don't shrink the font: this file is always-loaded, every line inside the
+block taxes every future turn.
 
 Write `<project>/docs/map.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/map.md` — leave every section

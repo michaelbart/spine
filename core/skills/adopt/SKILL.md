@@ -117,8 +117,27 @@ not a second pass of reading the repository.
 
 Identical to `core/skills/bootstrap/SKILL.md` §5 — the same symlink set
 (`.claude/skills/`, `.claude/agents/`, `.claude/rules/`, `.claude/hooks`),
-the same `.claude/settings.json` hook wiring, the same `CLAUDE.md` ≤60-line
-generation and line-count audit, `docs/decisions/.gitkeep`, `work/.gitkeep`.
+the same `.claude/settings.json` hook wiring, `docs/decisions/.gitkeep`,
+`work/.gitkeep`.
+
+**`CLAUDE.md`, unlike greenfield, may already exist and already carry real
+content** (engineering conventions, a CQRS pattern, whatever the team wrote
+before spine existed) — unlike a brand-new project, `/adopt` must never
+discard or relocate it. Always write the
+`${CLAUDE_SKILL_DIR}/../../templates/CLAUDE.md` content, filled in for this
+project, as a `<!-- spine:begin -->`/`<!-- spine:end -->` block at the very
+top of the file — see the template's own header comment — **regardless of
+whether `<project>/CLAUDE.md` already exists.** If it doesn't exist yet,
+the block is simply the entire file for now; still write it with the
+markers, never as the bare unmarked template — the moment this engineer
+starts writing their own content below `spine:end`, it must never be
+limited by the 60-line cap or need a later migration into markers just
+because the file happened to start out empty. If it already exists: leave
+every byte below `<!-- spine:end -->` untouched. The 60-line cap applies
+only to what's inside the markers; content below it never counts against
+it and is never edited, reformatted, or moved to another file by this
+skill. A recalibration re-writes only the block between the markers (same
+rule `/ratchet` already follows), never the content below it.
 
 ## 6. Commit and hand off
 
