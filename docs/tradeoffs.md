@@ -289,7 +289,8 @@ headless sessions alone.
 | Incident-intake workflow | Only the commit↔task linkage (`Spine-Task:` trailer, `docs/decisions/`) was built; the workflow that walks production → blame → task → research is not |
 | Prompt regression fixtures | None |
 | Scheduled consolidation of pre-existing duplication | `clone-scan` only runs against the changed-file set — it prevents new duplication, never sweeps existing debt. horizon's real codebase is presumably carrying pre-existing duplication `clone-scan` will never surface, symmetrically with the lint-debt finding below |
-| Product-spec layer | `docs/charter.md` deliberately stays at non-negotiables/constraints, not a spec |
+| Product-spec layer | `docs/charter.md` deliberately stays at non-negotiables/constraints, not a spec. `docs/product-spec.md` and `docs/vision.md` are introduced as optional human-authored reference documents (see `/bootstrap` §6 and `/roadmap`); spine reads but never generates them |
+| `/roadmap` known-gaps retrofit for brownfield projects | When a project has pre-existing prose-format Known-gaps entries (written before format enforcement landed), `/roadmap` §1a asks the human to confirm reformatting — but a project with many malformed entries across many milestones may face significant triage before the first `/roadmap` run completes; no batch-reformat script exists yet |
 | Concurrency/stress lane | The `smoke-*` capability names are the insertion point — `smoke-run` could grow a concurrent-load mode |
 | `contract-scan` (deterministic undeclared-coupling detection) | The falsifier's design-mode/cross-repo mandate is the only thing that currently hunts undeclared coupling — a mechanical, scriptable version was deliberately not built (build prompt §2: "the registry lookup carries the value at near-zero cost") |
 | Baseline failure attribution for affected-but-not-edited repos | `contract-check` gates every affected repo unconditionally; nothing yet distinguishes a pre-existing consumer failure from one this task caused — the edited-vs-affected floor split is the insertion point |
@@ -2337,3 +2338,26 @@ not hypothetical) — stronger evidence than "principle plausible," short of a
 live run with the corrected code active. A live multi-pass `/verify` run
 under this version, especially one that exercises the focused-re-run tier for
 real, is still the open validation this needs next.
+
+
+---
+
+## g1-tee-waitlist testbed findings — floor false-positives (2026-08-19, task 20260819-confirm-decline-mutation)
+
+### Finding 1: `.claude/settings.json` not excluded from floor's `is_bookkeeping`
+
+**Observed**: When a user edited `.claude/settings.json` mid-task (adding an `additionalDirectory`) and then the floor ran with `base_ref=HEAD` (default — uncommitted changes), `git diff --name-only HEAD` included `.claude/settings.json`. The callers adapter received it as a changed file and reported "NO CALLERS FOUND" — a structural false positive, since JSON config files have no callers in code.
+
+**Fix**: Added `.claude/*) return 0 ;;` to `core/scripts/floor`'s `is_bookkeeping` function. Same rationale as `.spine/**` exclusion — Claude Code meta-tooling config is never reviewable application source.
+
+**Why this matters**: `.claude/` is the meta-tooling layer for Claude Code sessions. Any session can reasonably edit `.claude/settings.json` for environment setup, and these edits must not fail floor checks that exist to catch dead application code.
+
+### Finding 2: `*.md` documentation files not exempt from callers adapter
+
+**Observed**: Commit `e95566e` changed several `docs/decisions/*.md` files. The callers adapter received these as changed files and reported "NO CALLERS FOUND" for each — a structural false positive, since Markdown documentation files have no code-level import mechanism.
+
+**Fix**: Added `*.md)` case to both `find_callers`'s early-return block and the main processing loop's `continue` block in `.spine/adapters/callers` (project-specific). The main loop fix was the load-bearing one — `find_callers` returning exit 0 with empty stdout is identical to "no callers found" from the loop's perspective.
+
+**Why this matters**: Any decision or documentation file changed alongside code triggers this false positive. Documentation changes are not dead code. The `*.md` exemption is categorical and safe — there is no case where a Markdown file should require callers.
+
+**Lesson**: The callers adapter's exemption logic lives in two places (the `find_callers` helper AND the main loop's `continue` branches). Both must be updated for a new exemption to take effect — a fix to only one produces the same "NO CALLERS FOUND" output because the loop logic gates on the helper's stdout, not its exit code.

@@ -84,8 +84,14 @@ mid-milestone, read-only, exactly like every other check in this skill:
 3. A milestone is **complete** when every member entry is a real task id and
    each of those tasks' `work/<task-id>/state` reads `done`. Find the
    lowest-numbered milestone that is *not* complete — that's the current one.
-   If every milestone is complete, say so in one line, then fall through to
-   the menu.
+   If every milestone is complete, say so in one line. Then check
+   `docs/vision.md` — if it exists, read its planned milestone list and
+   find the first milestone title that has no corresponding
+   `work/M*/milestone.md` yet; surface it as the next step: *"Per
+   `docs/vision.md`, the next planned milestone is M<n>: <title> — run
+   `/roadmap` to plan it, or `/task <description> --milestone M<n>` to
+   start the first task directly."* If `docs/vision.md` is absent or
+   every listed milestone already has a folder, fall through to the menu.
 4. Report the current milestone plainly: its id and title (the file's `#`
    heading), and progress as "`<n>` of `<total>` member tasks done." Then name
    **the single next action**:

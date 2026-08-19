@@ -298,12 +298,18 @@ review needed.
 
 Read `work/<task-id>/milestone` (absent = this task isn't part of a
 milestone — skip §3a/§3b/§3c entirely, no note needed in the briefing). If
-present, all three steps below run against `work/<id>/milestone.md` — §3a
-and §3c on *every* member-task ship, §3b only on the milestone's completing
-ship. §3a and §3c can run in either order — they touch the same section
-but never the same entries (§3a only ever allocates new ids off the
-monotonic `next-gap-id` counter, §3c only ever removes ids this task's own
-plan cited), so there's no ordering hazard between them.
+present, resolve `work/<id>/milestone.md` using the same probe order the
+task skill used at creation time: **if `workspace.json` exists at the
+project root**, check (1) `work/<id>/milestone.md` at the project root,
+then (2) `<member-repo-path>/work/<id>/milestone.md` for each repo in
+`workspace.json`'s `repos` array in order; use the first path found. **If
+`workspace.json` is absent**, use `work/<id>/milestone.md` at the project
+root. All three steps below run against the resolved path — §3a and §3c on
+*every* member-task ship, §3b only on the milestone's completing ship. §3a
+and §3c can run in either order — they touch the same section but never
+the same entries (§3a only ever allocates new ids off the monotonic
+`next-gap-id` counter, §3c only ever removes ids this task's own plan
+cited), so there's no ordering hazard between them.
 
 ### 3a. Flagged-finding triage
 
@@ -326,16 +332,27 @@ system a gate could otherwise silently read as passing.
 **Dedup against what's already tracked.** Before asking anything, read
 `work/<id>/milestone.md`'s `## Known gaps for future member tasks` section
 (absent or empty on this milestone's first ship — nothing to dedup
-against yet). For each candidate finding, check whether its `claim`/
-`evidence.file` substantially matches an existing `gap-<n>` entry's
-`source` field (a cheap containment check against the machine-fenced
-block, not semantic matching — same fidelity `check-stale`'s own
-file-drift comparison already uses). A match: don't include it in the
+against yet). **Before treating any existing entry as well-formed, verify
+its shape:** each entry must be a fenced block with an `id: gap-<n>` line
+matching `core/templates/milestone.md`'s own format, and the file must
+have a `<!-- next-gap-id: N -->` counter. If any entry is plain prose
+(no fence, no `id:` line) or the counter is missing, **flag it to the
+human before continuing** — report each malformed entry by quoting its
+text, explain that it can't be machine-cited by future tasks, and ask
+whether to reformat it into the proper `gap-<n>` shape now (content
+unchanged, prose → fenced block) or leave it as-is and note it in
+`notes.md` as non-machine-citable. Never silently absorb malformed entries
+as if they were well-formed — the carry-forward mechanism degrades
+invisibly if you do. For each well-formed candidate, check whether its
+`claim`/`evidence.file` substantially matches an existing `gap-<n>`
+entry's `source` field (a cheap containment check against the
+machine-fenced block, not semantic matching — same fidelity `check-stale`'s
+own file-drift comparison already uses). A match: don't include it in the
 question below; instead record in `notes.md`, "already tracked as
 `gap-<n>`, not re-asked" — a suppressed question is still a decision, and
 must read differently from a finding nobody ever looked at. This is what
-keeps two sibling member tasks that independently trip the same
-underlying gap from re-triaging it twice.
+keeps two sibling member tasks that independently trip the same underlying
+gap from re-triaging it twice.
 
 **Zero candidates remain** (nothing was flagged, or everything flagged is
 already tracked): nothing further to do, no section in the briefing (§4)
@@ -400,6 +417,13 @@ without its done-definition actually being true is exactly the
 **do not let this pass silently**: if the done-definition isn't met, say
 so plainly in the briefing rather than treating milestone completion as
 automatic just because every member task individually shipped.
+
+After reporting the done-definition result, check whether
+`work/M<n+1>/milestone.md` exists (where `<n>` is this milestone's
+number). If it does, say nothing — the next milestone is already planned.
+If it does not, add one line to the briefing's **Milestone** section:
+`"M<n> complete. No M<n+1> defined yet — run /roadmap to plan the next
+slice."` This is purely informational, never a gate.
 
 ### 3c. Known-gap resolution
 

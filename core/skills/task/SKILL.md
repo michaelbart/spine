@@ -15,8 +15,12 @@ manifest forbids a new one — so it lives here, the one recurring entry
 point every real task passes through:
 
 ```
-${CLAUDE_SKILL_DIR}/../../scripts/setup --check --project <project root>
+$(readlink -f "${CLAUDE_SKILL_DIR}")/../../scripts/setup --check --project <project root>
 ```
+
+(`readlink -f` resolves the symlink so this works whether the skill is
+loaded from a direct checkout or a `.claude/skills/` symlink — `realpath`
+is an acceptable fallback if `readlink -f` is unavailable.)
 
 `ok`/`unpinned`: continue. `mismatch-warn`: show the warning, continue —
 this machine's core may enforce differently than what this project was
@@ -39,16 +43,27 @@ check in §3 — both called out inline below. **A project with no
 workspace.json runs every step below exactly as it always has** — this is
 the zero-behavioral-change guarantee at the skill level.
 
-**If `--milestone <id>` is given:** read `work/<id>/milestone.md` (design-
-stage extension, `core/templates/milestone.md`) before classifying — its
-`## Member tasks` list, `## Inter-task contracts` (what a prior member task
-in this milestone left true, which this task may assume without
-re-verifying), and `## Capability targets` all become planning context for
-every phase below. Once this task's ID is generated (step 1), replace this
-milestone's first still-`TBD` member-task line with the real task ID
-(`Edit` on `work/<id>/milestone.md` — this is bookkeeping, not a phase
-artifact). **Do this before writing `work/<task-id>/state` in step 1, not
-after** — `phase-gate` only restricts `Edit`/`Write` to a task's own
+**If `--milestone <id>` is given:** locate `work/<id>/milestone.md` as
+follows — **if `workspace.json` exists at the project root**, probe in
+order: (1) `work/<id>/milestone.md` at the workspace root; (2)
+`<member-repo-path>/work/<id>/milestone.md` for each repo in
+`workspace.json`'s `repos` array, in listed order; use the first path that
+exists. If none exists, the milestone is new — create it at the workspace
+root. **If `workspace.json` is absent**, read/create `work/<id>/milestone.md`
+at the project root as always. All reads and bookkeeping writes below
+(TBD-replacement, gap edits) happen at the resolved path, never silently
+re-rooted to the workspace root.
+
+Read the resolved `milestone.md` (design-stage extension,
+`core/templates/milestone.md`) before classifying — its `## Member tasks`
+list, `## Inter-task contracts` (what a prior member task in this milestone
+left true, which this task may assume without re-verifying), and `##
+Capability targets` all become planning context for every phase below. Once
+this task's ID is generated (step 1), replace this milestone's first
+still-`TBD` member-task line with the real task ID (`Edit` on the resolved
+`milestone.md` path — this is bookkeeping, not a phase artifact). **Do
+this before writing `work/<task-id>/state` in step 1, not after** —
+`phase-gate` only restricts `Edit`/`Write` to a task's own
 `work/<task-id>/` once that task has a `state` file reading `research` or
 `plan`; with no `state` file written yet, this edit is simply outside the
 hook's gating window, not something the hook has to carve out a special
