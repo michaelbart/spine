@@ -5,19 +5,33 @@ disable-model-invocation: true
 argument-hint: [--bump-pin]
 ---
 
-You are running `/update`. Scripts at
-`${CLAUDE_SKILL_DIR}/../../scripts/`.
+You are running `/update`.
 
 **This is setup, not a task** — it re-syncs the project's skill/agent/
 hook/rule symlinks to the current spine checkout, then reports what
 changed. No `work/<task-id>/` folder, no floor, no class.
+
+**Resolve the spine path first.** `${CLAUDE_SKILL_DIR}` may point to a
+symlink (e.g. `.claude/skills/update`) rather than the real spine
+checkout. Resolve it before using it:
+
+```bash
+SPINE_ROOT=$(dirname $(dirname $(readlink -f "${CLAUDE_SKILL_DIR}")))
+# SPINE_ROOT is now the absolute path to the spine checkout root
+# (e.g. /Users/you/spine/core → /Users/you/spine)
+# SPINE_ROOT = $(readlink -f "${CLAUDE_SKILL_DIR}")/../..  resolved
+```
+
+Use `$SPINE_ROOT` for all paths below. If `readlink -f` is unavailable,
+try `realpath` as a fallback; if both fail, ask the human for the spine
+checkout path.
 
 ## 1. Re-sync symlinks
 
 Run:
 
 ```
-${CLAUDE_SKILL_DIR}/../../scripts/setup --project <project-root>
+$SPINE_ROOT/core/scripts/setup --project <project-root>
 ```
 
 where `<project-root>` is `$CLAUDE_PROJECT_DIR` (the directory this
@@ -32,11 +46,8 @@ Read `<project-root>/.spine/core-pin.json`'s `sha` field (the spine
 commit this project was last calibrated against). Run:
 
 ```
-git -C <spine-checkout> log <pinned-sha>..HEAD --oneline
+git -C $SPINE_ROOT log <pinned-sha>..HEAD --oneline
 ```
-
-where `<spine-checkout>` is the spine directory resolved by setup (the
-parent of this skill file's own directory: `${CLAUDE_SKILL_DIR}/../..`).
 
 If the log is empty (project is already at HEAD), say:
 > Already up to date — no new spine commits since the last pin.

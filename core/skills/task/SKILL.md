@@ -15,8 +15,12 @@ manifest forbids a new one — so it lives here, the one recurring entry
 point every real task passes through:
 
 ```
-${CLAUDE_SKILL_DIR}/../../scripts/setup --check --project <project root>
+$(readlink -f "${CLAUDE_SKILL_DIR}")/../../scripts/setup --check --project <project root>
 ```
+
+(`readlink -f` resolves the symlink so this works whether the skill is
+loaded from a direct checkout or a `.claude/skills/` symlink — `realpath`
+is an acceptable fallback if `readlink -f` is unavailable.)
 
 `ok`/`unpinned`: continue. `mismatch-warn`: show the warning, continue —
 this machine's core may enforce differently than what this project was
