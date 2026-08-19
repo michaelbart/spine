@@ -98,6 +98,40 @@ mid-milestone, read-only, exactly like every other check in this skill:
 5. This is a report, not a gate (§4 applies here too) — it never opens the
    task itself, only names the command that would.
 
+#### Member-repo milestone check (workspace only)
+
+If `workspace.json` exists at the project root **and** no `.spine/current-task`
+exists at the workspace root (i.e., the workspace itself is idle), also scan
+each member repo for mid-milestone state. This is additive — the workspace's
+own milestone callout (if any) still appears first; member-repo callouts follow
+below it.
+
+For each entry in `workspace.json`'s `repos` array, take its `path` field and:
+
+1. Glob `<path>/work/M*/milestone.md`. If none exist (or `.spine/` is absent),
+   skip this repo silently.
+2. Apply the same milestone-progress logic as steps 2–4 above, but **against
+   the member repo's own task files** (`<path>/work/<task-id>/state`, etc.).
+3. Find the lowest-numbered incomplete milestone and report it clearly
+   attributed to the member repo. Use this format:
+
+   > In member repo `<repo-name>` (M*n*, *x* of *total* tasks done): next task
+   > is TBD — open it here with `/task <description> --milestone M*n*`
+
+   or, if the next task is a real-but-open task id:
+
+   > In member repo `<repo-name>` (M*n*, *x* of *total* tasks done): next task
+   > is `<task-id>` (*phase*) — switch to that repo and run `/task` to resume.
+
+   `<repo-name>` is the last path segment of `path` (e.g. `waitlist` from
+   `../g1-svc-api/modules/waitlist`).
+
+4. If every milestone in the member repo is complete, skip it silently.
+
+This check is read-only and purely additive. Errors accessing a member repo
+(path not found, no `.spine/`, no `work/`) are silently skipped — never
+surfaced as errors to the engineer.
+
 After the milestone callout (or immediately, if there is none), give the
 short, plain menu — one sentence each, the starting move first. List
 only commands that exist in this install (they're symlinked under
