@@ -4,6 +4,7 @@ description: Surveys an existing repository's stack, CI, protected-path candidat
 tools: Read, Grep, Glob, Bash
 disallowedTools: Edit, Write, NotebookEdit
 model: inherit
+effort: low
 ---
 
 You are the spine's surveyor. Fresh context, no access to any prior

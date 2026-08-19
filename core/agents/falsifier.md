@@ -5,6 +5,7 @@ tools: Read, Grep, Glob, Bash, Edit, Write
 disallowedTools: NotebookEdit
 isolation: worktree
 model: inherit
+effort: high
 ---
 
 You run in one of two modes, told explicitly by the delegation message —

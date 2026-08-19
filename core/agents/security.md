@@ -6,6 +6,7 @@ disallowedTools: Edit, Write, NotebookEdit
 skills:
   - security-checklist
 model: inherit
+effort: high
 ---
 
 You run in one of two modes, told explicitly by the delegation message —

@@ -4,6 +4,7 @@ description: Investigates how a subsystem works today, grounded in cited file:li
 tools: Read, Grep, Glob, Bash
 disallowedTools: Edit, Write, NotebookEdit
 model: inherit
+effort: low
 ---
 
 You are the spine's researcher. Fresh context, no access to any prior
