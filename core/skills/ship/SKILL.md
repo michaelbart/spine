@@ -41,14 +41,34 @@ already-adversarially-verified work with nothing left to stash (disclosed
 fix — see docs/tradeoffs.md's g1-tee-waitlist testbed findings; found live
 when a `callers` adapter fix the security adversary's own review had
 already driven and `verify.md` already documented as `FIXED` had no other
-home to be "expected" from). Only a file covered by **none of the three**
-is genuine unexplained drift. If every drifted file is expected by this
-rule: `ledger set <task-id> ship_time_regrounding "check-stale: stale
-(expected — matches predicted-touch/deviations/verify-fixed)"` and
-proceed normally — not a halt, not a deviation, does not touch the
-circuit breaker.
+home to be "expected" from); or (d) it is `work/<id>/milestone.md` for the
+milestone this task itself belongs to (`work/<task-id>/milestone` names
+`<id>`), and every changed line `git diff <sha> -- work/<id>/milestone.md`
+shows traces to this task's own mandated bookkeeping in that shared file —
+the classify-time replacement of the milestone's first `TBD` member-task
+line with this task's own id (`core/skills/task/SKILL.md`'s `--milestone`
+header note, made before research even ran) and/or a `## Known gaps for
+future member tasks` entry whose `source` field cites this task's own
+`work/<task-id>/verify.md` (the edit §3a below makes at ship time,
+possibly made early during `/verify` under the same triage convention). A
+milestone-tagged task's `research.md` citing `work/<id>/milestone.md` as
+grounding — the expected case, since `core/skills/task/SKILL.md` loads it
+as planning context for research to read — makes this guaranteed on the
+classify-time edit alone, on every such task, not an edge case (disclosed
+fix — see docs/tradeoffs.md's g1-tee-waitlist testbed findings). A changed
+line that isn't one of those two things — another member task's own `TBD`
+slot resolved, a different task's Known-gaps entry, an edit to `##
+Inter-task contracts` or `## Capability targets` — is a neighbor's real
+change and stays fully driftable; (d) accounts for only this task's own
+hand in a shared file, never the file wholesale. Only a file covered by
+**none of the four** is genuine unexplained drift. If every drifted file
+is expected by this rule: `ledger set <task-id> ship_time_regrounding
+"check-stale: stale (expected — matches
+predicted-touch/deviations/verify-fixed/own-milestone-edit)"` and proceed
+normally — not a halt, not a deviation, does not touch the circuit
+breaker.
 
-If any drifted file is **not** covered by either check: this is a real
+If any drifted file is **not** covered by any of these checks: this is a real
 deviation, not a soft warning — append a
 `work/<task-id>/deviations.md` record, tier `halt` (grounding drifted
 since this was last verified, the same halt-tier build prompt §2.4

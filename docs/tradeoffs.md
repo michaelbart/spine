@@ -1982,6 +1982,40 @@ predicted-touch and deviations.md already establish, just recorded in a
 third place this project's own conventions already use for exactly this
 situation.
 
+**11. `/ship`'s ship-time re-grounding still had no recognized source for
+a `--milestone` task's own mandated edits to the milestone's own shared
+`milestone.md`.** Found in a different project (`tgml`,
+`20260819-anonymous-auth-end-to-end`): `core/skills/task/SKILL.md`'s
+`--milestone` handling loads `work/<id>/milestone.md` as planning context,
+so a research.md that grounds a claim on it (the expected case) cites it
+under `files:` per the researcher's own SHA-grounding mandate. Every such
+task also *edits* that same file earlier in its own lifecycle — the
+classify-time replacement of the milestone's first `TBD` member-task line
+with this task's own id, unconditionally required by `/task`'s own
+`--milestone` header note, plus optionally a `## Known gaps for future
+member tasks` entry for a flagged (not fixed) adversary finding, the same
+edit §3a makes at ship time. Neither edit is a neighbor's change, but
+neither was covered by any of the three recognized sources (predicted-
+touch, deviations.md, verify-fixed) — findings 3/6/10's own fix for
+exactly this false-positive shape, in other words, didn't yet reach a
+shared bookkeeping file a milestone task is required to edit outside its
+own `work/<task-id>/` folder (the "own-task-folder exemption" `check-stale`
+already carries for files under a task's own folder doesn't apply here by
+construction — `milestone.md` lives under the *milestone's* folder,
+shared across every member task, not this task's own). Left unfixed, this
+is a guaranteed false-positive halt-tier deviation on every `--milestone`
+task, capable of firing the three-deviation circuit breaker over the
+task's own required bookkeeping rather than any real external
+invalidation. **Fix (core, `core/skills/ship/SKILL.md` §0)**: added a
+fourth recognized source, narrower than exempting the file wholesale (a
+genuine neighbor edit to the milestone's member-task list or inter-task
+contracts must stay driftable) — `work/<id>/milestone.md` for the
+milestone this task itself belongs to is expected, not drift, only when
+every changed line traces to this task's own classify-time `TBD`
+replacement and/or a Known-gaps entry whose `source` field cites this
+task's own `verify.md`; any other changed line in the file is still a
+neighbor's real change and still counts as drift.
+
 ## `spine/work/.build/` — keep it
 
 Recommend keeping this directory as install history, per the build

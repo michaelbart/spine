@@ -70,6 +70,21 @@
 # citing a different task's research.md as inter-task context) is
 # unaffected and stays fully driftable.
 #
+# **`work/<milestone-id>/milestone.md` is deliberately NOT exempted here.**
+# A `--milestone` task's own research.md commonly cites its milestone's
+# shared milestone.md as grounding (loaded as planning context by
+# `core/skills/task/SKILL.md`), and that same task mandatorily edits that
+# file earlier in its own lifecycle (classify-time TBD-replacement,
+# possibly a Known-gaps entry) — but the file also legitimately changes
+# under a *different* member task's hand over the milestone's life, so a
+# script-level path exemption here would hide real neighbor drift the
+# same way the own-task-folder exemption above cannot risk hiding. This
+# script reports milestone.md as STALE like any other grounding file;
+# `core/skills/ship/SKILL.md` §0's own cross-check (source (d)) does the
+# finer, line-level distinction between this task's own mandated edits and
+# a neighbor's — see docs/tradeoffs.md's g1-tee-waitlist testbed findings,
+# finding 11.
+#
 # Usage: check-stale <research.md-path> [--project <path>]
 set -uo pipefail
 
