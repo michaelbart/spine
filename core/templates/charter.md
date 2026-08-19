@@ -15,6 +15,14 @@
 > resolution that cites a line below must end by editing that line or
 > reaffirming it here, dated, in the resolution record — never silently.
 
+Source documents: none | <path>[, <path>...]
+<!-- Real pre-charter files this draft was actually distilled from (a
+     HANDOFF.md, a product spec `/adopt`'s surveyor read) — real paths,
+     comma-separated, or "none" for a `/bootstrap` interview with no source
+     file. A research task greps whatever's named here for material this
+     charter's own four buckets below didn't capture — keep it accurate,
+     don't leave a stale path after a source doc is deleted or renamed. -->
+
 ## What this product is
 
 <!-- One paragraph. What it does, who it's for, in plain language. -->
@@ -38,6 +46,17 @@
 
 <!-- What this product is not trying to be. Keeps "why don't we just—"
      conversations short. -->
+
+-
+
+## Sequencing constraints
+
+<!-- Build-order / dependency rules — "X must exist (or ship) before Y" —
+     that are neither an invariant (non-negotiables) nor a limit (hard
+     constraints), just a process rule a human explicitly decided. If this
+     was distilled from a source document (see "Source documents:" above),
+     cite it. Empty is a legitimate answer when there genuinely are none —
+     don't invent one to fill the section. -->
 
 -
 

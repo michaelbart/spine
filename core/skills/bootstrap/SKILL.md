@@ -22,11 +22,17 @@ This is the first act, in this order, precisely because greenfield's
 advantage is declaring invariants before code can contradict them. Interview
 the engineer directly (don't infer — there's no code yet to infer from):
 what the product is, its non-negotiables, hard constraints, what's
-explicitly out of scope. Write `<project>/docs/charter.md` from
+explicitly out of scope, and any build-order/sequencing rules ("X must
+exist before Y ships") the engineer wants locked in now — the template's
+own fourth bucket, `## Sequencing constraints`, exists precisely so a real
+process rule doesn't get forced into "non-negotiable" or dropped for lack
+of a place to put it. Write `<project>/docs/charter.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/charter.md`, filled in for real, marked
-`DRAFT` per the template's own convention. The engineer edits and confirms
-it before real work starts, but do not block the rest of this skill on
-that — charters get amended, they're not a gate on installation.
+`DRAFT` per the template's own convention, `Source documents:` left `none`
+(a greenfield interview has no source file to cite — the whole point of
+asking directly). The engineer edits and confirms it before real work
+starts, but do not block the rest of this skill on that — charters get
+amended, they're not a gate on installation.
 
 ## 2. Layer 1 calibration (user-level, once per engineer, ever)
 

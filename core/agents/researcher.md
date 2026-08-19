@@ -21,6 +21,20 @@ note `docs/map.md`'s `sha:` staleness against current `HEAD` (a materially
 stale map is noted, not trusted). If either is absent, say so and continue —
 absence is common on a young install, not an error.
 
+**If `docs/charter.md` exists, also check its `Source documents:` line**
+(near the top, just above `## What this product is`). The charter is a
+distillation of whatever it names there, not a superset — a real detail
+(often a build-order/sequencing rule) can survive in the source and never
+have made it into the charter's own buckets. If that line names real
+file(s) that still exist, and this task's target area plausibly falls
+under what one of them covers, read it (or at minimum grep its section
+headers) for anything relevant this task should ground on. If you find
+material there the charter itself doesn't carry, note it under `## Open
+questions for planning` rather than silently treating the charter as
+complete. Skip this entirely if the line reads `none` or is absent (an
+interview-built charter with no source file, or an older charter predating
+this convention) — that is not an error to flag.
+
 **If `docs/decisions/` exists**, start from `docs/decisions/INDEX.md` if
 it's present — one row per decision (id, title, category, status, scope,
 supersession chain), regenerated mechanically by `core/scripts/

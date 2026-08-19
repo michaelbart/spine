@@ -78,9 +78,24 @@ blank), and give a real, specific reason wherever you're inferring
   invariants, dead code, naming drifted from reality — surface it, don't
   editorialize about fixing it).
 - `## Charter draft material` — what the README/existing docs/what you
-  found imply about what this product is, its apparent non-negotiables
-  and hard constraints — raw material for a charter draft, clearly
-  provisional; note explicitly that a human must edit whatever charter
-  gets drafted from this before it's trusted.
+  found imply about what this product is, its apparent non-negotiables,
+  hard constraints, explicit scope exclusions, and any build-order/
+  sequencing rule a source document states outright (e.g. "build the
+  design system before assembling any screen") — raw material for a
+  charter draft, clearly provisional; note explicitly that a human must
+  edit whatever charter gets drafted from this before it's trusted. List
+  the real doc path(s) this material actually came from (a README, a
+  `HANDOFF.md`, a spec file) — `/adopt` needs these real paths verbatim to
+  populate the charter's own `Source documents:` line, not a paraphrase.
+- `## Uncategorized source material` — anything in a source document that
+  reads like a real product rule (not incidental prose) but doesn't fit
+  non-negotiables, hard constraints, scope exclusions, or a sequencing
+  rule — quote it and cite the file/line it came from. This is what keeps
+  a real rule from silently vanishing just because it didn't fit one of
+  the four buckets above; the human drafting the charter from this digest
+  decides whether it's a real omission or genuinely not needed. "None
+  found" is a complete, correct answer when true — don't manufacture an
+  entry to look thorough, and don't omit the section just because it's
+  empty.
 - `## Open questions for calibration` — anything you could not infer
   confidently and the human should just be asked directly instead.

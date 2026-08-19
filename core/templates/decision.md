@@ -6,8 +6,8 @@ existing `docs/decisions/D-<n>-*.md`, or 1 if none exist yet). The `- Id:`
 field below is authoritative if a filename and this field ever disagree
 (they must not — but nothing besides discipline enforces that on rename).
 
-Two entry paths write into this one store — never a third, and never a
-second, parallel decision-document format elsewhere:
+Three entry paths write into this one store — never a fourth, and never a
+parallel decision-document format elsewhere:
 
   - **/design**, before any code exists. Authored speculatively, by
     design — status starts `proposed`, moves to `adopted` once design
@@ -24,6 +24,19 @@ second, parallel decision-document format elsewhere:
     task's own diff), `/ship` flips it straight to `implemented` in the
     same edit, `## Implementing paths` pre-filled — there is no window
     where a ship-distilled decision sits at `adopted` un-implemented.
+  - **Human-directed, disclosed** (any spine session, mid-project): a human
+    explicitly asks to record a standalone decision that fits neither of
+    the above — most often a process/sequencing rule discovered after
+    design but never distilled from any task's own deviation (e.g. "the
+    design system must be built before any screen is assembled"). Written
+    directly as `adopted` (no design review to run, no diff to distill
+    from — same reasoning the `/ship`-distilled path above already uses),
+    `Category: other` (the only entry path allowed to use it — the
+    six-category discipline above still binds `/design` alone, never
+    invent a seventh named category there), `Source: human decision
+    (<date>)`. Same rule `/design` already states applies here too: never
+    write one because a plausible answer occurred to you — only because
+    the human explicitly asked for this to be recorded.
 
 Consumers, and what each needs the `- Id:` field to resolve exactly:
   - the research skill greps this directory for decisions touching its
@@ -69,7 +82,7 @@ change must mean the decision changed, never that someone tidied it.
 - Status: proposed | adopted | implemented | superseded
 - Category: state-management | persistence | module-boundaries | error-handling | auth-model | repo-topology | other
 - Date: <yyyy-mm-dd>
-- Source: design session (`docs/charter.md`) | task `<task-id>` (`work/<task-id>/`)
+- Source: design session (`docs/charter.md`) | task `<task-id>` (`work/<task-id>/`) | human decision (<yyyy-mm-dd>)
 - Scope: <glob>[, <glob>...]  <!-- paths/modules this decision governs — greppable, consumed by class escalation and future rules -->
 - Supersedes: D-<id> | none
 - Superseded-by: D-<id> | none
@@ -93,7 +106,10 @@ change must mean the decision changed, never that someone tidied it.
      there wasn't a designed set of alternatives to weigh — just a
      deviation that got resolved — write "n/a — distilled from a resolved
      deviation, see work/<task-id>/deviations.md" rather than inventing
-     alternatives that were never actually considered. -->
+     alternatives that were never actually considered. For a human-directed
+     record, write the real alternatives the human actually named when
+     asked, or "n/a — ad hoc process decision" if none were weighed —
+     never invent one either. -->
 
 ## Consequences
 

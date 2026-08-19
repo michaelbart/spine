@@ -104,10 +104,20 @@ and the current timestamp.
 
 Draft `<project>/docs/charter.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/charter.md`, inferred from the
-surveyor's `## Charter draft material` section — marked `DRAFT`. **State
-plainly to the engineer that this draft must be edited before it's
-trusted** — an inferred charter is a starting point, not a substitute for
-the engineer's own non-negotiables.
+surveyor's `## Charter draft material` section — marked `DRAFT`, its
+`Source documents:` line filled in with the real doc path(s) that section
+named (or left `none` if it found no real source document, only inference
+from code structure). **State plainly to the engineer that this draft must
+be edited before it's trusted** — an inferred charter is a starting point,
+not a substitute for the engineer's own non-negotiables. If the surveyor's
+digest carries a non-empty `## Uncategorized source material` section, call
+it out to the engineer explicitly and separately from the rest of the
+handoff — these are real statements from a source document that didn't fit
+any of the charter's four buckets; the engineer decides whether each
+belongs in the charter, in a `docs/decisions/` record, or nowhere. Don't
+let this list quietly ride along inside the general "edit this draft"
+instruction — a human skimming the draft charter has no way to notice
+something that was never written into it at all.
 
 The survey itself is already bounded at the source (§0.5, and the
 surveyor's own instructions) — this step is just writing up what came back,
