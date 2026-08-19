@@ -152,6 +152,25 @@ its own line, the recorded reason included. Source: the ledger +
 approval.json, same fields briefing.md's own "Overrides & bypasses"
 section reads.>
 
+<!-- Omit "Milestone" entirely when this task isn't part of one. Present
+     for exactly the same reason "Adversaries" is a floor rule above: a
+     `checkpointed`/`auto` task's human touchpoint is this PR, not
+     briefing.md, so a flagged finding drafted for milestone.md but not
+     yet applied (/ship §3a) must be visible here too, not only in a file
+     that autonomy's reviewer may never open. -->
+
+**Milestone:** <Which milestone, and (only on the completing ship)
+whether its Done-definition is met by real state, said plainly either
+way. This task's own flagged-finding triage result (/ship §3a): which
+findings (if any) were carried into `milestone.md`'s Known gaps, with
+their new `gap-<n>` ids (`guided`), or the drafted "Proposed milestone gap
+entries — undecided" list awaiting this PR's own reviewer to triage
+(`checkpointed`/`auto`) — never omitted just because §3a found nothing to
+carry. Also this task's own known-gap resolution result (/ship §3c):
+which `gap-<n>` entries (if any) this task's own plan cited and closed out
+of `milestone.md`, "none cited" otherwise. Source: same fields
+briefing.md's own "Milestone" section reads.>
+
 <!-- Multi-repo only (Extension B) — omit entirely on a single-repo task. -->
 
 **Contracts:** <Contracts touched, their `spec_change` classification,

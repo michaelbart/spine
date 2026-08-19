@@ -444,7 +444,20 @@ this document quotes scripts, it doesn't paraphrase them:
   kept/dropped counts (dropped count comes from `verdict-filter`'s own
   stderr line, capture it when you run step 3) — or, for a reused verdict,
   `REUSED (blast radius unchanged, prior clean verdict from <ran_at>)` in
-  place of that line, per step 3's skip condition.
+  place of that line, per step 3's skip condition. **For every kept verdict,
+  as you decide how to word its bullet, also write that decision back**
+  (`core/ADAPTER-CONTRACT.md §5`'s `disposition` field) into
+  `work/<task-id>/artifacts/<agent>-verdict.json`: `"fixed"` if this task's
+  own diff resolved it (whether before this assembly or in an earlier round
+  superseded by this one), `"not_fixed"` for anything deliberately left —
+  out of scope, a design question for later, or genuinely still open. This
+  is the same call already being made in the bullet's own prose ("—
+  fixed.", "— flagged, not fixed.", etc.) — one more field recording it
+  mechanically, not a second judgment. Leaving the field off a verdict is
+  never equivalent to marking it fixed; `/ship`'s flagged-finding triage
+  (`core/skills/ship/SKILL.md` §3a) treats an absent field as `not_fixed`
+  specifically so a verdict this step forgot to mark never silently reads
+  as resolved.
 - Capability gaps: every capability in `.spine/capabilities.json` marked
   `unavailable`/`not-applicable` that this class would otherwise have run
   (Class 2 also implies `mutate` and, per the migration lane,

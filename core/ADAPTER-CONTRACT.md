@@ -439,6 +439,22 @@ stronger check beyond shape: `decision_id` must resolve to exactly one real
 cheap to fabricate compared to a real `file:line` or a real command's
 captured output, so it earns the extra check.
 
+**`disposition` (written by `/verify`, never by the adversary itself)**: once
+a kept verdict has been acted on — fixed, or deliberately left for later —
+`/verify` §5 adds `"disposition": "fixed" | "not_fixed"` to that verdict
+object in `work/<task-id>/artifacts/<agent>-verdict.json`, the same moment
+it decides how to word the matching bullet in `verify.md`'s prose (no new
+judgment, one more field recording a decision already made). Absent means
+`not_fixed` — a verdict `/verify` never got around to marking must never
+silently read as resolved. The adversary's own raw output never sets this
+field; `verdict-filter` passes it through unmodified either way, since it
+validates verdict shape at dispatch time, before any fix decision exists.
+This is what lets `/ship` (`core/skills/ship/SKILL.md` §3a — flagged-
+finding triage, `docs/proposals/flagged-finding-carryforward.md`) identify
+kept-but-unresolved findings mechanically instead of re-parsing
+`verify.md`'s free prose, which uses different wording for the same
+outcome from one task to the next.
+
 **Cross-repo verdicts (Extension B)**: a falsifier run against a multi-repo
 task's diff (`core/agents/falsifier.md`'s "Cross-repo mandate") cites
 undeclared coupling using the existing `file_line` kind, no new evidence

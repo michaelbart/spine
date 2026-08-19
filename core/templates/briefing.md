@@ -86,7 +86,16 @@ single summarizing line.>
 noting which milestone and that member tasks remain. If it is: which
 milestone, and whether its Done-definition is actually met by real state
 right now — say so plainly if it isn't; a milestone reported done that
-silently isn't is exactly the failure mode this line exists to make loud.>
+silently isn't is exactly the failure mode this line exists to make loud.
+Either way, also this task's own flagged-finding triage result (/ship
+§3a): which findings (if any) were carried into `milestone.md`'s Known
+gaps, with their new `gap-<n>` ids (`guided`), or the drafted "Proposed
+milestone gap entries — undecided" list awaiting the human's PR-time
+triage (`checkpointed`/`auto`) — never omitted just because §3a found
+nothing to carry; "zero flagged findings" and "N findings, none carried"
+are different facts. And this task's own known-gap resolution result
+(/ship §3c): which `gap-<n>` entries (if any) this task's own plan cited
+and closed out of `milestone.md`, "none cited" otherwise.>
 
 **In six months you'll want to know:** <One sentence. The non-obvious
 thing — the constraint honored, the trap avoided, the decision that looks

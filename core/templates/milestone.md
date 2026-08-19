@@ -14,7 +14,11 @@ planning context (core/skills/task/SKILL.md); member tasks otherwise plan,
 get approved, implement, verify, and ship exactly as any task does — this
 file is not a second approval gate, the human still approves each member
 task's own plan. `/ship` on the *final* member task additionally checks
-this file's `## Done-definition` before completing.
+this file's `## Done-definition` before completing. `/ship` on *every*
+member task additionally runs flagged-finding triage (§3a) against that
+task's own `verify.md`, and known-gap resolution (§3c) against that task's
+own `plan.md` — see `## Known gaps for future member tasks` below for
+both.
 -->
 
 # Milestone `<milestone-id>`: <title>
@@ -34,6 +38,44 @@ this file's `## Done-definition` before completing.
      handoff between this milestone's own member tasks. Not the same thing
      as a cross-repo contract (Extension B's ws/contracts/<name>/) — those
      are between repos, these are between tasks in one repo. -->
+
+## Known gaps for future member tasks
+
+<!-- MACHINE: known-gaps
+
+     Populated only by /ship's flagged-finding triage (core/skills/ship/
+     SKILL.md §3a, docs/proposals/flagged-finding-carryforward.md) — never
+     hand-invented speculatively. Each entry traces to one real
+     `disposition: "not_fixed"` adversary verdict, kept by verdict-filter,
+     from some member task's own verify.md, and the human explicitly chose
+     to carry it here rather than let it stay unexplained (a flagged
+     finding is not auto-promoted; not every flagged finding is a real
+     cross-task gap — see the proposal's own worked-example counterexample).
+
+     One entry per gap, a stable id (`gap-<n>`) so a later member task's
+     own /ship can remove this exact entry by id once that task's plan
+     explicitly resolves it (§6 of the proposal) — never remove or reword
+     an entry any other way, and never let this section grow silently
+     unbounded: a gap nobody's plan ever cites stays listed, which is the
+     honest state, not a bug.
+
+     `next-gap-id` below is a monotonic counter, never derived from
+     "highest id currently present" — a removed entry must never free its
+     id for reuse (a stale citation to a resolved gap-3 and a brand-new,
+     unrelated gap-3 would be genuinely ambiguous to anyone reading a past
+     task's plan.md later). Allocating an id increments it; removing an
+     entry never decrements it.
+
+     Shape per entry:
+     - id: gap-<n>
+       source: work/<task-id>/verify.md (<agent>, <severity>)
+       <prose: what's safe today, what breaks it, which future member task
+       plausibly closes it and why — drafted from the verdict's own
+       claim/evidence plus this file's own Member tasks list, never copied
+       verbatim from verify.md's adversary-voice prose>
+-->
+
+<!-- next-gap-id: 1 -->
 
 ## Capability targets
 

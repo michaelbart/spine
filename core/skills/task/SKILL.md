@@ -362,8 +362,16 @@ Inter-task contracts` — what a prior member task already left true is a
 real constraint on this plan, not optional context; if the plan needs to
 violate one, that's a deviation against the milestone itself and belongs
 in the gist's own rejected-alternative reasoning, said explicitly, not
-silently contradicted. If any decision from `/design` grounds this plan,
-add the `## Grounds on decisions` section per `core/templates/plan.md`.
+silently contradicted. Also check that milestone's `## Known gaps for
+future member tasks`: if this plan's approach actually closes one of its
+`gap-<n>` entries, add the `## Resolves known gaps` section per
+`core/templates/plan.md` naming it — this is what lets `/ship` §3c remove
+the entry once the task ships (`docs/proposals/
+flagged-finding-carryforward.md` §6); a gap this plan resolves without
+citing it stays listed, which is a missed cleanup, not a wrong one, so
+don't invent a citation just to clear the section. If any decision from
+`/design` grounds this plan, add the `## Grounds on decisions` section per
+`core/templates/plan.md`.
 
 Check every `## Predicted touch` entry against `.spine/protected-paths.conf`
 — single-repo, that's always this project's own file. **Multi-repo: check

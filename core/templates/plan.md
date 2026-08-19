@@ -189,3 +189,22 @@ grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan
 
 <expand | migrate | contract | additive>
 <!-- /MACHINE -->
+
+<!-- MACHINE: resolves-known-gaps -->
+## Resolves known gaps
+
+<!-- Optional — omit this whole section if this plan doesn't close out any
+     entry from work/<milestone-id>/milestone.md's own `## Known gaps for
+     future member tasks` (docs/proposals/flagged-finding-carryforward.md
+     §6). Only for a milestone member task (`--milestone <id>` given).
+     /ship reads this to know which gap-<n> fenced entries to remove from
+     milestone.md once this task's diff has actually shipped — never
+     inferred from prose, only from this explicit citation, same
+     "no implicit resolution" discipline `docs/proposals/
+     flagged-finding-carryforward.md` §6 already commits to. Citing a gap
+     here that this plan's own `## The gist` doesn't actually address is
+     caught the same way an unfounded `## Grounds on decisions` citation
+     would be — at human plan review, not mechanically. -->
+
+- gap-<n> — <how this plan's approach closes it>
+<!-- /MACHINE -->

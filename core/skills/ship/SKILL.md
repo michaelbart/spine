@@ -274,15 +274,99 @@ cited no decision and distilled none — the index doesn't need
 regenerating when the store it summarizes hasn't changed. Mechanical, no
 review needed.
 
-## 3. Milestone done-definition
+## 3. Milestone bookkeeping
 
 Read `work/<task-id>/milestone` (absent = this task isn't part of a
-milestone — skip this step entirely, no note needed in the briefing). If
-present, read `work/<id>/milestone.md`'s `## Member tasks` list. For this
-task's own id, treat it as done — the merge gate (§1) already passed and
-§6 is about to set `state` = `done`. For every *other* listed member task,
-check its real `work/<other-task-id>/state`. If any entry is still `TBD`,
-or any other member task's state isn't actually `done`, this isn't the
+milestone — skip §3a/§3b/§3c entirely, no note needed in the briefing). If
+present, all three steps below run against `work/<id>/milestone.md` — §3a
+and §3c on *every* member-task ship, §3b only on the milestone's completing
+ship. §3a and §3c can run in either order — they touch the same section
+but never the same entries (§3a only ever allocates new ids off the
+monotonic `next-gap-id` counter, §3c only ever removes ids this task's own
+plan cited), so there's no ordering hazard between them.
+
+### 3a. Flagged-finding triage
+
+`docs/proposals/flagged-finding-carryforward.md` — the routing gap this
+step closes: an adversary-confirmed, cross-task-relevant finding that gets
+deliberately flagged rather than fixed in this task's own `/verify` pass
+has, until now, had no path into the one place a future member task's
+planning actually looks (`## Inter-task contracts`/`## Known gaps` in
+`milestone.md`, loaded by `core/skills/task/SKILL.md`'s `--milestone`
+handling) — it stayed fully documented in this task's own `verify.md`/
+`notes.md` and fully invisible to whoever plans the task that needs it.
+
+**Gather.** Read every `work/<task-id>/artifacts/<agent>-verdict.json` this
+task's `/verify` produced (falsifier always, security per §2's adversary
+count). Collect every kept verdict whose `disposition`
+(`core/ADAPTER-CONTRACT.md §5`) is `"not_fixed"` or absent — absent is
+never treated as resolved, same discipline as everywhere else in this
+system a gate could otherwise silently read as passing.
+
+**Dedup against what's already tracked.** Before asking anything, read
+`work/<id>/milestone.md`'s `## Known gaps for future member tasks` section
+(absent or empty on this milestone's first ship — nothing to dedup
+against yet). For each candidate finding, check whether its `claim`/
+`evidence.file` substantially matches an existing `gap-<n>` entry's
+`source` field (a cheap containment check against the machine-fenced
+block, not semantic matching — same fidelity `check-stale`'s own
+file-drift comparison already uses). A match: don't include it in the
+question below; instead record in `notes.md`, "already tracked as
+`gap-<n>`, not re-asked" — a suppressed question is still a decision, and
+must read differently from a finding nobody ever looked at. This is what
+keeps two sibling member tasks that independently trip the same
+underlying gap from re-triaging it twice.
+
+**Zero candidates remain** (nothing was flagged, or everything flagged is
+already tracked): nothing further to do, no section in the briefing (§4)
+— this is a gate that correctly never applied, not a degraded one.
+
+**One or more candidates remain — branch on `work/<task-id>/autonomy`**
+(absent = `guided`, same convention §5's PR-opening step already uses):
+
+- **`guided`** — ask now, interactively, before proceeding to §3b/§4: for
+  each candidate, show severity + claim + evidence pointer (file:line or
+  command), and ask which should carry into `milestone.md`'s Known gaps
+  for future member tasks to see — "none" is a complete, valid answer, not
+  a thing to talk the human out of. This blocks the same way plan approval
+  and the Class 2 second-approver stop already block; it is not a merge
+  gate (§1's two checks are unchanged, adversary findings still never fail
+  `/verify` by that skill's own report step), just a question that has to
+  be asked before this task's ship completes.
+- **`checkpointed` / `auto`** — no scheduled stop exists here, so don't
+  manufacture one. Draft the candidate entries (same shape the "apply the
+  human's picks" step below produces for `guided`) into a new "Proposed
+  milestone gap entries — undecided" section of the briefing (§4) and the
+  PR description (§4a),
+  explicitly not yet applied to `milestone.md`. The human's post-hoc PR
+  review — the same relocated touchpoint these autonomies already use for
+  plan review — is where these get triaged, by hand-editing `milestone.md`
+  or leaving them. Never write to the always-loaded `milestone.md` without
+  a human having actually looked, whether that look happens now (`guided`)
+  or at PR review.
+
+**For `guided`, apply the human's picks now.** For each carried finding:
+allocate the next id from `milestone.md`'s own `next-gap-id` counter
+(`core/templates/milestone.md`'s comment — a monotonic counter, never
+"highest id currently present," so a gap-<n> §3c already removed this
+milestone's history is never reused for something unrelated), then
+increment that counter in the file. Append a new fenced entry per
+`core/templates/milestone.md`'s own comment — `source` = this task's
+`verify.md` path plus the agent/severity, prose drafted from the verdict's
+own `claim`/`evidence` plus `milestone.md`'s `## Member tasks` list (never
+copied verbatim from `verify.md`'s adversary-voice prose, which is written
+for an attacker's audience, not a future planner's). For each declined
+finding: record the decision and its stated reason in `notes.md` — a
+finding the human looked at and declined must read differently,
+permanently, from one nobody ever asked about.
+
+### 3b. Milestone done-definition
+
+Read `work/<id>/milestone.md`'s `## Member tasks` list. For this task's
+own id, treat it as done — the merge gate (§1) already passed and §6 is
+about to set `state` = `done`. For every *other* listed member task, check
+its real `work/<other-task-id>/state`. If any entry is still `TBD`, or any
+other member task's state isn't actually `done`, this isn't the
 milestone's final ship — say nothing further, just note in passing (one
 line, not a section) that member tasks remain. **If every member task is a
 real id and every one is done** (by the rule above), this is the
@@ -296,6 +380,25 @@ without its done-definition actually being true is exactly the
 **do not let this pass silently**: if the done-definition isn't met, say
 so plainly in the briefing rather than treating milestone completion as
 automatic just because every member task individually shipped.
+
+### 3c. Known-gap resolution
+
+Read `work/<task-id>/plan.md`'s `## Resolves known gaps` section
+(`core/templates/plan.md`, absent entirely if this plan cited none — skip
+this step in that case, same as `## Grounds on decisions` in §2). For each
+`gap-<n>` bullet there, remove that exact fenced entry from
+`work/<id>/milestone.md`'s `## Known gaps for future member tasks` — find
+by id, delete only that entry, leave `next-gap-id` and every other entry
+untouched (never renumber remaining entries; a gap's id is permanent once
+allocated, same reasoning `core/templates/milestone.md`'s own comment
+gives for never reusing one). If a cited `gap-<n>` doesn't actually exist
+in `milestone.md` (a stale citation, or a typo in the plan), don't fail
+the ship over it — note it in `notes.md` ("plan cited gap-<n>, not found
+in milestone.md — nothing removed") and move on; a plan-time citation
+error is a plan-quality issue for a future human reader to notice, not a
+merge-gate concern (§1's two checks are unchanged). This is deliberately
+the mirror of §2's decision-status-flip mechanic: find by id, edit exactly
+that one thing, nothing else in the file changes.
 
 ## 4. Write the delta briefing
 
@@ -340,9 +443,16 @@ this file quotes, it doesn't re-derive:
   "approvals" line that could bury it. A ship-time `claims-check --diff`
   `[UNDECLARED]` collision is a halt-tier deviation, not an override —
   it belongs in "What surprised us," not here.
-- **Milestone** (omit entirely if this task isn't part of one): §3's
+- **Milestone** (omit entirely if this task isn't part of one): §3b's
   result — which milestone, and (only on the completing ship) whether its
   Done-definition is actually met by real state, said plainly either way.
+  §3a's result folds in here too: which findings (if any) were carried
+  into `milestone.md`'s Known gaps, with their new `gap-<n>` ids
+  (`guided`), or the drafted "Proposed milestone gap entries — undecided"
+  list awaiting the human's PR-time triage (`checkpointed`/`auto`) — never
+  omitted just because §3a found nothing to carry; "zero flagged findings"
+  and "N findings, none carried" are different facts and this line says
+  which one happened.
 - **In six months you'll want to know** is the one line most worth
   spending real thought on — don't let it default to a restatement of
   "What & why."
