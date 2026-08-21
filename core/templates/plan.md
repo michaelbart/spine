@@ -208,3 +208,33 @@ grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan
 
 - gap-<n> — <how this plan's approach closes it>
 <!-- /MACHINE -->
+
+<!-- MACHINE: closes-milestone-gap -->
+## Closes milestone gap
+
+<!-- Optional — omit this whole section entirely unless this task was
+     *not* created with `--milestone <id>` (i.e. `work/<task-id>/milestone`
+     is unset going into this plan) and this plan's own scope is required
+     to make some existing milestone's `## Done-definition` true, despite
+     not being one of that milestone's listed `## Member tasks` — e.g. a
+     gap a prior member task's own briefing.md flagged as still open. Never
+     used for a task already created with `--milestone` — that task is
+     already a listed member, this section would be redundant by
+     construction.
+
+     Presence of this section is the mechanical trigger `/task` acts on at
+     plan-approval time: it resolves `work/<id>/milestone.md`, appends a
+     new numbered entry to `## Member tasks` with this task's own real id
+     (no `TBD` — the task already exists) and a one-line description drawn
+     from `## The gist`, and writes `work/<task-id>/milestone` = `<id>` —
+     the same splice `--milestone <id>` would have produced at classify
+     time, just arriving after the fact so `/ship`'s §3a/3b/3c milestone
+     bookkeeping engages for this task instead of silently never firing.
+     A milestone named here that this section doesn't actually explain
+     how the plan closes is a plan-quality problem for human review to
+     catch, same as an unfounded `## Grounds on decisions` citation — not
+     something `/task` verifies semantically. -->
+
+- <milestone-id> — <what gap this closes and why it isn't one of that
+  milestone's listed member tasks>
+<!-- /MACHINE -->

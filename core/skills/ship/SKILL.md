@@ -62,8 +62,8 @@ Inter-task contracts` or `## Capability targets` — is a neighbor's real
 change and stays fully driftable; (d) accounts for only this task's own
 hand in a shared file, never the file wholesale. Only a file covered by
 **none of the four** is genuine unexplained drift. If every drifted file
-is expected by this rule: `ledger set <task-id> ship_time_regrounding
-"check-stale: stale (expected — matches
+is expected by this rule: `ledger set <task-id> ship_time_regrounding_check_stale
+"stale (expected — matches
 predicted-touch/deviations/verify-fixed/own-milestone-edit)"` and proceed
 normally — not a halt, not a deviation, does not touch the circuit
 breaker.
@@ -81,7 +81,7 @@ stands on is no longer trustworthy," which is exactly as true when a
 neighbor invalidated it as when the original research was simply wrong.
 Treating it differently would need a second, parallel invalidation
 channel this system doesn't have and shouldn't grow one just for this.
-`ledger set <task-id> ship_time_regrounding "check-stale: stale"` (or
+`ledger set <task-id> ship_time_regrounding_check_stale "stale"` (or
 `"ok"`) before proceeding — proceeding means going back to
 `core/skills/task/SKILL.md` step 2 (research), not continuing here.
 
@@ -98,8 +98,10 @@ The second merger always re-verifies against the first's reality — this
 is what makes that literally true instead of aspirational. If this
 post-rebase floor fails, that's a real merge-gate failure (§1 below), not
 a deviation — the diff itself now conflicts with what actually landed.
-`ledger set <task-id> ship_time_regrounding "floor: pass"` (or `"fail:
-<capability>"`).
+`ledger set <task-id> ship_time_regrounding_floor "pass"` (or `"fail:
+<capability>"`) — a fourth, distinct field alongside `_check_stale`,
+`_claims`, and `_index` below, so a ship that hits more than one
+re-grounding check keeps every result instead of the last write winning.
 
 **Third re-grounding check: the real diff against other open tasks'
 claims** (Phase D self-red-team finding — narrow-claims verification).
@@ -408,15 +410,42 @@ milestone's final ship — say nothing further, just note in passing (one
 line, not a section) that member tasks remain. **If every member task is a
 real id and every one is done** (by the rule above), this is the
 milestone's completing ship: check the milestone's `## Done-definition`
-against real state — for M0 specifically, that means every capability named in `##
-Capability targets` is `implemented` in `.spine/capabilities.json` and
-passes `adapter-conformance --all`. Report the result (met or not) as its
-own section in the briefing (§4) — a milestone that ships its final task
-without its done-definition actually being true is exactly the
-"skeleton-skip" anti-pattern this build exists to make impossible, so
-**do not let this pass silently**: if the done-definition isn't met, say
-so plainly in the briefing rather than treating milestone completion as
-automatic just because every member task individually shipped.
+against real state, **live, right now** — never trust
+`.spine/capabilities.json`'s `implemented` flag by itself, since that flag
+can go stale between whenever some earlier task set it and this exact
+ship (state reads `done`, the flag reads `implemented`, and the real
+capability is still broken from a cold start — a real gap a downstream
+project's own M1 completion surfaced: the only reason it was caught at all
+was a human asking "what's next" and reading a capability's adapter by
+hand). If `## Capability targets` lists any capability, re-run conformance
+for real, this exact moment, not a cached record of some earlier run:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance --all \
+  --project <project root> \
+  > work/<task-id>/artifacts/done-definition-conformance.txt 2>&1
+```
+
+Use *this* live result, not the cached `capabilities.json` flag, to decide
+whether each listed capability is genuinely met right now —
+`adapter-conformance --all` already exercises each capability's own
+pass/fail/cold self-test scenarios, and `cold` specifically proves
+smoke-seed/smoke-run/smoke-golden self-heal a torn-down stack rather than
+assuming an earlier capability in the sequence left it running
+(`core/ADAPTER-CONTRACT.md §2.2/§3.8`) — this is what actually catches the
+"provably true from scratch," not "reported true once," distinction the
+gap above turned on. If it could not run at all, this is the
+could-not-run case in the tooling-gap discipline (`core/skills/task/
+SKILL.md`'s header note): note the gap and say plainly in the briefing
+that the done-definition is **unverified**, not met — never let a
+could-not-run check silently read as passing. Report the result (met, not
+met, or unverified) as its own section in the briefing (§4) — a milestone
+that ships its final task without its done-definition actually being true
+is exactly the "skeleton-skip" anti-pattern this build exists to make
+impossible, so **do not let this pass silently**: if the done-definition
+isn't met (or couldn't be checked), say so plainly in the briefing rather
+than treating milestone completion as automatic just because every member
+task individually shipped.
 
 After reporting the done-definition result, check whether
 `work/M<n+1>/milestone.md` exists (where `<n>` is this milestone's

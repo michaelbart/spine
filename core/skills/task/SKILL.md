@@ -6,8 +6,46 @@ argument-hint: [description of the work] [--milestone <milestone-id>]
 ---
 
 You are running `/task`, the spine (build prompt §2.2). `$ARGUMENTS` is the
-task description as given, plus an optional `--milestone <milestone-id>`;
-if the description is empty, ask for one before doing anything else.
+task description as given, plus an optional `--milestone <milestone-id>`.
+
+**If the description is empty, try auto-continue before asking for one.**
+First, the normal resume check still wins: if `.spine/current-task` already
+exists, this is not an empty-description case at all — skip straight to
+**Resuming** below and ignore everything in this bullet. Only when there is
+no active task and no description was typed:
+
+- Pick a milestone. If `--milestone <id>` was given, use it. Otherwise glob
+  `work/M*/milestone.md` and take the lowest-numbered one that isn't
+  complete yet — same completeness test `/roadmap` uses (every `##
+  Member tasks` entry is a real task-id and every one of those task's own
+  `work/<task-id>/state` reads `done`). This is what lets a bare `/task`
+  mean "keep going on what's queued" instead of the human re-typing a
+  description that's already written down in the milestone file.
+- In that milestone's `## Member tasks`, find the first entry that still
+  reads `TBD`. If the member entry immediately before it exists and is a
+  real task-id, its own `work/<task-id>/state` must read `done` first — a
+  milestone's member tasks are written in dependency order (`##
+  Inter-task contracts`), so starting task N+1 while task N is still open
+  would let this task plan against contracts that don't exist yet. If that
+  predecessor isn't done, don't auto-continue past it — say so plainly
+  ("M<n>'s task <n-1> isn't done yet") and fall through to asking for a
+  description.
+- If a usable `TBD` entry is found, propose it and stop — "Continue with
+  M<n>'s next task: `<description>`?" — before doing anything else, Step 0
+  included. This is a real touchpoint, not a courtesy notice: nothing has
+  been created yet (no task folder, no git-identity resolution, no ledger),
+  so it's the cheapest possible point to catch a wrong guess, one keystroke
+  against retyping the whole description by hand. On confirmation, proceed
+  exactly as if the human had typed `<that description> --milestone
+  <that-id>`. On rejection or a correction, use what the human says instead
+  (a different entry, a different milestone, or a hand-typed description) —
+  don't re-guess.
+- If none of the above resolves (no milestone file exists yet, every
+  milestone is fully assigned with nothing left `TBD`, or the resolved
+  milestone has no member tasks at all), fall back to asking for a
+  description the old way, and say briefly why the auto-continue didn't
+  fire (no milestone found / nothing queued) so it doesn't read as a
+  swallowed request.
 
 **Step 0 — core version check (Extension C §2.1, the "cheap session-start
 check").** No SessionStart-shaped hook exists to carry this — the
@@ -387,6 +425,31 @@ citing it stays listed, which is a missed cleanup, not a wrong one, so
 don't invent a citation just to clear the section. If any decision from
 `/design` grounds this plan, add the `## Grounds on decisions` section per
 `core/templates/plan.md`.
+
+**If this task does *not* already belong to a milestone** (`work/<task-id>/
+milestone` unset — no `--milestone` was given), still check whether this
+plan's own scope is required to make some existing milestone's `##
+Done-definition` true despite not being one of that milestone's listed `##
+Member tasks` — the shape a prior member task's own `briefing.md` flagging
+a real gap in its follow-ups most often takes. If so, write the `##
+Closes milestone gap` section per `core/templates/plan.md` naming that
+milestone, then act on it right now, before presenting the plan: resolve
+`work/<id>/milestone.md`, append a new numbered entry to its `## Member
+tasks` with this task's own real id (no `TBD` — the task already exists)
+and a one-line description drawn from `## The gist`'s first sentence, and
+write `work/<task-id>/milestone` = `<id>`. Say this plainly when presenting
+the plan for approval — "this also closes M<n>'s done-definition gap,
+splicing it in as member task <k>" — same visibility standard as any other
+milestone-affecting edit this skill makes. This is the fix for the exact
+blind spot a real ad-hoc gap-closing task exposed: without it, a task that
+genuinely closes a milestone's done-definition gap never gets a
+`work/<task-id>/milestone` pointer, so none of `/ship`'s §3a/§3b/§3c
+milestone bookkeeping ever engages for it and the milestone's own record
+never shows a 5th task was actually required to reach "done." If the named
+milestone doesn't resolve to a real `milestone.md`, or `work/<task-id>/
+milestone` was already set to a *different* id than this section names,
+that's a conflict — surface it to the human, never silently pick one or
+fabricate the file.
 
 Check every `## Predicted touch` entry against `.spine/protected-paths.conf`
 — single-repo, that's always this project's own file. **Multi-repo: check

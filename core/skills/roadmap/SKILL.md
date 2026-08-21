@@ -239,5 +239,6 @@ No `Spine-Task:` trailer — this is a setup-shaped commit.
 
 After committing, tell the human:
 
-> Milestones M<n>–M<m> are planned. Start the next task with:
-> `/task <first TBD description from M<n>> --milestone M<n>`
+> Milestones M<n>–M<m> are planned. Start the next task with a bare
+> `/task` — it auto-continues M<n>'s first queued task — or type the
+> description yourself with `/task <description> --milestone M<n>`.
