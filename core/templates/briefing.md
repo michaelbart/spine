@@ -13,8 +13,7 @@ into the record for depth — simplifying a section into silence is a
 defect here, same as burying its point three sentences down.
 
 **No script or skill reads a previously-written briefing.md back in**
-(verified against every consumer in `spine/work/.build/
-readability-phase-A-handoff.md` — this file is pure human output). The
+(this file is pure human output). The
 **bold-label** convention below (`**Floor:**`, `**Overrides & bypasses:**`,
 etc.) is kept anyway, and kept stable across tasks, on purpose: it costs
 nothing today and it's what makes this file `grep`-able the day something

@@ -171,8 +171,8 @@ themselves; see each hook's own header comment in `core/hooks/` and
 `${CLAUDE_PROJECT_DIR}`-relative, no absolute path in it.
 
 Then, instead of hand-symlinking (the pre-Extension-C mechanism, which
-committed machine-absolute symlink targets — the exact breakage
-`work/.build/ext-c-phase-A-handoff.md` §0.1 reproduced):
+committed machine-absolute symlink targets and broke for every other
+engineer's checkout):
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/setup --project <project>

@@ -143,9 +143,7 @@ State lives in four places, and every phase transition below updates them
 
 **The registry (Extension C §2.2/§2.3), sibling files alongside the three
 above — never crammed into `state` itself**, which every hook and skill
-above already reads as a bare one-line phase name
-(`work/.build/ext-c-phase-A-handoff.md`'s own recorded reason for this
-split):
+above already reads as a bare one-line phase name:
 
 - `work/<task-id>/owner` — one line, the git identity
   (`git config user.name <user.email>`) that created this task. Written
@@ -281,8 +279,7 @@ confirm an autonomy right after the class — see "Autonomy for a direct
   symbol, and (check
   against `.spine/protected-paths.conf`) touches no protected path. No work
   folder, no per-task `ledger.json`, no phases — but not invisible: make the
-  edit, then leave a **trace** (traced-trivial, `docs/proposals/intake-and-
-  adaptive-autonomy.md` §5). Derive the ticket from the branch —
+  edit, then leave a **trace** (traced-trivial). Derive the ticket from the branch —
   `${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch --project <project
   root>` — and if it returns a key, commit the edit carrying a `Spine-Ticket:
   <key>` trailer (composes with any subject convention, `core/ADAPTER-CONTRACT.md`
@@ -432,8 +429,7 @@ silently contradicted. Also check that milestone's `## Known gaps for
 future member tasks`: if this plan's approach actually closes one of its
 `gap-<n>` entries, add the `## Resolves known gaps` section per
 `core/templates/plan.md` naming it — this is what lets `/ship` §3c remove
-the entry once the task ships (`docs/proposals/
-flagged-finding-carryforward.md` §6); a gap this plan resolves without
+the entry once the task ships; a gap this plan resolves without
 citing it stays listed, which is a missed cleanup, not a wrong one, so
 don't invent a citation just to clear the section. If any decision from
 `/design` grounds this plan, add the `## Grounds on decisions` section per
@@ -518,8 +514,7 @@ proceed straight to presenting the plan.
 **If `work/<task-id>/autonomy` is `auto`, there is no plan-approval stop.**
 Write the plan exactly as above — it is still written, and `/ship` attaches it
 to the PR for review, trading pre-implementation plan review for PR-time review
-(the disclosed `auto` tradeoff, `docs/proposals/intake-and-adaptive-autonomy.md`
-§7). Record `approval.json` as a self-approval with `"autonomy": "auto"` set,
+(the disclosed `auto` tradeoff — see `docs/tradeoffs.md`). Record `approval.json` as a self-approval with `"autonomy": "auto"` set,
 `registry-sync`, and proceed straight to §4. This can only happen at Class 1
 (the ceiling); if §3's protected-path check just auto-escalated this task to
 Class 2, `work/<task-id>/autonomy` was set to `guided` above, so this branch no
@@ -642,11 +637,11 @@ re-run verify inline — no new human stop unless a `halt`-tier deviation opens
 
 **auto** — no scheduled human stop. **Follow `core/skills/verify/SKILL.md` inline**
 (same mechanism as `checkpointed`; the falsifier's stub-out probe is *mandatory*
-in this mode — it is the partial backstop for the plan review `auto` skipped,
-`docs/proposals/intake-and-adaptive-autonomy.md` §7). Read `verify.md`'s
+in this mode — it is the partial backstop for the plan review `auto` skipped).
+Read `verify.md`'s
 `Result:`. On `PASS`, **follow `core/skills/ship/SKILL.md` inline**, which for an
-`auto` task opens a **draft PR** (never merges — `core/skills/ship/SKILL.md` §5a,
-proposal §6.2) and stops at "PR ready for review." On `FAIL`, this is an
+`auto` task opens a **draft PR** (never merges — `core/skills/ship/SKILL.md` §5a)
+and stops at "PR ready for review." On `FAIL`, this is an
 *exception* stop: go back to implementation, fix, re-run verify inline; if the fix
 hits a `halt`-tier decision or trips the circuit breaker (§4), stop and pull the
 human in exactly as §4 says. The human's single touchpoint is reviewing the

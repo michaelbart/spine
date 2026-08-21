@@ -632,8 +632,8 @@ silently read as resolved. The adversary's own raw output never sets this
 field; `verdict-filter` passes it through unmodified either way, since it
 validates verdict shape at dispatch time, before any fix decision exists.
 This is what lets `/ship` (`core/skills/ship/SKILL.md` §3a — flagged-
-finding triage, `docs/proposals/flagged-finding-carryforward.md`) identify
-kept-but-unresolved findings mechanically instead of re-parsing
+finding triage) identify kept-but-unresolved findings mechanically instead
+of re-parsing
 `verify.md`'s free prose, which uses different wording for the same
 outcome from one task to the next.
 

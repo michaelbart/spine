@@ -44,13 +44,12 @@ both.
 <!-- MACHINE: known-gaps
 
      Populated only by /ship's flagged-finding triage (core/skills/ship/
-     SKILL.md §3a, docs/proposals/flagged-finding-carryforward.md) — never
-     hand-invented speculatively. Each entry traces to one real
-     `disposition: "not_fixed"` adversary verdict, kept by verdict-filter,
-     from some member task's own verify.md, and the human explicitly chose
-     to carry it here rather than let it stay unexplained (a flagged
-     finding is not auto-promoted; not every flagged finding is a real
-     cross-task gap — see the proposal's own worked-example counterexample).
+     SKILL.md §3a) — never hand-invented speculatively. Each entry traces
+     to one real `disposition: "not_fixed"` adversary verdict, kept by
+     verdict-filter, from some member task's own verify.md, and the human
+     explicitly chose to carry it here rather than let it stay unexplained
+     (a flagged finding is not auto-promoted; not every flagged finding is
+     a real cross-task gap).
 
      One entry per gap, a stable id (`gap-<n>`) so a later member task's
      own /ship can remove this exact entry by id once that task's plan

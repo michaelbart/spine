@@ -94,8 +94,7 @@ either (an empty union is itself information: the plan's predictions held).
 Multi-repo (Extension B) and the Contracts/Milestone-adjacent sections
 below are explicitly optional — omit the whole section (not an empty one)
 per each section's own rule. No script reads this file back in (same as
-briefing.md — verified against every real consumer in
-`spine/work/.build/readability-phase-A-handoff.md`); the **bold-label**
+briefing.md); the **bold-label**
 convention is kept anyway, for the same reason briefing.md keeps it: cheap
 now, `grep`-able the day `/costs` or some other aggregate reads PRs in
 bulk instead of one at a time.

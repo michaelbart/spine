@@ -1,1 +1,0 @@
-../../core/agents/falsifier.md

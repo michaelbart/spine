@@ -1,6 +1,11 @@
 # Machine-local, never shared — see core/scripts/setup's own note on this file
 .claude/settings.local.json
 
+# This repo is the portable core, not an installed project — don't let a
+# stray /task or install run turn it back into one.
+work/
+.spine/
+
 # OS/editor cruft
 .DS_Store
 *.swp

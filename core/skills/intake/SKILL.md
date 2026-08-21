@@ -57,7 +57,7 @@ which is right rather than guessing.
 ## 2. Is this even a task?
 
 Before sizing anything, check whether this belongs in the pipeline at all
-(`docs/proposals/intake-and-adaptive-autonomy.md` §2, the "not-a-task" tier):
+(the "not-a-task" tier):
 
 - **A question or read-only investigation** ("how does X work", "why is this
   failing") with no code change: say so and offer to just answer it — no task,
@@ -108,8 +108,7 @@ Never a bare label — carry the reason. Apply, in order:
 
 State the proposed class *and the evidence* (predicted files, which signals
 fired or didn't). This is the objective, checklist-gated classification that
-keeps "it's small" from silently dodging warranted rigor
-(`docs/proposals/intake-and-adaptive-autonomy.md` §4/§11).
+keeps "it's small" from silently dodging warranted rigor.
 
 **For a Class 1 task, also propose an autonomy** — how many *stops* the flow has
 (`core/skills/task/SKILL.md`'s autonomy dial, orthogonal to class). Read it off

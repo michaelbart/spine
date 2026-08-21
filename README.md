@@ -157,15 +157,16 @@ open task blocks plan approval, and a task whose grounding changed
 underfoot gets flagged and can't advance until that's acknowledged. Class 2
 changes need a second approver. Full accounting — including what still
 relies on an agent following instructions rather than a hook, and where
-this stops scaling — in `docs/tradeoffs.md`'s Extension C section.
+this stops scaling — in `docs/tradeoffs.md`, under "Working with other
+engineers."
 
 ## Cross-repo work
 
 `/workspace` is for a change spanning more than one repository. It creates
 one small workspace root holding the contract registry and the tasks that
 touch more than one repo at once — each member repo keeps its own normal
-spine install untouched. See `docs/tradeoffs.md`'s Extension B section for
-the full model and its disclosed limits.
+spine install untouched. See `docs/tradeoffs.md`, under "Cross-repo work,"
+for the full model and its disclosed limits.
 
 ## If something feels like it's fighting you
 
