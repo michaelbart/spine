@@ -1,12 +1,14 @@
 ---
 name: design
-description: The design stage — a facilitated, interactive session that turns a confirmed charter into foundational decisions, a walking-skeleton milestone, and a reviewed stopping point before any feature code exists. Run after /bootstrap on greenfield; may also run on brownfield to make implicit architecture explicit (not exercised by this build).
+description: The design stage — a facilitated, interactive session that turns a confirmed charter into foundational decisions, a walking-skeleton milestone, and a reviewed stopping point before any feature code exists. Run after /bootstrap on greenfield; may also run on brownfield to make implicit architecture explicit (not exercised by this build). An optional --handoff feeds it an external design document — a product spec as extra grounding on a first run, or a supplementary design delivery to reconcile against decisions that already exist.
 disable-model-invocation: true
-argument-hint: [--project <path>]
+argument-hint: [--project <path>] [--handoff <path>]
 ---
 
 You are running `/design` against `--project <path>` from `$ARGUMENTS`
-(default: current directory). Scripts at
+(default: current directory), plus an optional `--handoff <path>` (an
+external design document — what it means depends on whether decisions
+already exist, §0 below). Scripts at
 `${CLAUDE_SKILL_DIR}/../../scripts/<name>`, templates at
 `${CLAUDE_SKILL_DIR}/../../templates/<name>`, agents `falsifier`/`security`
 in design mode (`core/agents/falsifier.md`/`security.md` §"Design-mode
@@ -34,7 +36,29 @@ If `docs/decisions/D-*.md` already exist, this is a resumed or re-run
 design session, not a first one — say so, show what's already decided, and
 treat each category below as "confirm or revise," not a cold re-interview.
 
+**`--handoff <path>` branches on this same check.** If given and
+`docs/decisions/D-*.md` do **not** yet exist, this is a first run with
+extra grounding — read the handoff now alongside the charter, per §1's own
+note, and continue through §§1–8 exactly as below. If given and decisions
+**do** already exist, skip §§1–4 and §7 entirely — go to **"Handoff
+re-entry mode"** below instead, then converge at §5. (`--handoff` with no
+prior decisions and no charter yet is the one combination that can't
+happen — `/design` still requires `docs/charter.md` above regardless.)
+
 ## 1. Walk the six foundational categories
+
+**(Skip this section through §4 entirely in handoff re-entry mode — see
+"Handoff re-entry mode" below, then resume at §5.)**
+
+**If `--handoff <path>` was given on a first run** (§0), read it now,
+alongside the charter, before proposing anything below — a product spec or
+an external design document genuinely bears on these categories (a
+real-time collaborative feature says something about state-management and
+persistence a charter alone won't spell out). Cite it the same way you'd
+cite a charter line when it's what a proposed answer actually follows
+from. This doesn't add a seventh category or change what counts as
+grounding for the charter DRAFT check above — it's additional context for
+the same six questions, nothing more.
 
 For each of **state-management, persistence, module-boundaries,
 error-handling, auth-model, repo-topology** (the same fixed six
@@ -112,6 +136,95 @@ all four, typically, at this point) — the done-definition names these four
 reaching `implemented` as what "done" means; don't write a done-definition
 that's vaguer than that.
 
+## Handoff re-entry mode
+
+**Only when `--handoff <path>` was given and `docs/decisions/D-*.md`
+already existed at §0.** This replaces §§1–4 and §7 for this run; every
+other section (§5, §6, §7.5, §7.6, §8) still applies, scoped as noted
+inline below and in each of those sections' own text.
+
+**Registry check first, before proposing anything.** Look for
+`.spine/hooks/design-registry-diff` (a fixed, conventional path — no
+manifest entry, this is not a capability adapter and is never floor-gated
+or self-test-required; it's a lighter, opt-in, `/design`-only check).
+
+- **If it exists**, run it: `.spine/hooks/design-registry-diff <handoff
+  path> --project <project root>`. Non-zero exit: show its diagnostics
+  verbatim to the human and stop — don't propose a single decision until
+  this is resolved, the same "collision blocks everything downstream"
+  posture a real id collision deserves. Zero exit: continue.
+- **If it doesn't exist**, offer to draft one — this project's own
+  handoff shape and canonical registry files are never something spine
+  itself knows (it has no vocabulary for "screen" or "component"; that's
+  entirely this project's convention), so there is no generic template to
+  fall back on. If the human agrees: read the actual handoff and whatever
+  canonical registry files it references (asking where they live if not
+  obvious), infer the real id pattern and collision logic for *this*
+  project, and draft a script following the same contract every spine
+  script uses — quiet one-line output on success, exit non-zero with one
+  diagnostic line per collision on failure (`core/scripts/next-milestone-
+  task`'s own header is a good model of that contract, even though this
+  script's content is unrelated). Show the draft before saving. On
+  approval, write it to `.spine/hooks/design-registry-diff`, `chmod +x`,
+  then run it for real per the bullet above. If the human declines
+  (either to draft one, or to run an existing one this time), proceed
+  without the check and say so plainly when presenting decisions below —
+  never silently skip it and let the omission read as "checked, clean."
+
+**Classify the handoff's content, don't re-interview.** For each real
+piece of scope the handoff introduces, decide against the same six
+categories §1 uses: does it require *revising* an existing adopted
+decision (propose superseding it — append-only, same as §6's own
+"Revise" outcome, human confirms), does it need a *new* decision (write
+`D-<n>` the normal way, §1's own template/fields, scoped to only what
+this handoff actually needs — not a full six-category re-walk), or does
+it carry no architectural weight at all (no decision — this should be the
+common case; most of a UI handoff is pure content, not architecture).
+Never manufacture a decision because content arrived; the "eager
+architect" caution at the top of this file applies here exactly as it
+does on a first run.
+
+**The reconciliation rule.** If the handoff states its own "mechanism
+wins here, design wins there" note (or any comparable resolution of a
+tension it's aware of), record it as a `Leaves open:` line in the
+relevant decision's own `## Consequences` — never in `work/M<n>/
+milestone.md`'s intro prose, which this skill doesn't own past M0. This
+is the one deliberate design choice that makes the rest of the loop work
+without any new absorption mechanism: `/roadmap`'s existing decision-
+follow-ons step (§1b there, unchanged) already knows how to read a
+`Leaves open:` line and sequence it into the right milestone.
+
+**Converge at §5**, scoped automatically: every decision this section
+wrote is `proposed`, every decision from a prior session is already
+`adopted`, and §5/§6's own "every `docs/decisions/D-*.md` currently
+`proposed`" instruction already means exactly this pass's work — no
+separate scoping edit needed there. **One path change carries through
+§5/§6 in this mode**: write to `work/design/design-review-<handoff
+basename>.md` and `work/design/artifacts/<agent>-verdict-<handoff
+basename>-raw.json`/`-<handoff basename>.json` instead of the fixed
+un-suffixed paths §5 names — a first design session only ever ran once,
+so those paths being fixed was never a collision risk before; a second
+handoff pass reusing them would silently overwrite the original session's
+review record (or an earlier handoff pass's) rather than adding to the
+project's history.
+
+**This mode's own completion check, in place of §7.** Don't run
+`design-gate` — its cross-category coverage, decision cap, and M0
+capability-targets check are calibrated for a first run and don't apply
+to a scoped follow-up. This pass is done when every kept verdict from §6
+has a resolved outcome (revise or recorded override) — nothing more.
+
+**§8, this mode's own ending.** `git add -- docs/decisions/
+docs/design-summary.md` (never `work/M0/`, `.spine/capabilities.json`, or
+`.spine/adapters/` — this mode doesn't touch any of them) plus
+`.spine/hooks/design-registry-diff` if this run created or updated it.
+Commit message: `"spine: design handoff <handoff basename> — <n>
+decisions added, <m> revised"`. Tell the human how many of each, what (if
+anything) got deferred or overridden, and that **`/roadmap`** — not
+`/task --milestone M0` — is the next command: the new `Leaves open:` lines
+are real citable follow-ons now, and `/roadmap`'s existing absorption step
+picks them up without any change on its end.
+
 ## 5. Design review
 
 Run both adversaries in design mode, fresh `Agent` calls
@@ -119,8 +232,8 @@ Run both adversaries in design mode, fresh `Agent` calls
 message pointing at `docs/charter.md` and every `docs/decisions/D-*.md`
 currently `proposed` — explicitly tell each agent "you are running in
 design mode" (per their own frontmatter, this is not inferred). Write each
-raw reply verbatim to `work/design/artifacts/<agent>-verdict-raw.json`,
-then:
+raw reply verbatim to `work/design/artifacts/<agent>-verdict-raw.json`
+(handoff re-entry mode: the suffixed path named there instead), then:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/verdict-filter \
@@ -168,7 +281,9 @@ Two outcomes, both real, neither silent:
 - **Recorded override** — the human disagrees with the verdict and wants
   to proceed as designed anyway. Do not force a revision. Append a
   `## Design review overrides` section to `work/design/design-review.md`
-  quoting the verdict and the human's stated reason — this is the same
+  (or this pass's own suffixed path, in handoff re-entry mode — see
+  "Handoff re-entry mode" above) quoting the verdict and the human's
+  stated reason — this is the same
   trust model `/ship --bypass` already uses (loud, recorded, never
   silent), applied one tier earlier.
 
@@ -179,6 +294,9 @@ flips that status — a `proposed` decision that never went through design
 review must never become `adopted` by any other path.
 
 ## 7. Stopping rule
+
+**(Handoff re-entry mode uses its own completion check instead — see
+"Handoff re-entry mode" above. Don't run `design-gate` in that mode.)**
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/design-gate --project <project>
@@ -223,6 +341,10 @@ summarize. Mechanical, no review needed; see the script's own header for
 why this is a triage aid, never a citation target.
 
 ## 8. Commit and hand off
+
+**(Handoff re-entry mode uses its own commit and hand-off text instead —
+see "Handoff re-entry mode" above. What follows is for a first run,
+`--handoff`-grounded or not.)**
 
 One commit — same untrailered, setup-shaped precedent `/bootstrap`'s own
 install commit already uses (this is design-stage setup, not a task; there
