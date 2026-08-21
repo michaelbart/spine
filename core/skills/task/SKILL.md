@@ -12,40 +12,53 @@ task description as given, plus an optional `--milestone <milestone-id>`.
 First, the normal resume check still wins: if `.spine/current-task` already
 exists, this is not an empty-description case at all — skip straight to
 **Resuming** below and ignore everything in this bullet. Only when there is
-no active task and no description was typed:
+no active task and no description was typed, run:
 
-- Pick a milestone. If `--milestone <id>` was given, use it. Otherwise glob
-  `work/M*/milestone.md` and take the lowest-numbered one that isn't
-  complete yet — same completeness test `/roadmap` uses (every `##
-  Member tasks` entry is a real task-id and every one of those task's own
-  `work/<task-id>/state` reads `done`). This is what lets a bare `/task`
-  mean "keep going on what's queued" instead of the human re-typing a
-  description that's already written down in the milestone file.
-- In that milestone's `## Member tasks`, find the first entry that still
-  reads `TBD`. If the member entry immediately before it exists and is a
-  real task-id, its own `work/<task-id>/state` must read `done` first — a
-  milestone's member tasks are written in dependency order (`##
-  Inter-task contracts`), so starting task N+1 while task N is still open
-  would let this task plan against contracts that don't exist yet. If that
-  predecessor isn't done, don't auto-continue past it — say so plainly
-  ("M<n>'s task <n-1> isn't done yet") and fall through to asking for a
-  description.
-- If a usable `TBD` entry is found, propose it and stop — "Continue with
-  M<n>'s next task: `<description>`?" — before doing anything else, Step 0
-  included. This is a real touchpoint, not a courtesy notice: nothing has
-  been created yet (no task folder, no git-identity resolution, no ledger),
-  so it's the cheapest possible point to catch a wrong guess, one keystroke
-  against retyping the whole description by hand. On confirmation, proceed
-  exactly as if the human had typed `<that description> --milestone
-  <that-id>`. On rejection or a correction, use what the human says instead
-  (a different entry, a different milestone, or a hand-typed description) —
-  don't re-guess.
-- If none of the above resolves (no milestone file exists yet, every
-  milestone is fully assigned with nothing left `TBD`, or the resolved
-  milestone has no member tasks at all), fall back to asking for a
-  description the old way, and say briefly why the auto-continue didn't
-  fire (no milestone found / nothing queued) so it doesn't read as a
-  swallowed request.
+```
+${CLAUDE_SKILL_DIR}/../../scripts/next-milestone-task --project <project root> \
+  [--milestone <id> if one was given]
+```
+
+This is a single deterministic call instead of hand-scanning every
+`work/M*/milestone.md` and every member task's own `state` file via
+separate reads — same completeness test `/roadmap` and `/ship` §3b use
+(every `## Member tasks` entry a real task-id, every one of those tasks'
+own `state` reading `done`), computed once in the one place, live, so it
+can't drift the way a cached "last completed milestone" pointer could
+once a `## Closes milestone gap` splice (§3 below) reopens a milestone
+that already looked complete. Its one-line output branches four ways:
+
+- **`TBD <milestone-id> <description>`** — propose it and stop: "Continue
+  with `<milestone-id>`'s next task: `<description>`?" — before doing
+  anything else, Step 0 included. This is a real touchpoint, not a
+  courtesy notice: nothing has been created yet (no task folder, no
+  git-identity resolution, no ledger), so it's the cheapest possible point
+  to catch a wrong guess, one keystroke against retyping the whole
+  description by hand. On confirmation, proceed exactly as if the human
+  had typed `<that description> --milestone <that-milestone-id>`. On
+  rejection or a correction, use what the human says instead (a different
+  entry, a different milestone, or a hand-typed description) — don't
+  re-guess.
+- **`BLOCKED <milestone-id> <blocking-token>`** — that milestone's next
+  queued task can't start yet: its immediate predecessor (`<blocking-token>`
+  is a task-id, or the literal `TBD` if that predecessor hasn't even been
+  created) isn't done. Say so plainly ("`<milestone-id>`'s prior task isn't
+  done yet") and fall through to asking for a description — never skip
+  ahead to a different milestone on your own.
+- **`WAITING <milestone-id>`** — that milestone is mid-flight (every member
+  task already has a real id, none are `TBD`) but nothing in it is done
+  yet either, so there's nothing queued to propose. Say so plainly and
+  fall through to asking for a description.
+- **`NONE`** — no milestone exists yet, or every one found is already
+  complete. Fall through to asking for a description, saying briefly why
+  auto-continue didn't fire.
+- If the script could not run at all, this is the "could not run" case the
+  tooling-gap discipline (header note below) distinguishes from a real
+  result — but no task folder exists yet at this point for that discipline's
+  usual `notes.md` line, so just say so plainly to the human ("couldn't
+  check for a queued milestone task") and fall through to asking for a
+  description; don't treat a script that couldn't execute as "nothing
+  queued."
 
 **Step 0 — core version check (Extension C §2.1, the "cheap session-start
 check").** No SessionStart-shaped hook exists to carry this — the

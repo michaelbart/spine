@@ -1,0 +1,171 @@
+#!/bin/bash
+# next-milestone-task — resolves what a bare `/task` (no description, no
+# active task) should auto-continue: the lowest-numbered milestone that
+# isn't complete yet, and its first queueable member task. Exists so
+# `/task` doesn't re-derive this by hand-reading every work/M*/milestone.md
+# and every member task's own state file via a separate tool call each —
+# one invocation, one answer, always live (no cached pointer to go stale
+# when a `## Closes milestone gap` splice reopens a milestone that already
+# looked complete — core/skills/task/SKILL.md §3).
+#
+# A milestone is complete iff every `## Member tasks` entry is a real
+# task-id (never `TBD`) and every one of those tasks' own
+# `work/<task-id>/state` reads exactly `done` — the same completeness
+# test `/roadmap` and `/ship` §3b already use, restated here as the one
+# place it's computed instead of three places re-deriving it by hand.
+#
+# Milestones are scanned in numeric order (M0, M1, M2, ...). The first
+# incomplete one found is the answer — later milestones are never
+# consulted, even if one of them happens to have a queueable TBD too,
+# because a milestone's own member tasks are written in dependency order
+# (`## Inter-task contracts`) and skipping ahead would let a task plan
+# against a contract that isn't real yet.
+#
+# Within that milestone, find the first entry still reading `TBD`. Its
+# immediately preceding entry (if any) must be a real task-id whose own
+# state reads `done` — otherwise there's nothing safe to auto-start yet,
+# even though the milestone itself is incomplete.
+#
+# Output is exactly one line on stdout, space-separated, first token is
+# the outcome:
+#   TBD <milestone-id> <description...>       a real next task to propose
+#   BLOCKED <milestone-id> <blocking-token>    the next TBD's predecessor
+#                                               (a task-id, or the literal
+#                                               TBD if the predecessor
+#                                               hasn't even been created
+#                                               yet) isn't done
+#   WAITING <milestone-id>                     milestone incomplete, but
+#                                               no TBD at all — every
+#                                               member task already has a
+#                                               real id, just not done yet
+#   NONE                                       no milestone exists, or
+#                                               every one found is complete
+#
+# --milestone <id>: target exactly that milestone instead of scanning for
+# the lowest-numbered incomplete one — for a bare `/task --milestone <id>`,
+# where the human already named which milestone to continue. Same TBD/
+# predecessor logic applies within it; if it's already complete, or has
+# no queueable TBD, that's still NONE/WAITING, same as any other milestone.
+#
+# Read-only — never writes anything. Exit 0 for any of the four outcomes
+# above; exit 2 only for a genuine usage/parse problem (bad args, a named
+# --milestone with no milestone.md, or a milestone.md missing a
+# parseable `## Member tasks` section entirely).
+#
+# Usage: next-milestone-task [--project <path>] [--milestone <id>]
+set -uo pipefail
+
+usage() { echo "usage: next-milestone-task [--project <path>] [--milestone <id>]" >&2; exit 2; }
+
+project="$(pwd)"
+only_milestone=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --milestone) only_milestone="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+ms_paths=()
+if [[ -n "$only_milestone" ]]; then
+  ms_path="$project/work/$only_milestone/milestone.md"
+  if [[ ! -f "$ms_path" ]]; then
+    echo "next-milestone-task: $ms_path not found" >&2
+    exit 2
+  fi
+  ms_paths=("$ms_path")
+else
+  # Milestone paths, numerically sorted by the digits after "M" — a plain
+  # lexical sort would put M10 before M2.
+  while IFS= read -r path; do
+    [[ -n "$path" ]] && ms_paths+=("$path")
+  done < <(
+    for d in "$project"/work/M*/milestone.md; do
+      [[ -f "$d" ]] || continue
+      n="$(basename "$(dirname "$d")")"
+      n="${n#M}"
+      case "$n" in
+        (''|*[!0-9]*) continue ;;  # not a real M<number> folder — skip
+      esac
+      printf '%s\t%s\n' "$n" "$d"
+    done | sort -n -k1,1 | cut -f2-
+  )
+fi
+
+[[ ${#ms_paths[@]} -gt 0 ]] || { echo "NONE"; exit 0; }
+
+for ms_path in "${ms_paths[@]}"; do
+  ms_id="$(basename "$(dirname "$ms_path")")"
+
+  # Parse "## Member tasks" numbered entries in file order:
+  #   1. `<task-id | TBD>` — <description>
+  ids=()
+  descs=()
+  while IFS= read -r line; do
+    id="$(printf '%s\n' "$line" | sed -E 's/^[0-9]+\. `([^`]*)`.*/\1/')"
+    desc="$(printf '%s\n' "$line" | sed -E 's/^[0-9]+\. `[^`]*` — //')"
+    ids+=("$id")
+    descs+=("$desc")
+  done < <(awk '
+    /^## Member tasks/ { in_section=1; next }
+    /^## / { in_section=0 }
+    in_section && /^[0-9]+\. `/ { print }
+  ' "$ms_path")
+
+  if [[ ${#ids[@]} -eq 0 ]]; then
+    echo "next-milestone-task: $ms_path has no parseable ## Member tasks entries" >&2
+    exit 2
+  fi
+
+  complete=1
+  for id in "${ids[@]}"; do
+    if [[ "$id" == "TBD" ]]; then
+      complete=0
+      break
+    fi
+    state="$(cat "$project/work/$id/state" 2>/dev/null || true)"
+    if [[ "$state" != "done" ]]; then
+      complete=0
+      break
+    fi
+  done
+
+  [[ $complete -eq 1 ]] && continue
+
+  # This is the lowest-numbered incomplete milestone. Find its first TBD.
+  tbd_idx=-1
+  for ((i = 0; i < ${#ids[@]}; i++)); do
+    if [[ "${ids[$i]}" == "TBD" ]]; then
+      tbd_idx=$i
+      break
+    fi
+  done
+
+  if [[ $tbd_idx -eq -1 ]]; then
+    echo "WAITING $ms_id"
+    exit 0
+  fi
+
+  if [[ $tbd_idx -eq 0 ]]; then
+    echo "TBD $ms_id ${descs[$tbd_idx]}"
+    exit 0
+  fi
+
+  prev_id="${ids[$((tbd_idx - 1))]}"
+  if [[ "$prev_id" == "TBD" ]]; then
+    echo "BLOCKED $ms_id TBD"
+    exit 0
+  fi
+  prev_state="$(cat "$project/work/$prev_id/state" 2>/dev/null || true)"
+  if [[ "$prev_state" != "done" ]]; then
+    echo "BLOCKED $ms_id $prev_id"
+    exit 0
+  fi
+
+  echo "TBD $ms_id ${descs[$tbd_idx]}"
+  exit 0
+done
+
+echo "NONE"
+exit 0
