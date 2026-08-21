@@ -47,6 +47,16 @@ runs, in order: migrate → verify invariants → rollback → re-migrate. All
 four steps must succeed for the capability to pass. This is what makes
 "ships a rollback" a checked claim instead of a comment.
 
+**`migrate-rehearse` restores the stack, it doesn't reset it.** Rehearsing
+a migration typically means bringing the local stack up to run it against
+— but if the stack was already up before `migrate-rehearse` started, it
+must still be up when `migrate-rehearse` exits, success or failure alike;
+it stops the stack on the way out only if it started it. A capability
+that unconditionally tears the stack down as its own cleanup step,
+whatever state it found it in, breaks every capability that runs after it
+in the same `floor` invocation and assumes the stack it just used is
+still there (`ADAPTER-CONTRACT.md` §2.2, §3.7).
+
 **On a schemaless store**, "migration" still means a change to a document
 shape or an authorization/index rule that existing writers or readers depend
 on — expand/contract and the invariant-query discipline apply the same way;

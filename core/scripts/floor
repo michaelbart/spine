@@ -1,8 +1,10 @@
 #!/bin/bash
 # floor — dispatcher over the capability manifest. Runs the Layer 1
 # deterministic floor (plus Layer 2 mutate / Layer 5 smoke where the class
-# and calibration call for it) against a project's .spine/adapters/, per
-# core/ADAPTER-CONTRACT.md. Never names a language, framework, or tool.
+# and calibration call for it, and migrate-rehearse where the class is 2
+# and the diff touches a migration path — ADAPTER-CONTRACT.md §3.7) against
+# a project's .spine/adapters/, per core/ADAPTER-CONTRACT.md. Never names a
+# language, framework, or tool.
 #
 # Usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>] [--full]
 #
@@ -126,6 +128,21 @@ compute_changed_files() {
   if [[ -z "$changed_files" ]]; then
     changed_files="$(cd "$project" && git diff --name-only "$base_ref" -- . 2>/dev/null | while IFS= read -r f; do is_bookkeeping "$f" || printf '%s\n' "$f"; done || true)"
   fi
+}
+
+# touches_migration_path — true iff $changed_files (compute_changed_files
+# must already have run) contains a path under a migrations/- or
+# migration/-named directory, the same glob core/rules/migrations.md's own
+# frontmatter uses (**/migrations/** / **/migration/**).
+touches_migration_path() {
+  local f
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    case "$f" in
+      */migrations/*|migrations/*|*/migration/*|migration/*) return 0 ;;
+    esac
+  done <<<"$changed_files"
+  return 1
 }
 
 run_simple() {
@@ -307,6 +324,13 @@ if [[ "${finish:-0}" -ne 1 ]]; then
     run_simple mutate || finish=1
   fi
 
+  if [[ "${finish:-0}" -ne 1 && "$class" == "2" ]]; then
+    compute_changed_files
+    if touches_migration_path; then
+      run_simple migrate-rehearse || finish=1
+    fi
+  fi
+
   if [[ "${finish:-0}" -ne 1 ]]; then
     smoke_status="$(status_of smoke-run)"
     include_smoke=0
@@ -328,6 +352,14 @@ if [[ "${finish:-0}" -ne 1 ]]; then
       fi
     fi
     if [[ "$include_smoke" -eq 1 ]]; then
+      # floor does not, and must not, manage stack lifecycle between these
+      # three (or between migrate-rehearse above and this loop) — it never
+      # inspects or restores environment state, only exit codes (§2). Each
+      # of smoke-seed/smoke-run/smoke-golden must self-heal a torn-down
+      # stack on its own (ADAPTER-CONTRACT.md §2.2, §3.8); relying on
+      # sequence order to guarantee the stack is already up is what
+      # produced a deterministic smoke-seed failure right after a
+      # migrate-rehearse that tore the stack down as its own cleanup.
       smoke_start=$(date +%s)
       for cap in smoke-seed smoke-run smoke-golden; do
         run_simple "$cap" || { finish=1; break; }

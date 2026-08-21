@@ -1,0 +1,310 @@
+#!/bin/bash
+# core-selftest — synthetic-fixture regression coverage for spine core's
+# own scripts, as opposed to core/scripts/adapter-conformance which tests
+# a project's adapters. Every case below builds a throwaway project under
+# a temp dir (never this checkout, never a real installed project) and
+# asserts on floor's/adapter-conformance's actual behavior against it.
+#
+# Currently covers:
+#   - floor's migrate-rehearse dispatch (ADAPTER-CONTRACT.md §3.7): runs
+#     only at Class 2 when the diff touches a migration path, records a
+#     degraded gap when the capability isn't implemented, never appears
+#     otherwise.
+#   - adapter-conformance's shell-strictness lint (ADAPTER-CONTRACT.md
+#     §2.1): flags a bash adapter missing `set -euo pipefail` and a
+#     bash-4-only construct with no $BASH_VERSINFO guard.
+#   - adapter-conformance's `--self-test cold` requirement for
+#     smoke-seed/smoke-run/smoke-golden (ADAPTER-CONTRACT.md §2.2, §3.8):
+#     a self-healing adapter passes conformance, a non-self-healing one
+#     (the real shape found in the wild — assumes the stack is already
+#     up) fails it, and a capability with no environment assumption is
+#     never asked for `--self-test cold` at all.
+#
+# Usage: core-selftest
+# Exit 0 iff every case passes.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLOOR="$SCRIPT_DIR/floor"
+ADAPTER_CONFORMANCE="$SCRIPT_DIR/adapter-conformance"
+
+tmp_root="$(mktemp -d)"
+trap 'rm -rf "$tmp_root"' EXIT
+mkdir -p "$tmp_root/logs"
+
+overall=0
+fail() { echo "FAIL: $1"; overall=1; }
+pass() { echo "PASS: $1"; }
+
+result_status() { jq -r --arg c "$2" '.results[]? | select(.capability==$c) | .status' "$1" 2>/dev/null || true; }
+result_present() { jq -e --arg c "$2" '.results[]? | select(.capability==$c)' "$1" >/dev/null 2>&1; }
+
+# ---------------------------------------------------------------------------
+# floor: migrate-rehearse dispatch
+# ---------------------------------------------------------------------------
+
+new_migrate_fixture() {
+  # new_migrate_fixture <migrate-status> <migrate-behavior:pass|fail>
+  local status="$1" behavior="$2" proj
+  proj="$(mktemp -d "$tmp_root/proj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/.spine/adapters" "$proj/src"
+  echo "seed" >"$proj/src/app.js"
+  cat >"$proj/.spine/capabilities.json" <<EOF
+{
+  "typecheck": {"status":"not-applicable","reason":"selftest fixture"},
+  "lint": {"status":"not-applicable","reason":"selftest fixture"},
+  "test": {"status":"not-applicable","reason":"selftest fixture"},
+  "secret-scan": {"status":"not-applicable","reason":"selftest fixture"},
+  "dep-diff": {"status":"not-applicable","reason":"selftest fixture"},
+  "clone-scan": {"status":"not-applicable","reason":"selftest fixture"},
+  "callers": {"status":"not-applicable","reason":"selftest fixture"},
+  "mutate": {"status":"not-applicable","reason":"selftest fixture"},
+  "smoke-seed": {"status":"not-applicable","reason":"selftest fixture"},
+  "smoke-run": {"status":"not-applicable","reason":"selftest fixture"},
+  "smoke-golden": {"status":"not-applicable","reason":"selftest fixture"},
+  "migrate-rehearse": {"status":"$status","reason":"selftest: not wired"}
+}
+EOF
+  cat >"$proj/.spine/adapters/migrate-rehearse" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+behavior="pass"
+[[ -f "$root/migrate-behavior" ]] && behavior="$(cat "$root/migrate-behavior")"
+if [[ "$behavior" == "fail" ]]; then
+  echo "selftest: forced migrate-rehearse failure" >&2
+  exit 1
+fi
+echo "migrate-rehearse selftest stub: ok"
+EOF
+  chmod +x "$proj/.spine/adapters/migrate-rehearse"
+  echo "$behavior" >"$proj/.spine/migrate-behavior"
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  printf '%s' "$proj"
+}
+
+run_floor_case() {
+  # run_floor_case <name> <class> <status> <behavior> <touch-migration:yes|no>
+  local name="$1" class="$2" status="$3" behavior="$4" touch="$5" proj out log code
+  proj="$(new_migrate_fixture "$status" "$behavior")"
+  if [[ "$touch" == "yes" ]]; then
+    mkdir -p "$proj/migrations"
+    echo "up" >"$proj/migrations/0001_init.sql"
+  else
+    echo "more" >>"$proj/src/app.js"
+  fi
+  git -C "$proj" add -A
+  out="$tmp_root/${name}.json"
+  log="$tmp_root/logs/${name}.log"
+  if ( cd "$proj" && "$FLOOR" "$class" --out "$out" >"$log" 2>&1 ); then code=0; else code=$?; fi
+  echo "$code|$out"
+}
+
+# Case 1: Class 2, migration touched, migrate-rehearse implemented+passing
+# -> runs, recorded pass, floor exits 0.
+r="$(run_floor_case case1 2 implemented pass yes)"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" == "0" && "$(result_status "$out" migrate-rehearse)" == "pass" ]]; then
+  pass "floor: class 2 + migration touched + implemented -> runs and passes"
+else
+  fail "floor: class 2 + migration touched + implemented -> runs and passes (exit=$code status=$(result_status "$out" migrate-rehearse))"
+fi
+
+# Case 2: Class 2, migration touched, migrate-rehearse implemented+failing
+# -> fail-fast, recorded fail, floor exits non-zero.
+r="$(run_floor_case case2 2 implemented fail yes)"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" != "0" && "$(result_status "$out" migrate-rehearse)" == "fail" ]]; then
+  pass "floor: class 2 + migration touched + implemented, adapter fails -> floor fails"
+else
+  fail "floor: class 2 + migration touched + implemented, adapter fails -> floor fails (exit=$code status=$(result_status "$out" migrate-rehearse))"
+fi
+
+# Case 3: Class 2, migration touched, migrate-rehearse NOT implemented
+# -> recorded as a degraded capability gap, never silently absent, floor
+# still exits 0 (a degradation never fails floor by itself).
+r="$(run_floor_case case3 2 unavailable pass yes)"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" == "0" && "$(result_status "$out" migrate-rehearse)" == "degraded:unavailable" ]]; then
+  pass "floor: class 2 + migration touched + unavailable -> degraded gap, floor still passes"
+else
+  fail "floor: class 2 + migration touched + unavailable -> degraded gap, floor still passes (exit=$code status=$(result_status "$out" migrate-rehearse))"
+fi
+
+# Case 4: Class 2, migrate-rehearse implemented, but no migration path
+# touched -> never invoked, no gap recorded at all.
+r="$(run_floor_case case4 2 implemented pass no)"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" == "0" ]] && ! result_present "$out" migrate-rehearse; then
+  pass "floor: class 2 + no migration path touched -> migrate-rehearse never dispatched"
+else
+  fail "floor: class 2 + no migration path touched -> migrate-rehearse never dispatched (exit=$code present=$(result_present "$out" migrate-rehearse && echo yes || echo no))"
+fi
+
+# Case 5: Class 1, migration path touched, migrate-rehearse implemented
+# -> migrate-rehearse is a Class 2 gate only, never dispatched at Class 1.
+r="$(run_floor_case case5 1 implemented pass yes)"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" == "0" ]] && ! result_present "$out" migrate-rehearse; then
+  pass "floor: class 1 + migration path touched -> migrate-rehearse never dispatched (Class 2 gate only)"
+else
+  fail "floor: class 1 + migration path touched -> migrate-rehearse never dispatched (exit=$code present=$(result_present "$out" migrate-rehearse && echo yes || echo no))"
+fi
+
+# ---------------------------------------------------------------------------
+# adapter-conformance: shell-strictness lint (ADAPTER-CONTRACT.md §2.1)
+# ---------------------------------------------------------------------------
+
+lint_proj="$(mktemp -d "$tmp_root/lintproj.XXXXXX")"
+mkdir -p "$lint_proj/.spine/adapters"
+
+write_selftest_adapter() {
+  # write_selftest_adapter <path> <set-line> <extra-body>
+  cat >"$1" <<EOF
+#!/bin/bash
+$2
+if [[ "\${1:-}" == "--self-test" ]]; then
+  if [[ "\${2:-}" == "pass" ]]; then echo "ok"; exit 0; fi
+  if [[ "\${2:-}" == "fail" ]]; then echo "forced diagnostics" >&2; exit 1; fi
+fi
+$3
+echo "ok"
+exit 0
+EOF
+  chmod +x "$1"
+}
+
+write_selftest_adapter "$lint_proj/.spine/adapters/good" "set -euo pipefail" ""
+write_selftest_adapter "$lint_proj/.spine/adapters/no-strict" "set -uo pipefail" ""
+write_selftest_adapter "$lint_proj/.spine/adapters/bash4-unguarded" "set -euo pipefail" \
+'_unused_bash4_helper() { local -A cache; cache[foo]=bar; }'
+write_selftest_adapter "$lint_proj/.spine/adapters/bash4-guarded" "set -euo pipefail" \
+'if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
+  _unused_bash4_helper() { local -A cache; cache[foo]=bar; }
+fi'
+
+check_lint_case() {
+  # check_lint_case <name> <adapter> <expect:pass|fail> [grep-for]
+  local name="$1" adapter="$2" expect="$3" grepfor="${4:-}" out code=0
+  out="$("$ADAPTER_CONFORMANCE" "$adapter" --project "$lint_proj" 2>&1)" || code=$?
+  local got="fail"; [[ $code -eq 0 ]] && got="pass"
+  if [[ "$got" != "$expect" ]]; then
+    fail "adapter-conformance: $name -> expected $expect, got $got (exit $code)"
+    echo "$out"
+    return
+  fi
+  if [[ -n "$grepfor" ]] && ! grep -qF "$grepfor" <<<"$out"; then
+    fail "adapter-conformance: $name -> expected diagnostics containing \"$grepfor\""
+    echo "$out"
+    return
+  fi
+  pass "adapter-conformance: $name"
+}
+
+check_lint_case "set -euo pipefail, no bash4 syntax -> conformant" good pass
+check_lint_case "missing -e -> flagged, conformance fails" no-strict fail "missing 'set -euo pipefail'"
+check_lint_case "unguarded bash-4-only construct -> flagged, conformance fails" bash4-unguarded fail "BASH_VERSINFO guard"
+check_lint_case "bash-4-only construct behind \$BASH_VERSINFO guard -> conformant" bash4-guarded pass
+
+# ---------------------------------------------------------------------------
+# adapter-conformance: --self-test cold requirement for smoke-seed/
+# smoke-run/smoke-golden (ADAPTER-CONTRACT.md §2.2, §3.8)
+# ---------------------------------------------------------------------------
+
+write_selfheal_smoke_seed() {
+  # write_selfheal_smoke_seed <path> — implements pass/fail/cold correctly.
+  # --self-test cold deliberately starts from its scratch stack torn down
+  # and routes through the same ensure_up helper the pass path uses
+  # (ADAPTER-CONTRACT.md §4's "real invocation path" rule), proving
+  # self-heal is real rather than asserted.
+  cat >"$1" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+ensure_up() {
+  local marker="$1"
+  [[ -f "$marker" ]] || : >"$marker"
+}
+if [[ "${1:-}" == "--self-test" ]]; then
+  scratch="$(mktemp -d)"
+  trap 'rm -rf "$scratch"' EXIT
+  case "${2:-}" in
+    pass) ensure_up "$scratch/up"; echo "smoke-seed selftest: ok"; exit 0 ;;
+    fail) echo "smoke-seed selftest: forced failure" >&2; exit 1 ;;
+    cold)
+      # no marker pre-seeded here -> starts torn down
+      ensure_up "$scratch/up"
+      [[ -f "$scratch/up" ]] || { echo "self-heal did not bring stack up" >&2; exit 1; }
+      echo "smoke-seed selftest: ok (self-healed from cold)"
+      exit 0
+      ;;
+    *) echo "unknown self-test scenario: ${2:-}" >&2; exit 2 ;;
+  esac
+fi
+echo "smoke-seed: ok"
+exit 0
+EOF
+  chmod +x "$1"
+}
+
+write_nonhealing_smoke_seed() {
+  # write_nonhealing_smoke_seed <path> — the real-world bug shape: resolves
+  # pass/fail fine but assumes the stack is already up and never attempts
+  # to start it, so --self-test cold fails.
+  cat >"$1" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+if [[ "${1:-}" == "--self-test" ]]; then
+  case "${2:-}" in
+    pass) echo "smoke-seed selftest: ok"; exit 0 ;;
+    fail) echo "smoke-seed selftest: forced failure" >&2; exit 1 ;;
+    cold) echo "could not resolve the local stack -- is it running?" >&2; exit 1 ;;
+    *) echo "unknown self-test scenario: ${2:-}" >&2; exit 2 ;;
+  esac
+fi
+echo "smoke-seed: ok"
+exit 0
+EOF
+  chmod +x "$1"
+}
+
+cold_proj="$(mktemp -d "$tmp_root/coldproj.XXXXXX")"
+mkdir -p "$cold_proj/.spine/adapters"
+
+write_selfheal_smoke_seed "$cold_proj/.spine/adapters/smoke-seed"
+if out="$("$ADAPTER_CONFORMANCE" smoke-seed --project "$cold_proj" 2>&1)"; then code=0; else code=$?; fi
+if [[ $code -eq 0 ]] && grep -qF "self-healed from cold" <<<"$out"; then
+  pass "adapter-conformance: self-healing smoke-seed passes --self-test cold"
+else
+  fail "adapter-conformance: self-healing smoke-seed passes --self-test cold (exit=$code)"
+  echo "$out"
+fi
+
+rm -f "$cold_proj/.spine/adapters/smoke-seed"
+write_nonhealing_smoke_seed "$cold_proj/.spine/adapters/smoke-seed"
+if out="$("$ADAPTER_CONFORMANCE" smoke-seed --project "$cold_proj" 2>&1)"; then code=0; else code=$?; fi
+if [[ $code -ne 0 ]] && grep -qF "self-test cold exited" <<<"$out"; then
+  pass "adapter-conformance: non-self-healing smoke-seed fails conformance via --self-test cold"
+else
+  fail "adapter-conformance: non-self-healing smoke-seed fails conformance via --self-test cold (exit=$code)"
+  echo "$out"
+fi
+
+write_selftest_adapter "$cold_proj/.spine/adapters/test" "set -euo pipefail" ""
+if out="$("$ADAPTER_CONFORMANCE" test --project "$cold_proj" 2>&1)"; then code=0; else code=$?; fi
+if [[ $code -eq 0 ]] && ! grep -q "self-test cold" <<<"$out"; then
+  pass "adapter-conformance: capability with no environment assumption never asked for --self-test cold"
+else
+  fail "adapter-conformance: capability with no environment assumption never asked for --self-test cold (exit=$code)"
+  echo "$out"
+fi
+
+if [[ $overall -eq 0 ]]; then
+  echo "core-selftest: PASS"
+else
+  echo "core-selftest: FAIL — see above"
+fi
+exit $overall

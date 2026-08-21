@@ -11,10 +11,10 @@ project. The core never calls a tool directly; it calls a capability name.
 Eighteen capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
-`clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`,
-`migrate-rehearse`, `contract-check` (Extension B — §3.2), `ui-render`
-(§3.3), `ticket-fetch` (intake — §3.4), `open-pr` (ship — §3.5),
-`worktree-prep` (falsifier — §3.6).
+`clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`
+(§3.8), `migrate-rehearse` (§3.7), `contract-check` (Extension B — §3.2),
+`ui-render` (§3.3), `ticket-fetch` (intake — §3.4), `open-pr` (ship —
+§3.5), `worktree-prep` (falsifier — §3.6).
 
 `contract-check` only ever exists in a repo that is a workspace member and
 party (producer or consumer) to at least one declared contract
@@ -89,6 +89,97 @@ Every adapter, in every mode, obeys:
 - Adapters never prompt. Never read from a TTY. Never mutate files outside
   what the capability inherently requires (e.g. a formatter check must not
   reformat in place; that's a different capability if it's ever wanted).
+
+### 2.1 Shell strictness and bash portability
+
+"Exit 0 means pass" (§2 above) is only as trustworthy as the adapter's own
+ability to *notice* it failed. `floor` (`run_simple`/`run_with_stdin`/
+`run_scoped`/`run_artifact`, `core/scripts/floor`) never inspects an
+adapter's stderr to decide pass/fail — it trusts the exit code alone, by
+design (§2). A bash adapter that hits a real error mid-script but doesn't
+actually terminate keeps running, can still reach its own `exit 0` (or fall
+off the end of the script, which is the same thing), and `floor` records a
+clean pass over a crashed, garbage run. This is not hypothetical: a
+project's own `typecheck` adapter used `local -A` (bash 4+ associative
+arrays) under `set -uo pipefail` (no `-e`); `/bin/bash` on an unmodified
+macOS is bash 3.2 (Apple has not shipped a newer bash since the GPLv3
+switch — this is the default on every contributor's Mac, not a misconfigured
+one), so `local -A` failed with "invalid option," an unbound-variable
+reference later in the same function printed to stderr, and the script
+kept going and exited 0. `floor` recorded PASS.
+
+Every bash adapter — and `core/scripts/*` itself — therefore must:
+
+- **Start with `set -euo pipefail`, not a weaker subset.** `-u` alone
+  (unbound-variable errors print but don't stop the script) is not
+  sufficient; `-e` is what turns a real error into the non-zero exit
+  `floor` actually gates on. An adapter with a legitimate reason for a
+  specific command to fail without aborting handles that command
+  explicitly (`cmd || true`, an `if` check, etc.) — `set -e` stays on for
+  everything else.
+- **Not assume bash 4+ features** — associative arrays (`declare -A`/
+  `local -A`), `readarray`/`mapfile`, `&>>`, and similar — **unless the
+  adapter itself checks `$BASH_VERSINFO`** and either degrades to a
+  bash-3.2-compatible path or fails loudly with a clear "needs bash 4+"
+  diagnostic (never silently, per §2's diagnostics rule). Adapters are
+  meant to be portable across contributors' own machines, not just
+  whatever bash CI happens to run — macOS's default `/bin/bash` is the
+  floor to write against, not the exception to special-case.
+
+`core/scripts/adapter-conformance` lints every bash-shebang adapter
+(`#!/bin/bash` or `#!/usr/bin/env bash`) for both of these mechanically,
+before running its self-test fixtures (§4) — a missing `set -euo pipefail`
+or an unguarded bash-4-only construct fails conformance outright, the same
+fail-closed shape every other conformance check uses. This is a static,
+best-effort lint (it reads the adapter's source; it does not prove every
+code path is unreachable-without-`-e`-safe), not a substitute for the rule
+above — the rule is what a human or AI adapter author must follow either
+way.
+
+### 2.2 Shared environment state (stack lifecycle)
+
+Nothing in this contract coordinates state between adapters. `floor`'s
+dispatch loop invokes capabilities in a fixed sequence (§3.7, §3.8), but
+that sequence is not a promise about what any later adapter finds when it
+starts — a human re-running one capability directly, a resumed partial
+floor run after a fix, or a skill invoking a single capability out of
+band, all bypass it. Two rules follow, for any capability whose
+correctness depends on a running local stack or service:
+
+- **If a capability's own work requires the stack to be up, it must bring
+  the stack up itself when it finds it down** — self-heal, not fail with
+  a diagnostic asking whether it's running. `smoke-run`, `smoke-seed`, and
+  `smoke-golden` (§3.8) are the current instances of this; any future
+  capability with the same dependency inherits the same requirement.
+  Treating "stack not running" as an environment precondition someone
+  else must satisfy pushes a cross-adapter coordination problem onto
+  whatever happens to run first — which is exactly the shape of bug this
+  rule exists to close: a capability earlier in `floor`'s sequence tore
+  the stack down as an unrelated side effect of its own cleanup, and the
+  next one in sequence had no way to know that mattered, because sequence
+  order was never a contract either adapter could rely on.
+- **If a capability starts the stack itself as a means to its own end**
+  (rather than because the capability's whole point is to run against
+  it), it must restore what it found, not what its own internals happen
+  to need at exit — leave the stack running if it found it already
+  running, stop it only if it started it. `migrate-rehearse` (§3.7) is
+  the current instance: it needs the stack up to rehearse a migration,
+  but "the stack was already up when I started" and "I brought the stack
+  up to do my job" are different situations, and only the second one
+  licenses tearing it back down on the way out.
+
+Both rules exist because `floor` trusts each adapter's exit code alone
+(§2) and never inspects what state an adapter leaves behind — the same
+trust boundary §2.1 describes for shell strictness applies here to
+environment state: an adapter's own discipline is the only thing standing
+between "floor: PASS" and a stack that's silently gone. Confirmed real,
+not hypothetical: a project's `migrate-rehearse` stopped the local stack
+unconditionally on its way out (its own cleanup discipline, correct in
+isolation), and the `smoke-seed` that ran immediately after it in the
+same `floor` invocation had no restart fallback — it resolved an anon key
+via a status check and failed with "could not resolve the local stack's
+anon key... is it running?" on the first Class 2 task that touched a
+migration, regardless of whether the migration itself was correct.
 
 ## 3. Invocation convention
 
@@ -326,6 +417,93 @@ never a parallel check that happens to agree with it on the fixture (§4's
 general rule, the exact one finding #7 in `docs/tradeoffs.md` was written
 after).
 
+### 3.7 `migrate-rehearse` — eligible only on a migration-touching Class 2 task
+
+`migrate-rehearse` sits in §3's "operates on nothing" row like `test` and
+`mutate`, and — unlike `contract-check`/`ui-render`/`ticket-fetch`/
+`open-pr`/`worktree-prep` (§3.2–§3.6) — it *is* invoked directly by
+`floor`'s own dispatch loop, not by a skill's separate orchestration. But
+it is not always-on the way `test` is: `floor` runs it only when **both**
+hold —
+
+- the class is 2 (`core/rules/migrations.md`: "`migrate-rehearse` is a
+  Class 2 gate" — there is no Class-1 opt-in analogous to `mutate`'s
+  `mutate_class1_optin`), and
+- the task's own changed-file set (`compute_changed_files`, the same set
+  every other diff-scoped capability reads, bookkeeping paths already
+  excluded) contains a path under a `migrations/`- or `migration/`-named
+  directory — the same `**/migrations/**` / `**/migration/**` glob
+  `core/rules/migrations.md`'s own frontmatter uses.
+
+A Class 2 task whose diff never touches a migration path never pays this
+capability's cost, and never shows a gap for it — same as `ui-render`
+against a diff that never touches a UI path (§3.3). A Class 2 task whose
+diff *does* touch a migration path always accounts for `migrate-rehearse`
+one way or another: `implemented` runs it as a normal pass/fail gate
+(fail-fast, same as any other capability); anything else (`unavailable`,
+`not-applicable`, or missing from `.spine/capabilities.json`) is recorded
+as an explicit `degraded` result, the same disclosed-degradation shape
+`clone-scan`/`callers`/`mutate` already use when unavailable (§1) — never
+silently absent, and never a reason for `floor` itself to fail.
+
+**Self-test** (§4): `--self-test pass` builds migrate → verify invariants
+→ rollback → re-migrate against a throwaway seeded fixture inside its own
+scratch space (never a real environment), all four steps succeeding;
+`--self-test fail` does the same with a fixture where at least one step is
+guaranteed to fail (e.g. a rollback that doesn't actually restore the
+pre-migration shape), non-zero exit with full diagnostics.
+
+**Restore-not-reset** (§2.2): `migrate-rehearse`'s own cleanup — on
+success or on failure — must leave its scratch stack in whatever state it
+found it in, not whatever state its own internals happen to produce at
+exit. `--self-test pass` proves this too, not just the four migrate
+steps: it runs the fixture twice — once starting from the scratch stack
+already up (asserting it is *still* up afterward, i.e. never stopped) and
+once starting from it down (asserting `migrate-rehearse` both started it
+for its own run and stopped it again on the way out) — a single clean
+`--self-test pass` covers both starting conditions.
+
+### 3.8 `smoke-seed` / `smoke-run` / `smoke-golden` — a fixed sequence, each self-healing independently
+
+These three run, always in this order, whenever Layer 5 smoke joins a
+floor run (§7's `smoke_in_floor`, or unconditionally at Class 2): `floor`
+seeds a smoke environment (`smoke-seed`), exercises it (`smoke-run`), then
+checks its output against a golden result (`smoke-golden`) — fail-fast,
+same as every other layer.
+
+All three assume a running local stack, and per §2.2 none of them may
+assume any other capability — inside this sequence or outside it — already
+brought that stack up. Each is independently invocable (directly by a
+human, by a skill re-checking one gate, by a resumed floor run), so each
+must self-heal on its own: resolve whatever it needs from the stack (a
+connection string, a service's own generated key, a running process) by
+starting the stack first if it isn't already up — the same way `smoke-run`
+already does — never fail with a "could not resolve X — is it running?"
+diagnostic when starting the stack is within the adapter's own power. This
+was the concrete gap a real `smoke-seed` shipped without: it resolved its
+key via a status check with no restart fallback, so it deterministically
+failed the first time anything earlier in the same `floor` run — including
+`migrate-rehearse`'s own end-of-run cleanup — left the stack down,
+independent of whether anything `smoke-seed` actually seeds was broken.
+
+**Self-test**: alongside `--self-test pass`/`--self-test fail` (§4), each
+of these three additionally supports a third scenario:
+
+```
+.spine/adapters/<name> --self-test cold
+```
+
+which builds the same passing fixture as `--self-test pass`, but starting
+from its scratch stack torn down — proving the self-heal path above is
+real, not just asserted. Same output discipline as `pass` (exit 0, one
+line). Per §4's "exercise the real invocation path" rule, `--self-test
+cold` must route through the same self-heal branch the adapter's normal
+invocation uses, not a parallel check that starts the stack a different
+way. `core/scripts/adapter-conformance` invokes `--self-test cold` for
+these three capabilities specifically (§4) and fails conformance if it's
+missing or non-zero — a `smoke-seed`/`smoke-run`/`smoke-golden` that
+doesn't self-heal cannot stay `implemented`.
+
 ## 4. The self-test convention (what makes conformance possible)
 
 Every adapter additionally supports exactly one more invocation shape,
@@ -335,6 +513,10 @@ mutually exclusive with normal operation:
 .spine/adapters/<name> --self-test pass
 .spine/adapters/<name> --self-test fail
 ```
+
+(`smoke-seed`, `smoke-run`, and `smoke-golden` additionally support a
+third scenario, `--self-test cold` — §3.8; §2.2's shared-environment-state
+rule they exist to prove is the only case today that needs a third mode.)
 
 In `--self-test pass`, the adapter builds or selects a fixture *inside its
 own temp scratch space* (never the project's real files) that is guaranteed

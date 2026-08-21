@@ -2,8 +2,14 @@
 # adapter-conformance — feeds an adapter its own known-passing and
 # known-failing self-test fixtures (core/ADAPTER-CONTRACT.md §4) and verifies
 # exit codes and output discipline (one line on success, non-empty
-# diagnostics on failure). Installers must not mark a capability
-# `implemented` in capabilities.json until this passes.
+# diagnostics on failure). Also statically lints every bash-shebang adapter
+# for the shell-strictness/portability rule (ADAPTER-CONTRACT.md §2.1):
+# `set -euo pipefail` present, no unguarded bash-4-only syntax. For
+# smoke-seed/smoke-run/smoke-golden, additionally requires a third self-test
+# scenario, `--self-test cold` (ADAPTER-CONTRACT.md §2.2, §3.8), proving each
+# self-heals a torn-down stack instead of assuming some earlier capability
+# left it running. Installers must not mark a capability `implemented` in
+# capabilities.json until this passes.
 #
 # Usage:
 #   adapter-conformance <capability> [--project <path>]
@@ -28,6 +34,49 @@ done
 
 adapters_dir="$project/.spine/adapters"
 
+# lint_shell_strictness — static, best-effort lint for ADAPTER-CONTRACT.md
+# §2.1: every bash-shebang adapter must enable errexit+nounset+pipefail
+# (floor trusts exit code alone, so a script that doesn't actually stop on
+# error can crash and still report PASS — the reproduced bug this rule
+# exists for) and must not use bash-4+-only syntax without a $BASH_VERSINFO
+# guard (/bin/bash on an unmodified macOS is bash 3.2). No-op for a non-bash
+# shebang. Comment lines are excluded so a mention of the flags in prose
+# doesn't count as enabling them.
+lint_shell_strictness() {
+  local adapter="$1" first_line src ok=1
+  first_line="$(head -n1 "$adapter" 2>/dev/null || true)"
+  [[ "$first_line" == "#!/bin/bash"* || "$first_line" == "#!/usr/bin/env bash"* ]] || return 0
+  src="$(grep -Ev '^[[:space:]]*#' "$adapter" 2>/dev/null || true)"
+
+  local has_e=0 has_u=0 has_pipefail=0
+  grep -Eq 'set[[:space:]]+-[A-Za-z]*e[A-Za-z]*([[:space:]]|$)|set[[:space:]]+-o[[:space:]]+errexit' <<<"$src" && has_e=1
+  grep -Eq 'set[[:space:]]+-[A-Za-z]*u[A-Za-z]*([[:space:]]|$)|set[[:space:]]+-o[[:space:]]+nounset' <<<"$src" && has_u=1
+  grep -Eq 'set[[:space:]]+-[A-Za-z]*o[[:space:]]+pipefail|set[[:space:]]+-o[[:space:]]+pipefail' <<<"$src" && has_pipefail=1
+  if [[ $has_e -eq 0 || $has_u -eq 0 || $has_pipefail -eq 0 ]]; then
+    echo "FAIL: $(basename "$adapter") — missing 'set -euo pipefail' (errexit=$has_e nounset=$has_u pipefail=$has_pipefail; ADAPTER-CONTRACT.md §2.1)"
+    ok=0
+  fi
+
+  if grep -Eq 'declare[[:space:]]+-[A-Za-z]*A|local[[:space:]]+-[A-Za-z]*A|readarray|mapfile|&>>' <<<"$src" \
+    && ! grep -q 'BASH_VERSINFO' <<<"$src"; then
+    echo "FAIL: $(basename "$adapter") — uses a bash-4+-only construct (associative array/readarray/mapfile/&>>) without a \$BASH_VERSINFO guard; /bin/bash on macOS is bash 3.2 by default (ADAPTER-CONTRACT.md §2.1)"
+    ok=0
+  fi
+
+  [[ $ok -eq 1 ]]
+}
+
+# Capabilities that assume a running local stack (ADAPTER-CONTRACT.md
+# §2.2, §3.8) and must therefore prove they self-heal a torn-down one via
+# a third self-test scenario, `--self-test cold`, in addition to the
+# universal `pass`/`fail` pair every capability supports.
+env_assuming_cap() {
+  case "$1" in
+    smoke-seed|smoke-run|smoke-golden) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 check_one() {
   local cap="$1" adapter="$adapters_dir/$1" ok=1
   echo "--- adapter-conformance: $cap ---"
@@ -36,6 +85,8 @@ check_one() {
     echo "FAIL: $cap — $adapter missing or not executable"
     return 1
   fi
+
+  lint_shell_strictness "$adapter" || ok=0
 
   local pass_out pass_code
   pass_out="$(cd "$project" && "$adapter" --self-test pass 2>&1)"; pass_code=$?
@@ -63,6 +114,24 @@ check_one() {
     ok=0
   else
     echo "ok: --self-test fail — exit $fail_code, diagnostics present ($(printf '%s\n' "$fail_out" | grep -c '.') lines)"
+  fi
+
+  if env_assuming_cap "$cap"; then
+    local cold_out cold_code
+    cold_out="$(cd "$project" && "$adapter" --self-test cold 2>&1)"; cold_code=$?
+    local cold_lines
+    cold_lines="$(printf '%s\n' "$cold_out" | grep -c '.' || true)"
+    if [[ $cold_code -ne 0 ]]; then
+      echo "FAIL: $cap --self-test cold exited $cold_code (expected 0) — a $cap that doesn't self-heal a torn-down stack cannot stay implemented (ADAPTER-CONTRACT.md §2.2, §3.8)"
+      echo "$cold_out"
+      ok=0
+    elif [[ "$cold_lines" -ne 1 ]]; then
+      echo "FAIL: $cap --self-test cold exited 0 but printed $cold_lines lines (expected exactly 1 — output discipline violated)"
+      echo "$cold_out"
+      ok=0
+    else
+      echo "ok: --self-test cold — exit 0, one line: \"$cold_out\""
+    fi
   fi
 
   [[ $ok -eq 1 ]]
