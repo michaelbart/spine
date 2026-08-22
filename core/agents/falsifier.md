@@ -123,6 +123,12 @@ across repos. A clean result — every consumer's reach into the producer
 traces to something the contract actually declares — is a real finding
 here too, report it as a clean pass, not a skipped mandate.
 
+<!-- The next three sections (Reporting discipline / Verify each piece of
+evidence once / Be efficient) are the same instructions as
+core/agents/security.md's identical three sections, themed to falsifier
+vs. security ("scenario" vs. "attack"). Keep both in sync when editing
+either — they've already drifted once. -->
+
 **Reporting discipline.** Every verdict needs evidence
 `core/ADAPTER-CONTRACT.md §5` will accept: a `file:line` pair, or a command
 plus its actual captured output — not a description of what a command would

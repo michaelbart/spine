@@ -105,7 +105,7 @@ colleague's don't. Full mechanics in `docs/tradeoffs.md`.
 core/scripts/    the deterministic layer — floor, conformance, ledger, ...
 core/hooks/      the three PreToolUse gates (phase, protected-path, dependency)
 core/skills/     every slash command — see the table below
-core/agents/     researcher, falsifier, security — fresh-context, read-only
+core/agents/     researcher, falsifier, security, surveyor — fresh-context
 core/rules/      path-scoped discipline (migrations, contracts)
 core/templates/  every artifact format the skills above produce
 ```
@@ -144,8 +144,9 @@ you type them, the model doesn't reach for one on its own.
    actual code and writes down what's really there, before anyone proposes
    how to change it.
 3. **Plan** — a plan gets written from that research, and you read and
-   approve it before any code changes. This is the one stop that always
-   happens.
+   approve it before any code changes — the default, and the only mode for
+   anything but a small, low-risk change. A task explicitly run in `auto`
+   mode skips this stop; that's a narrower, opt-in exception, not the norm.
 4. **Implement** — the plan gets carried out. If reality doesn't match the
    plan, small surprises are just noted and it keeps going; a real one
    stops and asks instead of improvising past it.

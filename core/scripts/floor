@@ -32,8 +32,7 @@
 # typecheck, secret-scan, clone-scan, callers) as literal input. `callers`
 # is the one this bites hardest — it greps the changed-file set as literal
 # symbol strings, so a bookkeeping or tooling-config path with no code
-# relationship to anything fails it outright. Disclosed fix, g1-tee-
-# waitlist testbed finding — see docs/tradeoffs.md.
+# relationship to anything fails it outright. Disclosed fix.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

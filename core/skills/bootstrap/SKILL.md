@@ -223,10 +223,10 @@ mechanism requires (build prompt §3); everything after this is `git pull`
 inside `spine/` with zero further commits in `<project>`.
 
 **Tell the engineer to start a fresh session in `<project>` before doing
-anything else.** Hook and skill wiring does not hot-reload mid-session
-(`phase-A-handoff.md` §2.1) — the session that ran this install will not see
-the newly-symlinked skills or armed hooks. From that fresh session, `/task`
-is the first real command to run.
+anything else.** Hook and skill wiring does not hot-reload mid-session —
+the session that ran this install will not see the newly-symlinked skills
+or armed hooks. From that fresh session, `/task` is the first real command
+to run.
 
 **If the engineer has a product spec, design handoff, or build plan** (a
 document describing what the product does and the intended build sequence),

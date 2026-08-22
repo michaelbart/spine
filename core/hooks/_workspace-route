@@ -69,6 +69,42 @@
 # on a path outside $project in either mode, and a caller like phase-gate
 # that wasn't consulting this function's ownership result at all before
 # can now do so to add the same "outside my project entirely" allowance.
+
+# _wsr_collapse — collapses `.`/`..` segments out of an absolute path
+# string purely lexically (no filesystem access, so it works for a path
+# that doesn't exist yet — the common case for a about-to-be-written
+# file). Without this, "$project/work/T1/../../etc/passwd" survives as a
+# literal string all the way to every glob match below (protected-paths.conf,
+# task_dir confinement, install-command manifests), and none of them match
+# it even though it plainly resolves outside the boundary they exist to
+# enforce — a bare `../` in an ordinary relative file_path silently walks
+# past phase-gate/path-escalate/dep-gate. Confirmed by direct repro: a
+# single ../.. component made an otherwise-denied protected-path write and
+# an otherwise-confined out-of-task-dir write both pass clean.
+_wsr_collapse() {
+  # Bash 3.2 (macOS system bash) has no negative array subscripts
+  # (${arr[-1]} is a 4.2+ feature) — last-index reads/removals below use
+  # $((${#out[@]}-1)) instead, deliberately, not for style.
+  local input="$1" seg out=() IFS='/' last
+  local -a segs
+  read -ra segs <<<"$input"
+  for seg in "${segs[@]}"; do
+    case "$seg" in
+      ''|'.') continue ;;
+      '..')
+        if [[ ${#out[@]} -gt 0 ]]; then
+          last="${out[$((${#out[@]}-1))]}"
+          [[ "$last" != '..' ]] && unset 'out[$((${#out[@]}-1))]'
+        fi
+        ;;
+      *) out+=("$seg") ;;
+    esac
+  done
+  local result="" p
+  for p in "${out[@]}"; do result+="/$p"; done
+  printf '%s' "${result:-/}"
+}
+
 workspace_route() {
   local project="$1" file_path="$2" abs_path ws_conf best_root="" best_name="" i n repo_path repo_name
 
@@ -76,6 +112,7 @@ workspace_route() {
     /*) abs_path="$file_path" ;;
     *) abs_path="$project/$file_path" ;;
   esac
+  abs_path="$(_wsr_collapse "$abs_path")"
 
   ws_conf="$project/workspace.json"
   if [[ ! -f "$ws_conf" ]]; then

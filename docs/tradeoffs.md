@@ -90,6 +90,16 @@ Conceded by design, not bugs waiting to be fixed:
   being cheap; if that price turns out too high in practice, the fix is a
   narrow one (e.g. always run the floor's lint/type layer even when
   everything else is skipped), not a redesign.
+- **Class 2 is permanently unreachable for a project with no smoke-testable
+  runtime.** Unlike `contract-check`/`ui-render`/`ticket-fetch`/`open-pr`/
+  `worktree-prep`, `smoke-seed`/`smoke-run`/`smoke-golden` have no
+  legitimate `not-applicable` escape hatch — the floor's Class 2 gate
+  treats anything other than `implemented` as a hard fail (`core/scripts/
+  floor`'s smoke-run check). A pure CLI/library/batch project genuinely
+  has no stack to seed-run-verify against and can never pass Class 2 floor
+  as a result. Deliberate (no Class-2-risk work ships without a working
+  smoke harness), not an oversight, but worth knowing before adopting spine
+  for a project shaped that way.
 - **Adversary findings inform `/ship`, they don't gate it.** `/verify`
   logs falsifier/security findings to `verify.md`, but even a `high`
   severity finding doesn't fail verify by itself — at ship time it either

@@ -550,8 +550,8 @@ that re-implements its own ad-hoc pass/fail logic (e.g. a second, simpler
 grep or comparison inlined in the `--self-test` branch) instead of calling
 through the same function/command the normal-mode branch calls proves
 nothing about the adapter's actual behavior — it can pass forever while
-the real path is broken on inputs the toy check never represents (g1-tee-
-waitlist testbed finding: a `callers` adapter's self-test grepped a bare
+the real path is broken on inputs the toy check never represents (a real
+testbed finding: a `callers` adapter's self-test grepped a bare
 symbol name against a fixture, while the real adapter greps a full
 repo-relative file path against real source — a shape neither the pass nor
 the fail fixture ever exercised, so a heuristic that structurally could

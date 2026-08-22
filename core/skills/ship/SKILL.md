@@ -123,8 +123,9 @@ task; record it the same way, but note the distinction in the deviation
 record rather than treating both as the identical failure mode.
 `ledger set <task-id> ship_time_regrounding_claims "clear"` (or
 `"undeclared: <n>"` / `"declared: <n>"`) — a third, distinct field from
-the two above, so `/costs` can eventually tell which of the three
-re-grounding checks is actually catching things.
+the two above, so `/task-report` (`render-task`'s "Conformance, approval &
+re-grounding" section) shows which of the three re-grounding checks fired
+on this task, not just whether ship-time re-grounding happened at all.
 
 **Honest limit, stated plainly rather than implied by silence**: this is
 discovered late (ship time, code already written) and is not as strong as
@@ -154,8 +155,9 @@ point in the skill — so it is not a deviation and does not touch the
 circuit breaker; it's a stale, inherited artifact this task is about to
 fix anyway once §2's regeneration runs. Note it in the ledger
 (`ledger set <task-id> ship_time_regrounding_index "stale (regenerating in
-§2)"` or `"ok"`) purely so `/costs` can see how often the index drifts
-between tasks, and move on — §2's own regeneration (which runs
+§2)"` or `"ok"`) so a human reading `/task-report` for this task can see
+whether the index was stale at ship time, and move on — §2's own
+regeneration (which runs
 unconditionally whenever this task touched `docs/decisions/`, and should
 also run here if it's stale for a reason unrelated to this task, e.g. a
 neighbor's un-regenerated ship) is what actually resolves it before this
@@ -474,9 +476,15 @@ that one thing, nothing else in the file changes.
 `work/<task-id>/briefing.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/briefing.md`, its prose per the
 writing mandate at
-`${CLAUDE_SKILL_DIR}/../../templates/writing-mandate.md`. ≤1 page, hard.
-Section by section, each sourced only from what's already been produced —
-this file quotes, it doesn't re-derive:
+`${CLAUDE_SKILL_DIR}/../../templates/writing-mandate.md`. ≤1 page, hard —
+operationalized as ≤60 lines (same convention `CLAUDE.md`'s own cap uses).
+`wc -l` it once written and record the actual count (`ledger set
+<task-id> briefing_line_count <n>`) — this cap has no other backstop, so
+the recorded count is what makes an oversized briefing visible in
+`/task-report` rather than only ever self-checked in the moment. Over cap
+means trim before shipping, not ship anyway. Section by section, each
+sourced only from what's already been produced — this file quotes, it
+doesn't re-derive:
 
 - **What & why** / **What surprised us**: one or two sentences on what's
   now true and why; deviations straight from `deviations.md`, one line

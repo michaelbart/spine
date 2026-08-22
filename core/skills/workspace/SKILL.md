@@ -292,15 +292,19 @@ the trust dialog — or set `hasTrustDialogAccepted: true` for its path in
 before fire-testing anything here. This is a Claude Code primitive, not
 something `/workspace` itself can do on the human's behalf.
 
-## 6. Verify the fallback, once, before calling this done
+## 6. Verify the fallback for each repo this invocation just registered
 
-From the workspace root, confirm (read `docs/tradeoffs.md`'s Auto Mode
-classifier wall section first — this needs a real nested `claude` session,
-which this session's own Bash tool cannot invoke; hand the commands to the
-engineer via `!` passthrough, per `ext-phase-A-handoff.md` §5): a session
-started **inside a member repo directly** (not the workspace root) still
-sees that repo's own protected-paths/hooks behave exactly as they did
-before this workspace existed — no `workspace.json` in scope, no
-`additionalDirectories`, nothing new. This is the regression check for the
-mechanism this skill itself introduces, distinct from Phase D's own
-project-wide single-repo regression demonstration.
+Per §0: this step runs on every create *and* every extend, for whichever
+repo(s) this invocation just added — it is a check on that repo's own
+hook wiring, not a one-time proof of the fallback mechanism in the
+abstract (that part — a session with no `workspace.json` in scope behaves
+exactly as it did before this skill existed — is already guaranteed by
+construction and doesn't need re-proving here). What can actually be wrong
+per repo is its own install: confirm (this needs a real nested `claude`
+session, which this session's own Bash tool cannot invoke — hand the
+commands to the engineer via Claude Code's `!` passthrough instead, and
+read back the resulting file/state changes directly) that a session
+started **inside the newly-added member repo directly** (not the workspace
+root) still sees that repo's own protected-paths/hooks behave exactly as
+they did before this workspace existed — no `workspace.json` in scope, no
+`additionalDirectories`, nothing new.

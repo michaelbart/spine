@@ -45,6 +45,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_workspace-route"
+declare -F workspace_route >/dev/null || { echo "path-escalate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
@@ -118,6 +119,7 @@ case "$tool_name" in
     command="$(jq -r '.tool_input.command // empty' <<<"$input")"
     [[ -n "$command" ]] || exit 0
     source "$SCRIPT_DIR/_bash-write-targets"
+    declare -F bash_write_targets >/dev/null || { echo "path-escalate: _bash-write-targets did not load — failing closed, cannot evaluate this Bash write safely" >&2; exit 2; }
     while IFS= read -r line; do
       [[ -n "$line" ]] || continue
       case "$line" in

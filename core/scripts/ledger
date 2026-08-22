@@ -72,7 +72,7 @@ case "$cmd" in
     engineer_email="$(git -C "$project" config user.email 2>/dev/null || true)"
     engineer="${engineer_name:+$engineer_name}${engineer_email:+ <$engineer_email>}"
     jq -n --arg task_id "$task_id" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg eng "$engineer" \
-      '{task_id:$task_id, created_at:$ts, engineer:(if $eng == "" then null else $eng end), phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null, hand_tracked:false, tooling_gaps:[], claims_conflicts:0, ship_time_regrounding:null, ship_time_regrounding_claims:null, second_approver:null}' \
+      '{task_id:$task_id, created_at:$ts, engineer:(if $eng == "" then null else $eng end), phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null, hand_tracked:false, tooling_gaps:[], claims_conflicts:0, ship_time_regrounding_claims:null, second_approver:null}' \
       >"$lp"
     echo "ok: initialized $lp"
     ;;
@@ -107,11 +107,17 @@ case "$cmd" in
     lp="$(ledger_path "$task_id")"
     [[ -f "$lp" ]] || { echo "ledger: $lp not initialized" >&2; exit 2; }
 
+    # One real API call — one message.id — can appear as several transcript
+    # lines (a thinking block, a tool_use block, etc. each logged
+    # separately), every line carrying an identical copy of that call's own
+    # usage. Dedup by message.id before summing, or a multi-block turn gets
+    # its usage counted once per block instead of once per call.
     usage_json="$(jq -s --arg from "$from" --arg to "$to" '
-      [ .[] | select(.type=="assistant" and .timestamp >= $from and .timestamp <= $to)
-        | .message.usage
+      [ .[] | select(.type=="assistant" and .timestamp >= $from and .timestamp <= $to and .message.usage != null) ]
+      | unique_by(.message.id)
+      | map(.message.usage
         | {input: (.input_tokens // 0), output: (.output_tokens // 0),
-           cache_create: (.cache_creation_input_tokens // 0), cache_read: (.cache_read_input_tokens // 0)} ]
+           cache_create: (.cache_creation_input_tokens // 0), cache_read: (.cache_read_input_tokens // 0)})
       | reduce .[] as $u ({input:0,output:0,cache_create:0,cache_read:0};
           {input: (.input + $u.input), output: (.output + $u.output),
            cache_create: (.cache_create + $u.cache_create), cache_read: (.cache_read + $u.cache_read)})
@@ -235,33 +241,47 @@ case "$cmd" in
       # early, never framed as a leaderboard (docs/tradeoffs.md, /costs's
       # own header). A ledger.json predating this field has engineer:null
       # and groups under "unknown" — never silently dropped.
+      # fresh_tokens (input+output+cache_create) is genuinely incremental —
+      # cache_read_tokens is not: each turn's cache_read reflects the whole
+      # cached context reused at that point, so it grows with conversation
+      # length, not with work done, and dominates total_tokens by design in
+      # any long-running session. Report all three; don't let total_tokens
+      # alone stand in for "how much work happened."
       jq -s --arg since "${since:-}" '
+        def phase_tokens: (.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0}));
         (if $since != "" then map(select(.created_at >= $since)) else . end) as $entries |
         ($entries | group_by(.engineer // "unknown") | map({
           engineer: (.[0].engineer // "unknown"),
           task_count: length,
-          total_tokens: (map(.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0})
-              | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
+          fresh_tokens: (map(phase_tokens | map(.input + .output + .cache_create) | add // 0) | add // 0),
+          cache_read_tokens: (map(phase_tokens | map(.cache_read) | add // 0) | add // 0),
+          total_tokens: (map(phase_tokens | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
           class_escalation_count: (map(select(.class_escalated==true)) | length),
           bypass_count: (map(select(.bypass != null)) | length),
           tooling_gap_count: (map(.tooling_gaps // [] | length) | add // 0),
           claims_conflicts: (map(.claims_conflicts // 0) | add // 0),
-          avg_deviation_count: (map(.deviation_count // 0) | (if length>0 then add/length else 0 end))
+          avg_deviation_count: (map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
+          avg_conformance_score: ([.[] | select(.conformance_score != null) | .conformance_score] as $s | if ($s|length)>0 then ($s|add/length) else null end),
+          second_approver_count: (map(select(.second_approver != null)) | length)
         }))
       ' "${files[@]}"
     else
       jq -s --arg since "${since:-}" '
+        def phase_tokens: (.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0}));
         (if $since != "" then map(select(.created_at >= $since)) else . end) as $entries |
         {
           task_count: ($entries | length),
-          total_tokens: ($entries | map(.phases | to_entries | map(.value.tokens // {input:0,output:0,cache_create:0,cache_read:0})
-              | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
+          fresh_tokens: ($entries | map(phase_tokens | map(.input + .output + .cache_create) | add // 0) | add // 0),
+          cache_read_tokens: ($entries | map(phase_tokens | map(.cache_read) | add // 0) | add // 0),
+          total_tokens: ($entries | map(phase_tokens | map(.input + .output + .cache_create + .cache_read) | add // 0) | add // 0),
           avg_deviation_count: ($entries | map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
           class_escalation_count: ($entries | map(select(.class_escalated==true)) | length),
           bypass_count: ($entries | map(select(.bypass != null)) | length),
           tooling_gap_count: ($entries | map(.tooling_gaps // [] | length) | add // 0),
           hand_tracked_task_count: ($entries | map(select(.hand_tracked==true)) | length),
-          claims_conflicts_total: ($entries | map(.claims_conflicts // 0) | add // 0)
+          claims_conflicts_total: ($entries | map(.claims_conflicts // 0) | add // 0),
+          avg_conformance_score: ([$entries[] | select(.conformance_score != null) | .conformance_score] as $s | if ($s|length)>0 then ($s|add/length) else null end),
+          second_approver_count: ($entries | map(select(.second_approver != null)) | length)
         }
       ' "${files[@]}"
     fi

@@ -634,6 +634,48 @@ else
 fi
 echo '</section>'
 
+# ---- conformance, approval, and ship-time re-grounding (from ledger.json)
+# ---- these are recorded by /verify and /ship but had no reader anywhere
+# ---- until this section (spine audit finding, 2026-08-22) ----
+cat <<'HTML'
+<section id="regrounding">
+<h2>Conformance, approval &amp; re-grounding</h2>
+HTML
+
+if [[ "$ledger_present" -eq 1 ]]; then
+  conformance_score="$(jq -r '.conformance_score // empty' "$ledger_file")"
+  second_approver="$(jq -r '.second_approver // empty' "$ledger_file")"
+  rg_check_stale="$(jq -r '.ship_time_regrounding_check_stale // empty' "$ledger_file")"
+  rg_floor="$(jq -r '.ship_time_regrounding_floor // empty' "$ledger_file")"
+  rg_claims="$(jq -r '.ship_time_regrounding_claims // empty' "$ledger_file")"
+  rg_index="$(jq -r '.ship_time_regrounding_index // empty' "$ledger_file")"
+  plan_lines="$(jq -r '.plan_line_count // empty' "$ledger_file")"
+  briefing_lines="$(jq -r '.briefing_line_count // empty' "$ledger_file")"
+  items=""
+  if [[ -n "$plan_lines" ]]; then
+    over=""; [[ "$plan_lines" -gt 200 ]] && over=" — over the 200-line cap"
+    items+="<li><strong>plan.md length:</strong> $(html_escape <<<"$plan_lines") lines$over</li>"$'\n'
+  fi
+  if [[ -n "$briefing_lines" ]]; then
+    over=""; [[ "$briefing_lines" -gt 60 ]] && over=" — over the ~1-page cap"
+    items+="<li><strong>briefing.md length:</strong> $(html_escape <<<"$briefing_lines") lines$over</li>"$'\n'
+  fi
+  [[ -n "$conformance_score" ]] && items+="<li><strong>Conformance (plan vs. actual, F1):</strong> $(html_escape <<<"$conformance_score")</li>"$'\n'
+  [[ -n "$second_approver" ]] && items+="<li><strong>Second approver (Class 2):</strong> $(html_escape <<<"$second_approver")</li>"$'\n'
+  [[ -n "$rg_check_stale" ]] && items+="<li><strong>Ship-time re-grounding — check-stale:</strong> $(html_escape <<<"$rg_check_stale")</li>"$'\n'
+  [[ -n "$rg_floor" ]] && items+="<li><strong>Ship-time re-grounding — floor re-run:</strong> $(html_escape <<<"$rg_floor")</li>"$'\n'
+  [[ -n "$rg_claims" ]] && items+="<li><strong>Ship-time re-grounding — claims-check:</strong> $(html_escape <<<"$rg_claims")</li>"$'\n'
+  [[ -n "$rg_index" ]] && items+="<li><strong>Ship-time re-grounding — decision-index:</strong> $(html_escape <<<"$rg_index")</li>"$'\n'
+  if [[ -n "$items" ]]; then
+    printf '<ul class="gap-list">\n%s</ul>\n' "$items"
+  else
+    echo '<p class="omitted">Not yet recorded — task has not reached /verify or /ship.</p>'
+  fi
+else
+  echo '<p class="omitted">ledger.json not found.</p>'
+fi
+echo '</section>'
+
 # ---- briefing ----
 cat <<'HTML'
 <section id="ship">

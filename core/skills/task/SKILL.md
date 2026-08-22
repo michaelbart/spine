@@ -78,8 +78,8 @@ this machine's core may enforce differently than what this project was
 calibrated against, but it's not a halt. `mismatch-strict`: stop here,
 show the message, do not classify or touch any task state until the
 engineer has pulled this machine's spine checkout to the pinned sha or a
-maintainer has bumped the pin (`docs/tradeoffs.md`'s Extension C section
-has the full upgrade workflow). If `setup` itself could not run at all,
+maintainer has bumped the pin (`core/skills/update/SKILL.md` has the full
+upgrade workflow). If `setup` itself could not run at all,
 this is the tooling-gap discipline below's "could not run" case —
 note it and proceed, don't treat an unreachable check as a passing one.
 
@@ -214,8 +214,8 @@ blocked, denied, or errored before the script's own logic ever executed —
 a permission denial, a sandbox/classifier block, "command not found" from
 a broken symlink; not the script exiting non-zero on its own). The third
 state is the one that's silently indistinguishable from the second if you
-don't name it — see `docs/tradeoffs.md`'s Auto Mode classifier wall finding
-for why this matters. On "could not run":
+don't name it — a blocked or denied tool call looks, from here, exactly
+like nothing happened, unless you say so yourself. On "could not run":
 
 1. Append a line to `work/<task-id>/notes.md` (create it, header `# Notes`,
    if it doesn't exist yet): `TOOLING GAP: <script> could not run — <one-line
@@ -342,8 +342,7 @@ just degraded.
 stop before creating the task folder** and tell the human plainly: "spine's
 ownership model reads git identity, it does not invent one — run `git
 config --global user.name '<you>'` and `--global user.email
-'<you@example.com>'` first." (Primitive verification,
-`ext-c-phase-A-handoff.md` §0.2 — a fresh machine genuinely has neither set;
+'<you@example.com>'` first." (A fresh machine genuinely has neither set;
 never fall back to `$USER`, hostname, or any other guess.) Otherwise write
 `work/<task-id>/owner` = `<name> <email>`, one line. Write
 `work/<task-id>/claims.json` from `core/templates/claims.json` with
@@ -409,7 +408,10 @@ predicted-touch -->` fence) is machine-parsed verbatim by
 repo-qualified, `<repo-name>:<path>`, per the template's own comment).
 **200-line hard cap, comments included** — `wc -l` it before presenting;
 if it doesn't fit, the task splits into two, it does not get compressed
-into unreadability. Multi-repo, additionally: write `## Ship order` the
+into unreadability. This cap has no other backstop — record the actual
+count (`ledger set <task-id> plan_line_count <n>`) so an oversized plan
+that slipped through is visible in `/task-report` after the fact, not just
+self-checked once and forgotten. Multi-repo, additionally: write `## Ship order` the
 moment `## Predicted touch` names more than one repo. Write `## Contract
 change` if research or your own reading of `## Predicted touch` suggests
 this plan touches a declared contract's producer paths or spec — this is a

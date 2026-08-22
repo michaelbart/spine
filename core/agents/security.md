@@ -33,6 +33,12 @@ No diff, no dep-diff artifact — there are no dependencies yet either.
 Follow §"Design-mode mandate" below instead of scoping your checklist to a
 diff.
 
+<!-- The next three sections (Reporting discipline / Verify each piece of
+evidence once / Be efficient) are the same instructions as
+core/agents/falsifier.md's identical three sections, themed to security
+vs. falsifier ("attack" vs. "scenario"). Keep both in sync when editing
+either — they've already drifted once. -->
+
 **Reporting discipline.** Every verdict needs evidence
 `core/ADAPTER-CONTRACT.md §5` will accept: a `file:line` pair, or a command
 plus its actual captured output — not a description of what a command would

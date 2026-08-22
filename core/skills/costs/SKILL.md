@@ -40,12 +40,31 @@ say so plainly. Then:
 ${CLAUDE_SKILL_DIR}/../../scripts/ledger aggregate [--since <date>]
 ```
 
-Report `task_count`, `total_tokens`, `avg_deviation_count`,
-`class_escalation_count`, `bypass_count`, `tooling_gap_count`, and
-`hand_tracked_task_count` from its JSON. Put the bypass count next to the
-untracked ratio in your summary, not at the bottom — both are "work that
-happened outside the normal gates," and the build prompt is explicit that
-bypass must stay visible, never quiet.
+Report `task_count`, `fresh_tokens`, `cache_read_tokens`, `total_tokens`,
+`avg_deviation_count`, `class_escalation_count`, `bypass_count`,
+`tooling_gap_count`, `hand_tracked_task_count`, `avg_conformance_score`
+(plan-vs-actual F1, null if no task recorded one yet), and
+`second_approver_count` (Class 2 ships with a real or override second
+approver) from its JSON.
+
+**Lead with `fresh_tokens`, not `total_tokens`, when you talk about
+cost.** `fresh_tokens` (input + output + cache writes) is genuinely
+incremental — it grows with real work. `cache_read_tokens` is not: every
+turn's cache-read figure reflects the *entire* cached context reused at
+that point, so it grows with how long the conversation ran, not with how
+much work happened in it, and in any long-running session it dwarfs
+`fresh_tokens` by design (often by one or two orders of magnitude) —
+that's expected, not a sign anything is broken. Report `cache_read_tokens`
+too (it's real, billed token volume, just heavily discounted per token),
+but say plainly that it's dominated by session length and isn't the number
+to compare against "how much did this task actually cost to think
+through" — `fresh_tokens` is. `total_tokens` (the flat sum of both) is
+still available for anyone who wants the raw figure, but don't lead with
+it or it reads as a much bigger number than the work actually was.
+
+Put the bypass count next to the untracked ratio in your summary, not at
+the bottom — both are "work that happened outside the normal gates," and
+the build prompt is explicit that bypass must stay visible, never quiet.
 
 **`tooling_gap_count` and `hand_tracked_task_count` go right alongside
 them, not at the bottom either.** These count a different failure mode
@@ -58,10 +77,10 @@ count of tasks where `ledger` itself was unreachable and the whole task's
 ledger.json had to be hand-authored rather than script-produced. A rising
 `tooling_gap_count` means the engineer is running a lighter system than
 they think they are — say so plainly if it's nonzero, the same way you
-would for a rising bypass count. Zero here is not proof nothing degraded —
-it only counts gaps that got recorded; see `docs/tradeoffs.md`'s Auto Mode
-classifier wall section for the residual case where even the recording
-mechanism (`ledger`) was the thing that failed.
+would for a rising bypass count. Zero here is not proof nothing
+degraded — it only counts gaps that got recorded; if `ledger` itself was
+ever the unreachable script, there's no recording mechanism left to catch
+that, and it surfaces (if at all) as a `hand_tracked` task instead.
 
 **Team profile & drift (Phase 5).** Report the active profile so the numbers
 have context: read `<project root>/.spine/profile.json` (absent = built-in

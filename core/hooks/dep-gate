@@ -38,6 +38,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_workspace-route"
+declare -F workspace_route >/dev/null || { echo "dep-gate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 tool_name="$(jq -r '.tool_name // empty' <<<"$input")"

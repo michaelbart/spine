@@ -62,12 +62,24 @@ new_migrate_fixture() {
   "clone-scan": {"status":"not-applicable","reason":"selftest fixture"},
   "callers": {"status":"not-applicable","reason":"selftest fixture"},
   "mutate": {"status":"not-applicable","reason":"selftest fixture"},
-  "smoke-seed": {"status":"not-applicable","reason":"selftest fixture"},
-  "smoke-run": {"status":"not-applicable","reason":"selftest fixture"},
-  "smoke-golden": {"status":"not-applicable","reason":"selftest fixture"},
+  "smoke-seed": {"status":"implemented"},
+  "smoke-run": {"status":"implemented"},
+  "smoke-golden": {"status":"implemented"},
   "migrate-rehearse": {"status":"$status","reason":"selftest: not wired"}
 }
 EOF
+  # A real class-2 floor run hard-gates on smoke-run being "implemented"
+  # (ADAPTER-CONTRACT.md §3.8, floor's own Class-2 gate) — the migrate-
+  # rehearse cases below are only exercising migration dispatch, so the
+  # smoke trio here just needs to pass cleanly, not test anything itself.
+  for cap in smoke-seed smoke-run smoke-golden; do
+    cat >"$proj/.spine/adapters/$cap" <<EOF
+#!/bin/bash
+set -euo pipefail
+echo "$cap selftest stub: ok"
+EOF
+    chmod +x "$proj/.spine/adapters/$cap"
+  done
   cat >"$proj/.spine/adapters/migrate-rehearse" <<'EOF'
 #!/bin/bash
 set -euo pipefail

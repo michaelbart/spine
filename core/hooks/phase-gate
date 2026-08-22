@@ -41,6 +41,7 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_workspace-route"
+declare -F workspace_route >/dev/null || { echo "phase-gate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
@@ -74,10 +75,17 @@ check_target() {
   workspace_route "$project" "$file_path"
   [[ -n "$WSR_OWNER_ROOT" ]] || return 0
 
+  # Recomputed and collapsed the same way workspace_route collapses its own
+  # abs_path (_wsr_collapse, same file) — this check_target does its own
+  # task_dir containment test rather than reusing WSR_REL, so it needs the
+  # identical normalization applied here too, or a `../` in file_path walks
+  # past this containment check the same way it did against
+  # path-escalate/dep-gate before their shared helper was fixed.
   case "$file_path" in
     /*) abs_path="$file_path" ;;
     *) abs_path="$project/$file_path" ;;
   esac
+  abs_path="$(_wsr_collapse "$abs_path")"
   case "$abs_path" in
     "$task_dir"/*) return 0 ;;
     *)
@@ -99,6 +107,7 @@ case "$tool_name" in
     command="$(jq -r '.tool_input.command // empty' <<<"$input")"
     [[ -n "$command" ]] || exit 0
     source "$SCRIPT_DIR/_bash-write-targets"
+    declare -F bash_write_targets >/dev/null || { echo "phase-gate: _bash-write-targets did not load — failing closed, cannot evaluate this Bash write safely" >&2; exit 2; }
     while IFS= read -r line; do
       [[ -n "$line" ]] || continue
       case "$line" in
