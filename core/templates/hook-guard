@@ -3,8 +3,8 @@
 # no per-machine setup to exist. Wired directly into .claude/settings.json
 # (`${CLAUDE_PROJECT_DIR}/.claude/hook-guard <hook-name>`, one invocation
 # per hook, in place of pointing at `.claude/hooks/<name>` directly) for
-# one specific, empirically-confirmed reason (Extension C Phase C, fresh-
-# clone enforcement-state test, work/.build/ext-c-phase-C-handoff.md):
+# one specific, empirically-confirmed reason (Extension C Phase C,
+# fresh-clone enforcement-state test):
 # a PreToolUse `command` pointing at a path that doesn't exist is silently
 # skipped by Claude Code's own hook runner — not blocked, not warned,
 # skipped. Since `.claude/hooks` is generated locally by

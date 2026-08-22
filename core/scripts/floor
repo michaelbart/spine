@@ -104,8 +104,7 @@ changed_files=""
 # task's own milestone.md bookkeeping edit) or .spine/** tooling-config
 # edits reach diff-scoped capabilities like `callers` as literal grep
 # targets, which fails them outright on content that was never meant to
-# be treated as source. Disclosed fix, g1-tee-waitlist testbed finding —
-# see docs/tradeoffs.md.
+# be treated as source. Disclosed fix.
 is_bookkeeping() {
   case "$1" in
     work/*) return 0 ;;
@@ -117,16 +116,26 @@ is_bookkeeping() {
     .spine/core-pin.json) return 0 ;;
     # Claude Code meta-tooling config (settings, hooks, skills, scripts) is
     # never reviewable application source — same rationale as .spine/** above.
-    # g1-tee-waitlist testbed finding: .claude/settings.json flagged as zero-
-    # callers during confirm/decline-mutation task when the user added an
-    # additionalDirectory mid-task (the edit was uncommitted at floor time).
+    # Real example that motivated this: .claude/settings.json flagged as
+    # zero-callers during a confirm/decline-mutation task when the user
+    # added an additionalDirectory mid-task (the edit was uncommitted at
+    # floor time).
     .claude/*) return 0 ;;
     *) return 1 ;;
   esac
 }
 compute_changed_files() {
   if [[ -z "$changed_files" ]]; then
-    changed_files="$(cd "$project" && git diff --name-only "$base_ref" -- . 2>/dev/null | while IFS= read -r f; do is_bookkeeping "$f" || printf '%s\n' "$f"; done || true)"
+    # git diff --name-only alone only ever shows *tracked* file changes — a
+    # task that creates genuinely new files (the common case) never gets
+    # them staged by anything in the /task flow before /verify runs, so
+    # those new files (e.g. a brand-new migration, a new source file with a
+    # secret or a type error) were invisible to every diff-scoped
+    # capability below. git ls-files --others (untracked, respecting
+    # .gitignore) closes that gap — same fix core/scripts/conformance,
+    # contract-touch, and claims-check already apply to their own
+    # changed-file sets.
+    changed_files="$(cd "$project" && { git diff --name-only "$base_ref" -- .; git ls-files --others --exclude-standard -- .; } 2>/dev/null | sort -u | while IFS= read -r f; do is_bookkeeping "$f" || printf '%s\n' "$f"; done || true)"
   fi
 }
 
@@ -335,9 +344,14 @@ if [[ "${finish:-0}" -ne 1 ]]; then
     smoke_status="$(status_of smoke-run)"
     include_smoke=0
     if [[ "$class" == "2" ]]; then
-      include_smoke=1
       if [[ "$smoke_status" != "implemented" ]]; then
-        echo "DEGRADED (HARD GATE): smoke is not implemented ($smoke_status) at Class 2 — this is a real gap, not a soft skip" >&2
+        echo "FAIL: smoke — not implemented ($smoke_status) at Class 2 — smoke is a hard gate at this class, not a soft skip" >&2
+        add_result "smoke-run" "fail" "smoke not implemented at Class 2 (hard gate): ${smoke_status}"
+        overall_fail=1
+        finish=1
+        include_smoke=0
+      else
+        include_smoke=1
       fi
     else
       cache_file="$project/.spine/.smoke-runtime-seconds"

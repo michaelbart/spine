@@ -135,6 +135,28 @@ you type them, the model doesn't reach for one on its own.
 | `/verify` | `<task-id>` | Runs the floor and adversary review, writes `verify.md`. You type this yourself when `/task` asks. |
 | `/ship` | `<task-id> [--bypass <reason>]` | Gates, commits, writes the briefing and PR description. You type this yourself when `/task` asks, or use `--bypass` for a genuine emergency (loud and recorded, never silent). |
 
+`/task` walks through six steps, in plain terms:
+
+1. **Classify** — you and the model agree how big a deal this change is
+   (trivial, standard, or high-risk). That decision sets how much process
+   kicks in for everything after it.
+2. **Research** — a fresh agent with no stake in the outcome reads the
+   actual code and writes down what's really there, before anyone proposes
+   how to change it.
+3. **Plan** — a plan gets written from that research, and you read and
+   approve it before any code changes. This is the one stop that always
+   happens.
+4. **Implement** — the plan gets carried out. If reality doesn't match the
+   plan, small surprises are just noted and it keeps going; a real one
+   stops and asks instead of improvising past it.
+5. **Verify** — a deterministic floor (tests, duplication checks, etc.)
+   runs and must pass. Fresh adversarial agents also try to break what was
+   built — one tries to prove the tests are fake, another looks for
+   security holes — but their findings surface for a human to weigh, they
+   don't auto-block; only the floor and an unresolved plan-deviation do.
+6. **Ship** — the change is gated, committed, and pushed, and you get a
+   one-page briefing of what actually happened.
+
 **Maintenance & visibility — never a gate**
 
 | Command | Args | What it does |

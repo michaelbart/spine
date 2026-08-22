@@ -22,10 +22,10 @@ ${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md
 ```
 
 **Before treating STALE as real drift, cross-check each drifted file
-against this task's own record** (disclosed fix — see docs/tradeoffs.md's
-g1-tee-waitlist testbed findings; the naive "any STALE verdict is drift"
-rule produces a guaranteed false positive on every task that touches a
-file it also read as grounding, which is most tasks). A drifted file is
+against this task's own record** (disclosed fix — the naive "any STALE
+verdict is drift" rule produces a guaranteed false positive on every task
+that touches a file it also read as grounding, which is most tasks). A
+drifted file is
 **expected, not drift**, if any of the following is true: (a) it appears
 in `work/<task-id>/plan.md`'s own `## Predicted touch` list — this task's
 own approved implementation changed it, not a neighbor; (b) it's
@@ -38,10 +38,7 @@ recorded during `/verify` is exactly as "this task's own approved work,
 not a neighbor's" as (a)/(b), and forcing every such fix through
 `deviations.md` too would make the circuit breaker fire on legitimate,
 already-adversarially-verified work with nothing left to stash (disclosed
-fix — see docs/tradeoffs.md's g1-tee-waitlist testbed findings; found live
-when a `callers` adapter fix the security adversary's own review had
-already driven and `verify.md` already documented as `FIXED` had no other
-home to be "expected" from); or (d) it is `work/<id>/milestone.md` for the
+fix — see docs/tradeoffs.md); or (d) it is `work/<id>/milestone.md` for the
 milestone this task itself belongs to (`work/<task-id>/milestone` names
 `<id>`), and every changed line `git diff <sha> -- work/<id>/milestone.md`
 shows traces to this task's own mandated bookkeeping in that shared file —
@@ -55,7 +52,7 @@ milestone-tagged task's `research.md` citing `work/<id>/milestone.md` as
 grounding — the expected case, since `core/skills/task/SKILL.md` loads it
 as planning context for research to read — makes this guaranteed on the
 classify-time edit alone, on every such task, not an edge case (disclosed
-fix — see docs/tradeoffs.md's g1-tee-waitlist testbed findings). A changed
+fix). A changed
 line that isn't one of those two things — another member task's own `TBD`
 slot resolved, a different task's Known-gaps entry, an edit to `##
 Inter-task contracts` or `## Capability targets` — is a neighbor's real

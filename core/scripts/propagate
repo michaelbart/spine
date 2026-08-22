@@ -11,11 +11,10 @@
 # Branches on docs/decisions/ *existing*, never on whether Extension A is
 # installed (Phase A review correction — check-stale's own
 # grounding-decisions: handling already proved decisions are baseline
-# infrastructure, not an A-exclusive one; work/.build/ext-c-phase-A-
-# handoff.md §0.4). Contracts are Extension B only, naturally, because
-# --contracts has nothing to match against without workspace.json's
-# registry — no separate presence check needed, the data just won't be
-# there.
+# infrastructure, not an A-exclusive one). Contracts are Extension B only,
+# naturally, because --contracts has nothing to match against without
+# workspace.json's registry — no separate presence check needed, the data
+# just won't be there.
 #
 # Open question 2 (build prompt §5.2): "same flag, different urgency?" —
 # answered here, mechanically, not just in prose: each flag records the

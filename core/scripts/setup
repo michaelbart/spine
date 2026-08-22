@@ -3,8 +3,8 @@
 # (build prompt §2.1, Extension C). Idempotent: safe to re-run on every
 # machine, including the first, including a machine that already ran it.
 #
-# What "machine-absolute" broke, reproduced before this script existed
-# (work/.build/ext-c-phase-A-handoff.md §0.1): core/skills/bootstrap and
+# What "machine-absolute" broke, reproduced before this script existed:
+# core/skills/bootstrap and
 # core/skills/adopt used to *commit* `.claude/skills/<name>`,
 # `.claude/agents/<name>.md`, `.claude/rules/<name>.md`, `.claude/hooks`
 # as symlinks whose target is this checkout's absolute path, plus a

@@ -75,7 +75,33 @@ Conceded by design, not bugs waiting to be fixed:
   sits entirely on whoever approves the plan. Probably the right place for
   it (deciding whether a plan tests the right thing isn't a check that
   decomposes into a deterministic gate), but it means plan review is the
-  one link in the chain with nothing mechanical behind it.
+  one link in the chain with nothing mechanical behind it. An `auto`
+  task compounds this: it skips plan approval entirely, so the falsifier's
+  mandatory stub-out probe — the "partial backstop for the plan review
+  auto skipped" — is checking a plan whose own acceptance checks were
+  never reviewed by anyone. Two unbacked links stacked, not one.
+- **Class 0 has no adversarial backstop at all.** A change under the
+  trivial-change threshold (≈2 files, ≈15 lines, no protected path) gets
+  one commit and a trace line — no research, no plan, no verify, no
+  adversary. The only thing that can catch it is `path-escalate` noticing
+  a protected-path touch after the fact. A small-but-wrong logic change
+  (an inverted condition, an off-by-one) in an unprotected file ships on
+  the model's own unreviewed judgment alone. This is the price of Class 0
+  being cheap; if that price turns out too high in practice, the fix is a
+  narrow one (e.g. always run the floor's lint/type layer even when
+  everything else is skipped), not a redesign.
+- **Adversary findings inform `/ship`, they don't gate it.** `/verify`
+  logs falsifier/security findings to `verify.md`, but even a `high`
+  severity finding doesn't fail verify by itself — at ship time it either
+  prompts an interactive ask (`guided`) or gets auto-routed to a
+  milestone's "Known gaps" list (`checkpointed`/`auto`). A human can say
+  "ship it anyway, just flag it" and the merge gate doesn't stop them. The
+  only hard ship-time gates are the deterministic floor, zero open
+  `deviations.md` entries, and (multi-repo) contract/render checks. This
+  is deliberate — a hard block on adversary opinion would recreate the
+  review-bottleneck rubber-stamping this system exists to avoid — but
+  it means "adversarial review" is disclosure with visibility, not
+  enforcement, and should be read that way.
 - **The deviation circuit breaker runs on an honor system.** It counts
   deviations actually logged to `deviations.md`; nothing forces one to get
   logged. That's a norm the skill instructions ask for, not something a

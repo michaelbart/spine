@@ -265,9 +265,8 @@ but structurally blind to a class of bug that only shows up when the
 actual view is served by the actual dev server and rendered in an actual
 browser: a network call that returns something other than what the test
 mocked (a dev-server SPA fallback returning 200+HTML for an unmatched API
-route, for instance — g1-tee-waitlist testbed finding, `docs/tradeoffs.md`),
-a CSS/layout failure invisible to jsdom/happy-dom, a route that 404s for
-real. `ui-render` exists to catch exactly this gap, not to replace or
+route, for instance), a CSS/layout failure invisible to jsdom/happy-dom, a
+route that 404s for real. `ui-render` exists to catch exactly this gap, not to replace or
 duplicate `test`/`test-changed`.
 
 `ui-render` sits in §3's "operates on nothing" row: no stdin, no

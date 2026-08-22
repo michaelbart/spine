@@ -7,8 +7,8 @@
 # core/scripts/propagate all call this rather than each hand-rolling their
 # own add/commit/push/retry.
 #
-# Shared mainline decision (work/.build/ext-c-phase-B-handoff.md): the
-# registry is *not* a separate branch. core/hooks/phase-gate and friends
+# Shared mainline decision: the registry is *not* a separate branch.
+# core/hooks/phase-gate and friends
 # read work/<task-id>/state etc. as plain files relative to
 # $CLAUDE_PROJECT_DIR — whatever branch the engineer's own working tree is
 # checked out to. A registry entry only becomes visible to those hooks (and

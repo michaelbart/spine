@@ -34,7 +34,7 @@
 #     compared current status against the literal string `superseded`
 #     and so permanently, unfixably quarantined any research that
 #     correctly cited an already-superseded decision as supersession
-#     history — see docs/tradeoffs.md's g1-tee-waitlist testbed findings.
+#     history.
 # A decision's `- Status:` line flipping between any two of
 # proposed/adopted/implemented (at the cited sha vs now) does NOT by
 # itself count as drift — decision-hash deliberately excludes that line
@@ -82,8 +82,7 @@
 # script reports milestone.md as STALE like any other grounding file;
 # `core/skills/ship/SKILL.md` §0's own cross-check (source (d)) does the
 # finer, line-level distinction between this task's own mandated edits and
-# a neighbor's — see docs/tradeoffs.md's g1-tee-waitlist testbed findings,
-# finding 11.
+# a neighbor's.
 #
 # Usage: check-stale <research.md-path> [--project <path>]
 set -uo pipefail
