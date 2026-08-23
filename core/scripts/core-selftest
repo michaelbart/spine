@@ -42,6 +42,14 @@
 #     always-terminates for realpath, always-absolute-or-empty ownership
 #     root for workspace_route, NFC/NFD symmetry for glob_eq — each run
 #     bounded so a reintroduced runaway fails loudly instead of hanging.
+#   - second-approver-check's Class 2 approval gate: no approval.json, a
+#     missing approver field, self-approval without an override, a
+#     recorded self-approval override, and a genuine different-identity
+#     approver — each the correct exit code and message.
+#   - contract-touch's additive/breaking spec classification, blast-radius
+#     aggregation, and registry-staleness detection (a stale registry
+#     alone, with nothing else touched, still marks a contract touched) —
+#     plus its two precondition failures (missing/malformed workspace.json).
 #
 # Usage: core-selftest
 # Exit 0 iff every case passes.
@@ -1116,6 +1124,266 @@ if grep -q 'briefing.md length' "$rt2_html" 2>/dev/null && grep -q 'over the ~1-
   pass "render-task: an over-cap briefing word count still renders when the line count field is absent"
 else
   fail "render-task: expected a briefing.md over-cap line despite missing briefing_line_count, not found in $rt2_html"
+fi
+
+# ---------------------------------------------------------------------------
+# second-approver-check: Class 2's second-approver gate
+# ---------------------------------------------------------------------------
+# Round 5's audit flagged core/scripts/* test coverage as a standing gap
+# (17 scripts, zero permanent coverage, five consecutive rounds). Rather
+# than either close all 17 or defer a sixth time, this closes coverage for
+# the two whose silent failure would matter most: this script gates a real
+# approval decision (an unnoticed regression here means Class 2 work ships
+# without a genuine second approver), contract-touch below gates cross-repo
+# blast-radius/breaking-change classification.
+
+SECOND_APPROVER_CHECK="$SCRIPT_DIR/second-approver-check"
+
+sac_fixture() {
+  # sac_fixture <owner> [<approval.json-body>] -> "<project>"
+  local owner="$1" body="${2:-}" proj
+  proj="$(mktemp -d "$tmp_root/sacproj.XXXXXX")"
+  mkdir -p "$proj/work/SAC1"
+  printf '%s' "$owner" >"$proj/work/SAC1/owner"
+  [[ -n "$body" ]] && printf '%s' "$body" >"$proj/work/SAC1/approval.json"
+  printf '%s' "$proj"
+}
+
+sac_run() {
+  # sac_run <project> -> "<exit>|<output>"
+  local proj="$1" out code=0
+  out="$("$SECOND_APPROVER_CHECK" SAC1 --project "$proj" 2>&1)" || code=$?
+  printf '%s|%s' "$code" "$out"
+}
+
+sac_check() {
+  # sac_check <desc> <result> <expect-exit> <expect-substring>
+  local desc="$1" result="$2" expect_exit="$3" expect_sub="$4" code="${2%%|*}" out="${2#*|}"
+  if [[ "$code" == "$expect_exit" && "$out" == *"$expect_sub"* ]]; then
+    pass "second-approver-check: $desc"
+  else
+    fail "second-approver-check: $desc (expected exit=$expect_exit containing '$expect_sub', got exit=$code: $out)"
+  fi
+}
+
+sac_check "no approval.json -> HALT" \
+  "$(sac_run "$(sac_fixture "alice")")" 1 "no approval.json"
+
+sac_check "approval.json with no approver field -> HALT" \
+  "$(sac_run "$(sac_fixture "alice" '{}')")" 1 "no 'approver' field"
+
+sac_check "approver == owner, no override -> HALT" \
+  "$(sac_run "$(sac_fixture "alice" '{"approver":"alice"}')")" 1 "same identity as owner"
+
+sac_check "approver == owner, override:true -> PROCEED, reason echoed" \
+  "$(sac_run "$(sac_fixture "alice" '{"approver":"alice","override":true,"override_reason":"solo project"}')")" 0 "solo project"
+
+sac_check "real second approver -> PROCEED" \
+  "$(sac_run "$(sac_fixture "alice" '{"approver":"bob"}')")" 0 "real second approver on record: bob"
+
+sac_check "missing owner file -> exit 2 (can't evaluate, not a halt)" \
+  "$(sac_run "$(mktemp -d "$tmp_root/sacproj.XXXXXX")")" 2 ""
+
+# Negative control: temporarily invert the self-approval identity check
+# (the specific line this coverage exists to guard) and confirm the
+# regression case above actually fails without it — a test that only ever
+# passes isn't evidence, per every prior round's own standing lesson.
+sac_negctrl_backup="$(mktemp "$tmp_root/sac-negctrl.XXXXXX")"
+cp "$SECOND_APPROVER_CHECK" "$sac_negctrl_backup"
+sed -i.bak 's/"\$approver" == "\$owner"/"$approver" != "$owner"/' "$SECOND_APPROVER_CHECK"
+rm -f "$SECOND_APPROVER_CHECK.bak"
+negctrl_result="$(sac_run "$(sac_fixture "alice" '{"approver":"alice"}')")"
+cp "$sac_negctrl_backup" "$SECOND_APPROVER_CHECK"
+if [[ "${negctrl_result%%|*}" != "1" ]]; then
+  pass "second-approver-check: negative control confirms the self-approval case above is meaningful (fails without the real check)"
+else
+  fail "second-approver-check: negative control did NOT fail as expected — the self-approval regression case may be vacuous"
+fi
+
+# ---------------------------------------------------------------------------
+# contract-touch: additive/breaking classification, blast radius, registry
+# staleness
+# ---------------------------------------------------------------------------
+
+CONTRACT_TOUCH="$SCRIPT_DIR/contract-touch"
+
+new_contract_touch_fixture() {
+  # new_contract_touch_fixture <producer-file-matches-glob:yes|no> ->
+  # "<workspace-root>|<producer-repo>". "no" seeds the producer repo with a
+  # committed file that does NOT match producer_paths, while workspace.json
+  # still records producer_paths_match_count:1 — a registry that's already
+  # stale before this task's own diff, isolating registry-staleness
+  # detection from spec/producer-touch detection (which a fresh, matching
+  # fixture would otherwise conflate: removing the one matching file to
+  # drive the count to zero also shows up as a producer-touched change).
+  local matches="$1" ws producer producer_file
+  ws="$(mktemp -d "$tmp_root/ctws.XXXXXX")"
+  producer="$(mktemp -d "$tmp_root/ctproducer.XXXXXX")"
+
+  git init -q "$producer"
+  git -C "$producer" config user.email "core-selftest@example.com"
+  git -C "$producer" config user.name "core-selftest"
+  mkdir -p "$producer/src/routes"
+  if [[ "$matches" == "yes" ]]; then
+    producer_file="$producer/src/routes/items.ts"
+  else
+    producer_file="$producer/src/routes/other.ts"
+  fi
+  echo "export const items = {}" >"$producer_file"
+  git -C "$producer" add -A
+  git -C "$producer" commit -q -m seed
+
+  git init -q "$ws"
+  git -C "$ws" config user.email "core-selftest@example.com"
+  git -C "$ws" config user.name "core-selftest"
+  mkdir -p "$ws/contracts/items-api"
+  cat >"$ws/contracts/items-api/spec.md" <<'SPECEOF'
+# items-api
+
+- GET /items returns a list of items
+- POST /items creates an item
+SPECEOF
+  cat >"$ws/workspace.json" <<WSEOF
+{
+  "repos": [
+    {"name": "producer", "path": "$producer", "role": "producer"}
+  ],
+  "contracts": [
+    {
+      "name": "items-api",
+      "producer": "producer",
+      "producer_paths": ["src/routes/items.*"],
+      "producer_paths_match_count": 1,
+      "consumers": ["consumer-app"],
+      "spec_path": "contracts/items-api/spec.md",
+      "registered": "2026-08-01"
+    }
+  ]
+}
+WSEOF
+  git -C "$ws" add -A
+  git -C "$ws" commit -q -m seed
+  printf '%s|%s' "$ws" "$producer"
+}
+
+ct_run() {
+  # ct_run <workspace-root> -> "<exit>|<out-json-path>"
+  local ws="$1" out code=0
+  out="$tmp_root/ct-$$-$RANDOM.json"
+  ( cd "$ws" && "$CONTRACT_TOUCH" --out "$out" >/dev/null 2>&1 ) || code=$?
+  printf '%s|%s' "$code" "$out"
+}
+
+ct_field() { jq -r --arg n "$2" '.touched_contracts[] | select(.name==$n) | .[$3]' "$1" --arg n "items-api" 2>/dev/null; }
+
+# Case A: spec.md changed with only additions (pure append) -> additive,
+# spec_touched, touched, consumer enters blast radius.
+ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
+echo "- DELETE /items removes an item" >>"$ws/contracts/items-api/spec.md"
+r="$(ct_run "$ws")"; ct_out="${r#*|}"
+spec_change="$(jq -r '.touched_contracts[0].spec_change' "$ct_out" 2>/dev/null)"
+blast="$(jq -r '.consumers_in_blast_radius | join(",")' "$ct_out" 2>/dev/null)"
+if [[ "$spec_change" == "additive" && "$blast" == "consumer-app" ]]; then
+  pass "contract-touch: pure-addition spec change classified additive, consumer enters blast radius"
+else
+  fail "contract-touch: pure-addition spec change -> expected additive/consumer-app, got spec_change=$spec_change blast=$blast ($ct_out)"
+fi
+
+# Case B: spec.md changed with a removed/modified line -> breaking.
+ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
+sed -i.bak 's/GET \/items returns a list of items/GET \/items returns a paginated list of items/' "$ws/contracts/items-api/spec.md"
+rm -f "$ws/contracts/items-api/spec.md.bak"
+r="$(ct_run "$ws")"; ct_out="${r#*|}"
+spec_change="$(jq -r '.touched_contracts[0].spec_change' "$ct_out" 2>/dev/null)"
+if [[ "$spec_change" == "breaking" ]]; then
+  pass "contract-touch: modified spec line classified breaking"
+else
+  fail "contract-touch: modified spec line -> expected breaking, got spec_change=$spec_change ($ct_out)"
+fi
+
+# Case C: producer's own producer_paths file changed, spec untouched ->
+# touched via producer_touched alone, spec_change stays "unchanged".
+ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"; producer="${ctf#*|}"
+echo "export const items = { v2: true }" >>"$producer/src/routes/items.ts"
+r="$(ct_run "$ws")"; ct_out="${r#*|}"
+spec_touched="$(jq -r '.touched_contracts[0].spec_touched' "$ct_out" 2>/dev/null)"
+producer_touched="$(jq -r '.touched_contracts[0].producer_touched' "$ct_out" 2>/dev/null)"
+spec_change="$(jq -r '.touched_contracts[0].spec_change' "$ct_out" 2>/dev/null)"
+if [[ "$spec_touched" == "false" && "$producer_touched" == "true" && "$spec_change" == "unchanged" ]]; then
+  pass "contract-touch: producer-path-only change detected, spec_change stays unchanged"
+else
+  fail "contract-touch: producer-only change -> expected spec_touched=false producer_touched=true spec_change=unchanged, got spec_touched=$spec_touched producer_touched=$producer_touched spec_change=$spec_change ($ct_out)"
+fi
+
+# Case D: registry already stale (producer_paths_match_count:1 registered,
+# but the committed producer file doesn't match producer_paths at all) with
+# NO other change anywhere -> registry_stale alone drives touched=true.
+ctf="$(new_contract_touch_fixture no)"; ws="${ctf%%|*}"
+r="$(ct_run "$ws")"; ct_out="${r#*|}"
+# `if . == null then ... else . end`, not `// "missing"` — jq's `//`
+# treats a present `false` as falsy too (the same gotcha round 2 already
+# hit for smoke_in_floor), which would otherwise silently rewrite the
+# very `false` values this case exists to check into the string "missing".
+registry_stale="$(jq -r '.touched_contracts[0].registry_stale | if . == null then "missing" else . end' "$ct_out" 2>/dev/null)"
+spec_touched="$(jq -r '.touched_contracts[0].spec_touched | if . == null then "missing" else . end' "$ct_out" 2>/dev/null)"
+producer_touched="$(jq -r '.touched_contracts[0].producer_touched | if . == null then "missing" else . end' "$ct_out" 2>/dev/null)"
+if [[ "$registry_stale" == "true" && "$spec_touched" == "false" && "$producer_touched" == "false" ]]; then
+  pass "contract-touch: a stale registry alone (no other change) still marks the contract touched"
+else
+  fail "contract-touch: stale registry -> expected registry_stale=true with spec/producer_touched both false, got registry_stale=$registry_stale spec_touched=$spec_touched producer_touched=$producer_touched ($ct_out)"
+fi
+
+# Case E: control — nothing touched, registry current -> empty
+# touched_contracts and empty blast radius.
+ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
+r="$(ct_run "$ws")"; ct_out="${r#*|}"
+touched_count="$(jq -r '.touched_contracts | length' "$ct_out" 2>/dev/null)"
+blast_count="$(jq -r '.consumers_in_blast_radius | length' "$ct_out" 2>/dev/null)"
+if [[ "$touched_count" == "0" && "$blast_count" == "0" ]]; then
+  pass "contract-touch: control — nothing touched, registry current -> empty touched_contracts and blast radius"
+else
+  fail "contract-touch: control -> expected 0/0, got touched_count=$touched_count blast_count=$blast_count ($ct_out)"
+fi
+
+# Case F: no workspace.json at $project -> exit 2, informational-only
+# script fails closed on its own precondition rather than silently no-op.
+ct_nows="$(mktemp -d "$tmp_root/ctnows.XXXXXX")"
+ct_nows_code=0
+( cd "$ct_nows" && "$CONTRACT_TOUCH" >/dev/null 2>&1 ) || ct_nows_code=$?
+if [[ "$ct_nows_code" == "2" ]]; then
+  pass "contract-touch: no workspace.json -> exit 2"
+else
+  fail "contract-touch: no workspace.json -> expected exit 2, got $ct_nows_code"
+fi
+
+# Case G: malformed (non-JSON) workspace.json -> exit 2.
+ct_badjson="$(mktemp -d "$tmp_root/ctbadjson.XXXXXX")"
+echo "not json" >"$ct_badjson/workspace.json"
+ct_badjson_code=0
+( cd "$ct_badjson" && "$CONTRACT_TOUCH" >/dev/null 2>&1 ) || ct_badjson_code=$?
+if [[ "$ct_badjson_code" == "2" ]]; then
+  pass "contract-touch: malformed workspace.json -> exit 2"
+else
+  fail "contract-touch: malformed workspace.json -> expected exit 2, got $ct_badjson_code"
+fi
+
+# Negative control: temporarily disable the breaking-vs-additive awk
+# heuristic (force it to always report additive) and confirm case B above
+# actually fails without it.
+ct_negctrl_backup="$(mktemp "$tmp_root/ct-negctrl.XXXXXX")"
+cp "$CONTRACT_TOUCH" "$ct_negctrl_backup"
+sed -i.bak "s/if awk '\/\^@@\/{p=1; next} p \&\& \/\^-\/{f=1} END{exit !f}' <<<\"\$diff_out\"; then/if false; then/" "$CONTRACT_TOUCH"
+rm -f "$CONTRACT_TOUCH.bak"
+ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
+sed -i.bak 's/GET \/items returns a list of items/GET \/items returns a paginated list of items/' "$ws/contracts/items-api/spec.md"
+rm -f "$ws/contracts/items-api/spec.md.bak"
+negctrl_result="$(ct_run "$ws")"
+negctrl_spec_change="$(jq -r '.touched_contracts[0].spec_change' "${negctrl_result#*|}" 2>/dev/null)"
+cp "$ct_negctrl_backup" "$CONTRACT_TOUCH"
+if [[ "$negctrl_spec_change" != "breaking" ]]; then
+  pass "contract-touch: negative control confirms the breaking-classification case above is meaningful (fails without the real check)"
+else
+  fail "contract-touch: negative control did NOT fail as expected — the breaking-classification case may be vacuous"
 fi
 
 if [[ $overall -eq 0 ]]; then
