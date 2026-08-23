@@ -62,6 +62,26 @@
 #     never an unrelated dirty file elsewhere in the tree) and the push /
 #     pull-rebase-retry sequence against a real local remote, including a
 #     genuine concurrent-push scenario with no real conflict.
+#   - decision-hash (excludes Status, deterministic, reacts to real content
+#     drift), profile-check (unrepresentable-floor-off, bounded fields), q
+#     (one-line-ok vs full-diagnostics-plus-real-exit-code), ui-touch
+#     (conditional ui-render dispatch), verdict-filter (schema validation
+#     plus decision-kind's stronger resolution check), next-milestone-task
+#     (TBD/BLOCKED/WAITING/NONE, numeric milestone ordering), design-gate
+#     (all four /design stopping-rule checks incl. the DEFERRED.md escape
+#     hatch), decision-index (regenerated INDEX.md, numeric id ordering,
+#     --check staleness with no disk write), propagate (flags every OTHER
+#     open task grounding on what changed, severity from its own phase,
+#     self/done exclusion), setup (real symlinks into this checkout, pin
+#     init/warn/strict comparison, settings.local.json merge discipline),
+#     ledger-field-audit (a synthetic core/ tree — flags a field with no
+#     reader, doesn't flag one with a real reader, and the zero-candidate-
+#     fields case that is this script's own documented set -e/zero-match
+#     regression guard), and a render-dashboard smoke test (renders a real
+#     fixture to HTML without crashing — deliberately lighter than the
+#     rest given it's informational-only, never a gate, at 1200+ lines).
+#     This closes the round-5 audit's scripts-coverage backlog: every
+#     script in core/scripts/* now has permanent regression coverage.
 #
 # Usage: core-selftest
 # Exit 0 iff every case passes.
@@ -2480,4 +2500,297 @@ if [[ "$di_code" == "0" && "$di_out" == *"nothing to do"* ]]; then
 else
   fail "decision-index: no decisions dir -> expected exit=0 'nothing to do', got exit=$di_code: $di_out"
 fi
+
+# ---------------------------------------------------------------------------
+# propagate: supersession propagation — flags every OTHER open task that
+# grounds on what changed, severity from the target's own phase, self- and
+# done-task exclusion
+# ---------------------------------------------------------------------------
+
+PROPAGATE="$SCRIPT_DIR/propagate"
+
+new_propagate_fixture() {
+  local proj
+  proj="$(mktemp -d "$tmp_root/propproj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/work/SRC"
+  echo done >"$proj/work/SRC/state"
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  printf '%s' "$proj"
+}
+
+prop_task() {
+  # prop_task <proj> <task-id> <state> <claims-json-body>
+  mkdir -p "$1/work/$2"
+  printf '%s' "$3" >"$1/work/$2/state"
+  printf '%s' "$4" >"$1/work/$2/claims.json"
+}
+
+proj="$(new_propagate_fixture)"
+prop_task "$proj" OTHER research '{"grounding_files":["src/a.ts"],"grounding_decisions":[],"contracts":[]}'
+out="$(printf 'src/a.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
+flags_count="$(jq 'length' "$proj/work/OTHER/flags.json" 2>/dev/null)"
+severity="$(jq -r '.[0].severity' "$proj/work/OTHER/flags.json" 2>/dev/null)"
+if [[ "$flags_count" == "1" && "$severity" == "advisory" && "$out" == *"flagged OTHER"* ]]; then
+  pass "propagate: a changed file OTHER grounds on -> flags OTHER, severity=advisory (OTHER is in research/plan)"
+else
+  fail "propagate: expected 1 advisory flag for OTHER, got count=$flags_count severity=$severity out=$out"
+fi
+
+proj="$(new_propagate_fixture)"
+prop_task "$proj" OTHER implement '{"grounding_files":["src/b.ts"],"grounding_decisions":[],"contracts":[]}'
+out="$(printf 'src/b.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
+severity="$(jq -r '.[0].severity' "$proj/work/OTHER/flags.json" 2>/dev/null)"
+if [[ "$severity" == "disruptive" ]]; then
+  pass "propagate: OTHER past research/plan -> severity=disruptive"
+else
+  fail "propagate: expected severity=disruptive, got $severity"
+fi
+
+proj="$(new_propagate_fixture)"
+prop_task "$proj" OTHER plan '{"grounding_files":[],"grounding_decisions":["D-3"],"contracts":[]}'
+out="$(printf '' | "$PROPAGATE" SRC --project "$proj" --decisions D-3 2>&1)"
+flags_count="$(jq 'length' "$proj/work/OTHER/flags.json" 2>/dev/null)"
+what="$(jq -r '.[0].what_changed' "$proj/work/OTHER/flags.json" 2>/dev/null)"
+if [[ "$flags_count" == "1" && "$what" == *"decision 'D-3'"* ]]; then
+  pass "propagate: a changed decision OTHER cites -> flags OTHER"
+else
+  fail "propagate: expected 1 flag citing decision D-3, got count=$flags_count what='$what'"
+fi
+
+proj="$(new_propagate_fixture)"
+prop_task "$proj" OTHER plan '{"grounding_files":["src/unrelated.ts"],"grounding_decisions":[],"contracts":[]}'
+out="$(printf 'src/z.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
+if [[ "$out" == *"nothing flagged"* ]]; then
+  pass "propagate: control — no match -> nothing flagged"
+else
+  fail "propagate: control -> expected 'nothing flagged', got: $out"
+fi
+
+proj="$(new_propagate_fixture)"
+prop_task "$proj" OTHER done '{"grounding_files":["src/c.ts"],"grounding_decisions":[],"contracts":[]}'
+out="$(printf 'src/c.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
+if [[ "$out" == *"nothing flagged"* ]]; then
+  pass "propagate: a done task is excluded from propagation targets"
+else
+  fail "propagate: done-task exclusion -> expected 'nothing flagged', got: $out"
+fi
+
+proj="$(new_propagate_fixture)"
+prop_task "$proj" SRC research '{"grounding_files":["src/self.ts"],"grounding_decisions":[],"contracts":[]}'
+out="$(printf 'src/self.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
+src_flag_count="0"
+[[ -f "$proj/work/SRC/flags.json" ]] && src_flag_count="$(jq 'length' "$proj/work/SRC/flags.json" 2>/dev/null)"
+if [[ "$src_flag_count" == "0" && "$out" == *"nothing flagged"* ]]; then
+  pass "propagate: the source task never flags itself"
+else
+  fail "propagate: source self-exclusion -> expected no flags for SRC, got count=$src_flag_count out=$out"
+fi
+
+prop_code=0
+printf '' | "$PROPAGATE" SRC >/dev/null 2>&1 || prop_code=$?
+if [[ "$prop_code" == "2" ]]; then
+  pass "propagate: missing --project -> exit 2"
+else
+  fail "propagate: missing --project -> expected exit 2, got $prop_code"
+fi
+
+# ---------------------------------------------------------------------------
+# setup: portable-install, per-machine step — real symlinks into this
+# checkout, pin init/comparison across warn/strict, settings.local.json
+# merge discipline
+# ---------------------------------------------------------------------------
+# Uses this actual spine checkout as --spine (a real, valid, read-only
+# source — setup never writes anywhere under $resolved_spine, only reads
+# core/skills, core/agents, core/rules, .git, confirmed by reading the
+# script above), never a synthetic one — every write this section makes
+# lands only inside a throwaway --project fixture.
+
+SETUP="$SCRIPT_DIR/setup"
+REAL_SPINE="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REAL_SPINE_SHA="$(git -C "$REAL_SPINE" rev-parse HEAD)"
+
+new_setup_fixture() {
+  # -> "<proj>" — spine-installed (capabilities.json present), no pin yet.
+  local proj
+  proj="$(mktemp -d "$tmp_root/setupproj.XXXXXX")"
+  mkdir -p "$proj/.spine"
+  echo '{}' >"$proj/.spine/capabilities.json"
+  printf '%s' "$proj"
+}
+
+su_proj="$(new_setup_fixture)"
+su_code=0
+su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
+if [[ "$su_code" == "0" && "$su_out" == *"no pin recorded"* ]]; then
+  pass "setup --check: no pin yet -> exit 0, 'no pin recorded'"
+else
+  fail "setup --check: no pin -> expected exit=0 'no pin recorded', got exit=$su_code: $su_out"
+fi
+
+su_proj="$(new_setup_fixture)"
+jq -n --arg sha "$REAL_SPINE_SHA" '{sha:$sha, mode:"warn"}' >"$su_proj/.spine/core-pin.json"
+su_code=0
+su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
+if [[ "$su_code" == "0" && "$su_out" == *"core pin ok"* ]]; then
+  pass "setup --check: a pin matching this machine's spine sha -> ok"
+else
+  fail "setup --check: matching pin -> expected exit=0 'core pin ok', got exit=$su_code: $su_out"
+fi
+
+su_proj="$(new_setup_fixture)"
+jq -n '{sha:"0000000000000000000000000000000000000000", mode:"warn"}' >"$su_proj/.spine/core-pin.json"
+su_code=0
+su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
+if [[ "$su_code" == "0" && "$su_out" == *"CORE VERSION SKEW (warn)"* ]]; then
+  pass "setup --check: pin mismatch under warn mode -> exit 0, loud warning, not blocking"
+else
+  fail "setup --check: warn-mode mismatch -> expected exit=0 with a (warn) SKEW message, got exit=$su_code: $su_out"
+fi
+
+su_proj="$(new_setup_fixture)"
+jq -n '{sha:"0000000000000000000000000000000000000000", mode:"strict"}' >"$su_proj/.spine/core-pin.json"
+su_code=0
+su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
+if [[ "$su_code" == "1" && "$su_out" == *"CORE VERSION SKEW (strict)"* ]]; then
+  pass "setup --check: pin mismatch under strict mode -> exit 1, blocking"
+else
+  fail "setup --check: strict-mode mismatch -> expected exit=1 with a (strict) SKEW message, got exit=$su_code: $su_out"
+fi
+
+su_proj="$(new_setup_fixture)"
+su_code=0
+su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" 2>&1)" || su_code=$?
+skill_link_target="$(readlink "$su_proj/.claude/skills/task" 2>/dev/null)"
+pinned_sha="$(jq -r '.sha' "$su_proj/.spine/core-pin.json" 2>/dev/null)"
+if [[ "$su_code" == "0" && "$skill_link_target" == "$REAL_SPINE/core/skills/task" && "$pinned_sha" == "$REAL_SPINE_SHA" ]]; then
+  pass "setup: a full run creates real symlinks into this spine checkout and initializes the pin at the current sha"
+else
+  fail "setup: full run -> expected a task skill symlink and a pin at $REAL_SPINE_SHA, got exit=$su_code link=$skill_link_target pin=$pinned_sha"
+fi
+
+su_proj="$(mktemp -d "$tmp_root/setupproj.XXXXXX")"
+su_code=0
+"$SETUP" --project "$su_proj" --spine "$REAL_SPINE" >/dev/null 2>&1 || su_code=$?
+if [[ "$su_code" == "2" ]]; then
+  pass "setup: a full run against a not-yet-installed project (no capabilities.json) -> exit 2"
+else
+  fail "setup: not installed -> expected exit 2, got $su_code"
+fi
+
+su_proj="$(new_setup_fixture)"
+mkdir -p "$su_proj/.claude"
+echo '{"permissions":{"allow":["Bash(npm test:*)"]}}' >"$su_proj/.claude/settings.local.json"
+"$SETUP" --project "$su_proj" --spine "$REAL_SPINE" >/dev/null 2>&1
+preexisting_kept="$(jq -r '.permissions.allow | index("Bash(npm test:*)")' "$su_proj/.claude/settings.local.json" 2>/dev/null)"
+new_entry_added="$(jq -r --arg p "Bash($REAL_SPINE/core/scripts/*:*)" '.permissions.allow | index($p)' "$su_proj/.claude/settings.local.json" 2>/dev/null)"
+if [[ "$preexisting_kept" != "null" && "$new_entry_added" != "null" ]]; then
+  pass "setup: settings.local.json merge preserves a pre-existing engineer-added entry alongside the new one"
+else
+  fail "setup: settings.local.json merge -> expected both the pre-existing and new allow entries present, got preexisting=$preexisting_kept new=$new_entry_added"
+fi
+
+# ---------------------------------------------------------------------------
+# ledger-field-audit: heuristic dead-ledger-field detection (a synthetic
+# core/ tree, not this repo's own current field set — that's already
+# separately traced clean in this round's own audit report)
+# ---------------------------------------------------------------------------
+
+LEDGER_FIELD_AUDIT="$SCRIPT_DIR/ledger-field-audit"
+
+new_lfa_fixture() {
+  # -> "<core>" — a synthetic core/ tree: one field with a real reader
+  # (real_field, mentioned in costs/SKILL.md), one with none anywhere
+  # (dead_field).
+  local core
+  core="$(mktemp -d "$tmp_root/lfacore.XXXXXX")"
+  mkdir -p "$core/skills/task" "$core/skills/costs" "$core/skills/task-report" "$core/scripts"
+  cat >"$core/skills/task/SKILL.md" <<'EOF'
+Run `ledger set <task-id>
+real_field <value>` when this happens.
+
+Also run `ledger set <task-id> dead_field <value>`.
+EOF
+  echo 'reads .real_field from the ledger' >"$core/skills/costs/SKILL.md"
+  : >"$core/scripts/ledger"
+  : >"$core/scripts/render-task"
+  : >"$core/scripts/render-dashboard"
+  : >"$core/skills/task-report/SKILL.md"
+  printf '%s' "$core"
+}
+
+lfa_core="$(new_lfa_fixture)"
+lfa_code=0
+lfa_out="$("$LEDGER_FIELD_AUDIT" --core "$lfa_core" 2>&1)" || lfa_code=$?
+if [[ "$lfa_code" == "1" && "$lfa_out" == *"NO READER FOUND: dead_field"* && "$lfa_out" != *"NO READER FOUND: real_field"* ]]; then
+  pass "ledger-field-audit: flags a field with no reader anywhere; a field with a real reader is not flagged"
+else
+  fail "ledger-field-audit: expected dead_field flagged and real_field not, got exit=$lfa_code: $lfa_out"
+fi
+
+lfa_empty_core="$(mktemp -d "$tmp_root/lfaempty.XXXXXX")"
+mkdir -p "$lfa_empty_core/skills/nothing" "$lfa_empty_core/skills/costs" "$lfa_empty_core/skills/task-report" "$lfa_empty_core/scripts"
+echo "no ledger set calls in this file at all" >"$lfa_empty_core/skills/nothing/SKILL.md"
+: >"$lfa_empty_core/scripts/ledger"
+: >"$lfa_empty_core/scripts/render-task"
+: >"$lfa_empty_core/scripts/render-dashboard"
+: >"$lfa_empty_core/skills/costs/SKILL.md"
+: >"$lfa_empty_core/skills/task-report/SKILL.md"
+lfa_code=0
+lfa_out="$("$LEDGER_FIELD_AUDIT" --core "$lfa_empty_core" 2>&1)" || lfa_code=$?
+if [[ "$lfa_code" == "0" && "$lfa_out" == *"clean"* ]]; then
+  pass "ledger-field-audit: zero candidate fields anywhere -> clean, exit 0 (this script's own documented set -e/zero-match regression case)"
+else
+  fail "ledger-field-audit: zero fields -> expected exit=0 clean, got exit=$lfa_code: $lfa_out"
+fi
+
+# ---------------------------------------------------------------------------
+# render-dashboard: smoke coverage only — informational aggregation, never
+# a gate, and at 1200+ lines the exhaustive-per-feature cost/benefit ratio
+# doesn't match the gating scripts above. Confirms it runs against a real
+# fixture without crashing and produces HTML containing what it claims to.
+# ---------------------------------------------------------------------------
+
+RENDER_DASHBOARD="$SCRIPT_DIR/render-dashboard"
+
+rd_proj="$(mktemp -d "$tmp_root/rdproj.XXXXXX")"
+git init -q "$rd_proj"
+git -C "$rd_proj" config user.email "core-selftest@example.com"
+git -C "$rd_proj" config user.name "core-selftest"
+mkdir -p "$rd_proj/.spine" "$rd_proj/work/20260101-example-task"
+echo '{}' >"$rd_proj/.spine/capabilities.json"
+git -C "$rd_proj" add -A
+git -C "$rd_proj" commit -q -m seed
+cat >"$rd_proj/work/20260101-example-task/ledger.json" <<'EOF'
+{
+  "phases": {
+    "research": {"marked_at": "2026-01-01T10:00:00Z", "tokens": {"input": 100, "output": 50, "cache_create": 0, "cache_read": 0}},
+    "plan": {"marked_at": "2026-01-01T11:00:00Z", "tokens": {"input": 200, "output": 100, "cache_create": 0, "cache_read": 0}}
+  }
+}
+EOF
+echo research >"$rd_proj/work/20260101-example-task/state"
+echo 1 >"$rd_proj/work/20260101-example-task/class"
+
+rd_out="$tmp_root/rd-out.html"
+rd_code=0
+"$RENDER_DASHBOARD" --project "$rd_proj" --out "$rd_out" --all >/dev/null 2>&1 || rd_code=$?
+if [[ "$rd_code" == "0" ]] && [[ -f "$rd_out" ]] && grep -q "20260101-example-task" "$rd_out" && grep -q "spine dashboard" "$rd_out"; then
+  pass "render-dashboard: smoke test — renders a real fixture to HTML containing the task id"
+else
+  fail "render-dashboard: smoke test -> expected exit=0 with the task id present in $rd_out, got exit=$rd_code"
+fi
+
+rd_noninstalled="$(mktemp -d "$tmp_root/rdnoinst.XXXXXX")"
+rd_code=0
+"$RENDER_DASHBOARD" --project "$rd_noninstalled" --out "$tmp_root/rd-out2.html" >/dev/null 2>&1 || rd_code=$?
+if [[ "$rd_code" == "2" ]]; then
+  pass "render-dashboard: not spine-installed (no .spine/capabilities.json) -> exit 2"
+else
+  fail "render-dashboard: not installed -> expected exit 2, got $rd_code"
+fi
+
 
