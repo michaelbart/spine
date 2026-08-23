@@ -1,8 +1,8 @@
 #!/bin/bash
-# registry-sync — commits and pushes one task's own work/<task-id>/ folder,
-# build prompt (Extension C) §2.2: "the registry must be shared state ...
-# task folders are committed and pushed to it at task creation" and every
-# subsequent state-affecting write. Single source of truth for this
+# registry-sync — commits and pushes one task's own work/<task-id>/ folder:
+# the registry must be shared state, so task folders are committed and
+# pushed to it at task creation and every subsequent state-affecting
+# write. Single source of truth for this
 # sequence — core/skills/task/SKILL.md, core/scripts/claims-check, and
 # core/scripts/propagate all call this rather than each hand-rolling their
 # own add/commit/push/retry.

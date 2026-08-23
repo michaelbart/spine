@@ -7,15 +7,18 @@ argument-hint: <task-id> [--bypass <reason>]
 
 You are running `/ship` for task ID and optional `--bypass <reason>` from
 `$ARGUMENTS`. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`,
-templates at `${CLAUDE_SKILL_DIR}/../../templates/<name>`.
+templates at `${CLAUDE_SKILL_DIR}/../../templates/<name>`. Hand
+`${CLAUDE_SKILL_DIR}/../../...` to the shell verbatim, `../../` included —
+do **not** lexically collapse it to `.claude/`; `.claude/skills/ship` is a
+symlink into the spine core checkout, and collapsing the text yields a
+nonexistent `.claude/scripts/...` path.
 
 ## 0. Ship-time re-grounding (Extension C §2.4)
 
 The window between plan approval and ship is unguarded otherwise — a
 neighbor's task can merge and invalidate this task's grounding after
 `check-stale` already passed at plan time. Two re-runs, both recorded in
-the ledger so their cost is measured, not guessed (build prompt's own
-instruction):
+the ledger so their cost is measured, not guessed:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md
@@ -68,8 +71,8 @@ breaker.
 If any drifted file is **not** covered by any of these checks: this is a real
 deviation, not a soft warning — append a
 `work/<task-id>/deviations.md` record, tier `halt` (grounding drifted
-since this was last verified, the same halt-tier build prompt §2.4
-already assigns to schema/contract/auth surprises), and **it counts
+since this was last verified, the same halt tier already assigned to
+schema/contract/auth surprises), and **it counts
 toward the circuit breaker** (`core/skills/task/SKILL.md`'s existing
 three-deviation rule) — decided and defended here, not left as an open
 question: neighbor-caused drift isn't this plan's own fault, but the
@@ -171,7 +174,7 @@ Two deterministic checks, both must pass:
 - `work/<task-id>/deviations.md` has zero `^- Status: open` lines
   (`grep -c`). An open deviation means a halt is still waiting on the
   human — shipping over it is exactly the silent-improvisation failure mode
-  this system exists to prevent (build prompt §1, failure mode 7).
+  this system exists to prevent (failure mode 7).
 
 Either check failing: stop, tell the human specifically which check and
 why, do not proceed to §2–6. This is not a touchpoint you invent — it's the
@@ -233,10 +236,10 @@ this part in that case). For each bullet there: resolve which store it
 lives in — **multi-repo**, a bullet may be repo-qualified,
 `<repo-name>:D-<seq>` (that member repo's own local `docs/decisions/`,
 kept from before it joined the workspace or added since); unqualified
-means the workspace root's own store (build prompt §2's "one system
-charter at the workspace" extends naturally to workspace-level decisions,
-but a member repo's pre-existing local decisions are never silently
-absorbed into it). Read `<store-root>/docs/decisions/D-<seq>-*.md`, append
+means the workspace root's own store ("one system charter at the
+workspace" extends naturally to workspace-level decisions, but a member
+repo's pre-existing local decisions are never silently absorbed into it).
+Read `<store-root>/docs/decisions/D-<seq>-*.md`, append
 this task's *actual* diff paths from **that store's own repo**
 (`git -C <store-root> diff --name-only <base>..HEAD`, not the plan's
 predicted-touch list — the diff is what's real; for the workspace root's
@@ -478,13 +481,22 @@ that one thing, nothing else in the file changes.
 writing mandate at
 `${CLAUDE_SKILL_DIR}/../../templates/writing-mandate.md`. ≤1 page, hard —
 operationalized as ≤60 lines (same convention `CLAUDE.md`'s own cap uses).
-`wc -l` it once written and record the actual count (`ledger set
-<task-id> briefing_line_count <n>`) — this cap has no other backstop, so
-the recorded count is what makes an oversized briefing visible in
+**This template is one unwrapped paragraph per bold label, so a line count
+alone is a weak signal of page length here** (unlike `plan.md`, which wraps
+at ~72 chars and so has a line count that actually tracks length) — a
+briefing can run several times a fair page's worth of prose and still show
+comfortably under 60 lines. Treat **~600 words** as the real "over cap"
+signal for this file; record both. `wc -l < briefing.md` and `wc -w <
+briefing.md` it once written (redirect stdin, not `wc -l briefing.md` —
+the latter's filename suffix gets stored verbatim by `ledger set` and
+breaks the numeric cap check downstream) and record both counts (`ledger
+set <task-id> briefing_line_count <n>` and `ledger set <task-id>
+briefing_word_count <n>`) — this cap has no other backstop, so the
+recorded counts are what make an oversized briefing visible in
 `/task-report` rather than only ever self-checked in the moment. Over cap
-means trim before shipping, not ship anyway. Section by section, each
-sourced only from what's already been produced — this file quotes, it
-doesn't re-derive:
+(either signal) means trim before shipping, not ship anyway. Section by
+section, each sourced only from what's already been produced — this file
+quotes, it doesn't re-derive:
 
 - **What & why** / **What surprised us**: one or two sentences on what's
   now true and why; deviations straight from `deviations.md`, one line
@@ -506,10 +518,9 @@ doesn't re-derive:
   `spec_change`/`registry_stale` and each gated consumer's `contract-check`
   result straight from `verify.md`'s own "Contract conformance" section
   (never re-derive), plus any undeclared-coupling finding the falsifier's
-  cross-repo mandate kept (build prompt §2: "registry coverage made
-  visible, so neglect is loud" — a touched contract with zero findings and
-  zero gaps is still worth its one line, a clean bill is not the same as
-  an omitted section).
+  cross-repo mandate kept — registry coverage made visible, so neglect is
+  loud: a touched contract with zero findings and zero gaps is still
+  worth its one line, a clean bill is not the same as an omitted section.
 - **Overrides & bypasses** (omit entirely if none occurred): `--bypass`'s
   own line is not optional when used; a plan-time claims-check override
   (`work/<task-id>/deviations.md`'s own record of it, per
@@ -570,9 +581,10 @@ from is task-scoped, not repo-scoped). Its `**Contracts**` section carries
 whole section on a single-repo task, or a multi-repo task whose
 `contract-touch` run found nothing touched.
 
-`ledger set <task-id> pr_description "generated"` — one field, so a future
-`/costs` view can notice a ship that skipped this step (the ledger key is
-freeform; this adds no new schema to `core/scripts/ledger`).
+`ledger set <task-id> pr_description "generated"` — one field, folded into
+`ledger aggregate`'s `pr_description_count` and reported by `/costs`, so a
+ship that skipped this step is visible against `task_count` rather than
+silently absorbed.
 
 ## 5. Ledger and commit
 
@@ -608,9 +620,9 @@ EOF
 )"
 ```
 
-**Multi-repo (Extension B) — staged, ordered, never partial-silent** (build
-prompt §2): commit each repo named in `## Ship order`, in that exact
-order, one at a time — never a single combined commit spanning repos (they
+**Multi-repo (Extension B) — staged, ordered, never partial-silent**:
+commit each repo named in `## Ship order`, in that exact order, one at a
+time — never a single combined commit spanning repos (they
 are separate git histories). Before the first commit, write
 `work/<task-id>/state` = `shipping (1 of <n>)` at the **workspace root**
 (one shared state file, one task). For each repo in order:
@@ -618,9 +630,9 @@ are separate git histories). Before the first commit, write
 1. `git -C <repo-path> add -A -- <that repo's own changed paths>`.
 2. `git -C <repo-path> commit -m "..."` — same subject/body/trailer shape
    as single-repo above, but the trailer is identical across every repo:
-   `Spine-Task: <task-id>` (build prompt §2: "spine's existing linkage
-   primitive does the cross-repo join" — this is the whole mechanism,
-   nothing else ties the commits together).
+   `Spine-Task: <task-id>` — spine's existing linkage primitive does the
+   cross-repo join; this is the whole mechanism, nothing else ties the
+   commits together.
 3. Update `work/<task-id>/state` = `shipping (<k+1> of <n>)` at the
    workspace root immediately after each commit — this is what makes the
    inconsistency window **visible and bounded**, not eliminated (the
@@ -712,6 +724,5 @@ never had one). Tell the human where the briefing is. For a `guided` task,
 also point at `pr-description.md` (§4a) — pushing and opening the PR is their
 call, made after reading both. For an `auto`/`checkpointed` task the draft PR
 is already open (§5a) — give them its URL, so the one remaining touchpoint is
-reviewing and merging it. That read is the third recurring touchpoint
-(build prompt §2.7), and it happens now, once, not as a gate this skill
-enforced on itself.
+reviewing and merging it. That read is the third recurring touchpoint,
+and it happens now, once, not as a gate this skill enforced on itself.

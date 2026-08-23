@@ -7,7 +7,9 @@ argument-hint: [--after M<n>]
 
 You are running `/roadmap`. Templates at
 `${CLAUDE_SKILL_DIR}/../../templates/`, scripts at
-`${CLAUDE_SKILL_DIR}/../../scripts/`.
+`${CLAUDE_SKILL_DIR}/../../scripts/`. Hand that path to the shell verbatim,
+`../../` included — do **not** lexically collapse it to `.claude/`;
+`.claude/skills/roadmap` is a symlink into the spine core checkout.
 
 **This is setup, not a task** — it produces no `work/<task-id>/` folder,
 runs no floor, needs no class. It is facilitated: you propose, the human

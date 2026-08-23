@@ -11,6 +11,16 @@
 # confidently resolved is reported as UNRESOLVED rather than silently
 # dropped, so the caller can fail closed.
 #
+# `ln` is included (not just cp/mv/install) because a symlink's own
+# destination path is itself a write target — direct repro showed
+# `ln -s <target> work/T1/x` going completely unrecognized (no PATH, no
+# UNRESOLVED, nothing) before this was added, after which a later
+# Edit/Write to the new symlink's name walked straight past
+# phase-gate/path-escalate's containment/glob checks since they compared
+# strings, not resolved locations. _workspace-route's _wsr_realpath closes
+# the same gap for a symlink that already existed before this Bash call
+# ran; this closes it for one created live, in the same task.
+#
 # Usage:
 #   bash_write_targets "$command"
 # Prints zero or more lines to stdout, each one of:
@@ -72,7 +82,7 @@ bash_write_targets() {
   # overwhelming majority of Bash calls (git status, flutter test, grep,
   # ls, ...) out of the extraction logic entirely — this is what keeps the
   # widened matcher from becoming a blanket deny.
-  if ! grep -qE '(^|[^0-9&])[0-9]*>{1,2}|\bsed\b.*-i|\bperl\b.*-i|\btee\b|\bcp\b|\bmv\b|\binstall\b|\btruncate\b|\bdd\b[[:space:]].*\bof=' <<<"$command"; then
+  if ! grep -qE '(^|[^0-9&])[0-9]*>{1,2}|\bsed\b.*-i|\bperl\b.*-i|\btee\b|\bln\b|\bcp\b|\bmv\b|\binstall\b|\btruncate\b|\bdd\b[[:space:]].*\bof=' <<<"$command"; then
     return 0
   fi
 
@@ -137,6 +147,40 @@ bash_write_targets() {
           _bwt_emit "$w"
         fi
       done
+    fi
+
+    # --- ln: destination is the arg after -t, else the last non-flag
+    # token — same shape as cp/mv/install below, kept separate only so a
+    # symlink creation (`ln -s TARGET LINKNAME`) is unambiguously reported
+    # as its own write target rather than silently falling through
+    # unrecognized. `ln -s` is the mechanism a stacked bypass of
+    # phase-gate/path-escalate/dep-gate's containment/glob checks used in
+    # direct repro: plant a symlink whose *name* looks unremarkable, then
+    # a later Edit/Write to that name resolves through it. Catching the
+    # `ln` call itself here is the first of two layers closing that gap —
+    # the second is _workspace-route's _wsr_realpath, which also resolves
+    # an already-existing symlink regardless of how it got there. ---
+    if grep -qE '\bln\b' <<<"$seg"; then
+      local -a ln_nonflag=()
+      local ln_dest="" ln_take_next=0
+      for w in $seg; do
+        if [[ "$ln_take_next" -eq 1 ]]; then
+          ln_dest="$w"; ln_take_next=0; continue
+        fi
+        if [[ "$w" == "-t" ]]; then ln_take_next=1; continue; fi
+        [[ "$w" == -* ]] && continue
+        ln_nonflag+=("$w")
+      done
+      if [[ -z "$ln_dest" && "${#ln_nonflag[@]}" -gt 1 ]]; then
+        ln_dest="${ln_nonflag[${#ln_nonflag[@]}-1]}"
+      fi
+      if [[ -n "$ln_dest" ]]; then
+        if [[ "$has_cd" -eq 1 && "$ln_dest" != /* ]]; then
+          echo "UNRESOLVED:relative ln destination '$ln_dest' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$ln_dest"
+        fi
+      fi
     fi
 
     # --- cp/mv/install: destination is the arg after -t, else the last

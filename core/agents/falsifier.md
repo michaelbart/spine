@@ -114,9 +114,8 @@ consumer repo listed, check whether it reaches into the producer *outside*
 anything the contract actually declares — a raw import of a producer-
 internal path, an HTTP call to an endpoint the spec doesn't cover, a
 hand-copied assumption about a shape the spec doesn't define. Undeclared
-coupling is a real defect (build prompt §2: "a defect, not a blind spot to
-tolerate"), not a style note — file it at the severity the actual blast
-radius implies. Evidence stays `file_line`, same as (a)-(c), but
+coupling is a real defect, not a blind spot to tolerate, not a style
+note — file it at the severity the actual blast radius implies. Evidence stays `file_line`, same as (a)-(c), but
 `evidence.file` must be repo-qualified (`"<repo-name>:<path>"`, matching
 `## Predicted touch`'s own convention) since a bare path is ambiguous
 across repos. A clean result — every consumer's reach into the producer

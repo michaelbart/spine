@@ -1,6 +1,6 @@
 #!/bin/bash
 # ledger — cost instrumentation. Writes/aggregates work/<id>/ledger.json and
-# scans git log for the untracked-commit ratio (build prompt §2.6): since
+# scans git log for the untracked-commit ratio: since
 # every /ship commit carries a `Spine-Task:` trailer and every traced Class 0
 # commit a `Spine-Ticket:` trailer (core/ADAPTER-CONTRACT.md §6); a commit with
 # none of Spine-Task/Spine-Ticket/Spine-Bypass is off-spine work by definition —
@@ -72,7 +72,7 @@ case "$cmd" in
     engineer_email="$(git -C "$project" config user.email 2>/dev/null || true)"
     engineer="${engineer_name:+$engineer_name}${engineer_email:+ <$engineer_email>}"
     jq -n --arg task_id "$task_id" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg eng "$engineer" \
-      '{task_id:$task_id, created_at:$ts, engineer:(if $eng == "" then null else $eng end), phases:{}, deviation_count:0, class_declared:null, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null, hand_tracked:false, tooling_gaps:[], claims_conflicts:0, ship_time_regrounding_claims:null, second_approver:null}' \
+      '{task_id:$task_id, created_at:$ts, engineer:(if $eng == "" then null else $eng end), phases:{}, deviation_count:0, class_escalated:false, conformance_score:null, capability_gaps:[], bypass:null, hand_tracked:false, tooling_gaps:[], claims_conflicts:0, ship_time_regrounding_claims:null, second_approver:null}' \
       >"$lp"
     echo "ok: initialized $lp"
     ;;
@@ -123,8 +123,28 @@ case "$cmd" in
            cache_create: (.cache_create + $u.cache_create), cache_read: (.cache_read + $u.cache_read)})
     ' "$transcript")"
 
+    # Additive, not an overwrite: verify/SKILL.md's fix-and-reverify flow
+    # can harvest the same phase key (e.g. "falsifier") more than once in
+    # one /verify pass — a re-dispatched adversary round after a fix. A
+    # plain overwrite here silently discarded round 1's real token cost;
+    # confirmed against a real installed project's ledger.json, which
+    # worked around the bug by inventing a "falsifier-round2" key instead
+    # — a key render-task's phase_source_keys() had no way to know about,
+    # so that task's second-round tokens were invisible in its own
+    # per-task report even though this same overwrite bug meant the first
+    # round's tokens were already gone from here too. Summing in place
+    # means the plain, literal "same key every round" instruction in
+    # verify/SKILL.md is now correct on its own, with no workaround needed.
     tmp="$(mktemp)"
-    jq --arg phase "$phase" --argjson u "$usage_json" '.phases[$phase].tokens = $u' "$lp" >"$tmp" && mv "$tmp" "$lp"
+    jq --arg phase "$phase" --argjson u "$usage_json" '
+      (.phases[$phase].tokens // {input:0,output:0,cache_create:0,cache_read:0}) as $existing
+      | .phases[$phase].tokens = {
+          input: ($existing.input + $u.input),
+          output: ($existing.output + $u.output),
+          cache_create: ($existing.cache_create + $u.cache_create),
+          cache_read: ($existing.cache_read + $u.cache_read)
+        }
+    ' "$lp" >"$tmp" && mv "$tmp" "$lp"
     echo "ok: harvested tokens for $phase — $(jq -c . <<<"$usage_json")"
     ;;
 
@@ -262,7 +282,8 @@ case "$cmd" in
           claims_conflicts: (map(.claims_conflicts // 0) | add // 0),
           avg_deviation_count: (map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
           avg_conformance_score: ([.[] | select(.conformance_score != null) | .conformance_score] as $s | if ($s|length)>0 then ($s|add/length) else null end),
-          second_approver_count: (map(select(.second_approver != null)) | length)
+          second_approver_count: (map(select(.second_approver != null)) | length),
+          pr_description_count: (map(select(.pr_description != null)) | length)
         }))
       ' "${files[@]}"
     else
@@ -281,7 +302,8 @@ case "$cmd" in
           hand_tracked_task_count: ($entries | map(select(.hand_tracked==true)) | length),
           claims_conflicts_total: ($entries | map(.claims_conflicts // 0) | add // 0),
           avg_conformance_score: ([$entries[] | select(.conformance_score != null) | .conformance_score] as $s | if ($s|length)>0 then ($s|add/length) else null end),
-          second_approver_count: ($entries | map(select(.second_approver != null)) | length)
+          second_approver_count: ($entries | map(select(.second_approver != null)) | length),
+          pr_description_count: ($entries | map(select(.pr_description != null)) | length)
         }
       ' "${files[@]}"
     fi

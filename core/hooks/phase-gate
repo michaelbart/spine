@@ -4,7 +4,7 @@
 # During an active task's research or plan phase, deny writes outside that
 # task's own folder (work/<task-id>/). Silent no-op (exit 0) when there is
 # no active task, or the task isn't in research/plan — this hook only gates
-# those two phases, per build prompt §2.3.
+# those two phases.
 #
 # Bash is included in the matcher (Phase E fix) because a shell redirect,
 # in-place editor, tee, cp/mv/install, truncate, or dd invoked via Bash
@@ -16,7 +16,7 @@
 #   .spine/current-task        — single line, the active task-id (or absent)
 #   work/<task-id>/state        — single line, current phase name
 #
-# Workspace routing (build prompt §2, Extension B): task_dir is always
+# Workspace routing: task_dir is always
 # $project/work/$task_id — for a multi-repo task that's the *workspace
 # root's* own work/ (one task folder at the workspace), never a per-repo
 # one. Every absolute path under any member repo is therefore already
@@ -61,7 +61,7 @@ case "$phase" in
   *) exit 0 ;;
 esac
 
-task_dir="$project/work/$task_id"
+task_dir="$(_wsr_realpath "$project/work/$task_id")"
 
 check_target() {
   # check_target <file_path-as-given> — denies if outside task_dir, but
@@ -75,17 +75,20 @@ check_target() {
   workspace_route "$project" "$file_path"
   [[ -n "$WSR_OWNER_ROOT" ]] || return 0
 
-  # Recomputed and collapsed the same way workspace_route collapses its own
-  # abs_path (_wsr_collapse, same file) — this check_target does its own
+  # Recomputed and resolved the same way workspace_route resolves its own
+  # abs_path (_wsr_realpath, same file) — this check_target does its own
   # task_dir containment test rather than reusing WSR_REL, so it needs the
-  # identical normalization applied here too, or a `../` in file_path walks
-  # past this containment check the same way it did against
-  # path-escalate/dep-gate before their shared helper was fixed.
+  # identical normalization applied here too, or a `../` OR a symlink in
+  # file_path walks past this containment check the same way either did
+  # against path-escalate/dep-gate before their shared helper was fixed
+  # (lexical collapse for `../`; physical resolution for a symlink planted
+  # inside task_dir that points outside the project entirely — both
+  # confirmed by direct repro, not hypothetical).
   case "$file_path" in
     /*) abs_path="$file_path" ;;
     *) abs_path="$project/$file_path" ;;
   esac
-  abs_path="$(_wsr_collapse "$abs_path")"
+  abs_path="$(_wsr_realpath "$abs_path")"
   case "$abs_path" in
     "$task_dir"/*) return 0 ;;
     *)

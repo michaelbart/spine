@@ -12,7 +12,10 @@ already exist, §0 below). Scripts at
 `${CLAUDE_SKILL_DIR}/../../scripts/<name>`, templates at
 `${CLAUDE_SKILL_DIR}/../../templates/<name>`, agents `falsifier`/`security`
 in design mode (`core/agents/falsifier.md`/`security.md` §"Design-mode
-mandate").
+mandate"). Hand `${CLAUDE_SKILL_DIR}/../../...` to the shell verbatim,
+`../../` included — do **not** lexically collapse it to `.claude/`;
+`.claude/skills/design` is a symlink into the spine core checkout, and
+collapsing the text yields a nonexistent `.claude/scripts/...` path.
 
 **This is a facilitated conversation, not a batch generation.** The human
 is present for every foundational category below — you propose, they
@@ -306,8 +309,8 @@ If it fails: fix the specific thing it names (an uncovered category, an
 unplanned capability, milestone 0's capability-targets table, or too many
 adopted decisions — the last one means splitting a decision that's really
 several, or genuinely deferring some of it) and re-run. **Do not hand off
-while this fails** — this is the mechanical version of the build prompt's
-own "the skeleton-skip anti-pattern must be impossible, not discouraged."
+while this fails** — this is the mechanical version of "the skeleton-skip
+anti-pattern must be impossible, not discouraged."
 
 ## 7.5. Write the design summary
 
@@ -361,7 +364,7 @@ against, from `design-gate`'s own output), what's in `DEFERRED.md` and
 each item's trigger, point at `docs/design-summary.md` as the one-page
 read before diving into decision records, and that
 `/task <description> --milestone M0` is the next real command — the first
-member task of the walking skeleton. This is a non-recurring event (per
-the build prompt's constraint that new touchpoints must not become
-recurring ones) — `/design` runs once per project (or once per brownfield
+member task of the walking skeleton. This is a non-recurring event (new
+touchpoints must not become recurring ones) — `/design` runs once per
+project (or once per brownfield
 adoption pass, not exercised by this build), never per task.

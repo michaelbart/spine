@@ -113,8 +113,8 @@ core/templates/  every artifact format the skills above produce
 ## Commands
 
 Every command is a skill under `core/skills/`, resolved live from whatever
-this machine's checkout has. Most take `disable-model-invocation: true` —
-you type them, the model doesn't reach for one on its own.
+this machine's checkout has. All of them take `disable-model-invocation:
+true` — you type them, the model doesn't reach for one on its own.
 
 **Set up — run once per project, or when planning what's next**
 

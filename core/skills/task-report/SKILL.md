@@ -1,6 +1,7 @@
 ---
 name: task-report
 description: Generate a self-contained HTML visualization of one task's work/ record — timeline, deviations, adversary activity, floor results. Read-only, never a gate.
+disable-model-invocation: true
 argument-hint: <task-id> [--project <path>]
 ---
 
@@ -11,6 +12,10 @@ task id is missing, ask for one before doing anything else.
 Confirm `work/<task-id>/` exists under the resolved project root — if not,
 say so and stop rather than letting the script fail with a less legible
 message.
+
+Hand this to the shell verbatim, `../../` included — do **not** lexically
+collapse it to `.claude/`; `.claude/skills/task-report` is a symlink into
+the spine core checkout.
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/render-task --task <task-id> --project <project root>

@@ -8,13 +8,21 @@ argument-hint: --project <path-to-new-project>
 You are running `/bootstrap` against `--project <path>` from `$ARGUMENTS`
 (default: current directory if the project already looks spine-shaped, but
 for a genuinely new project always expect an explicit path — there's nothing
-to detect yet). This is a first-class entry path (build prompt §2.2), not a
-degraded one: greenfield is where duplication and missing invariants get
+to detect yet). This is a first-class entry path, not a degraded one:
+greenfield is where duplication and missing invariants get
 laid down, so nothing below is skipped because the repo is empty.
 
 If `<project>/.spine/capabilities.json` already exists, stop and say so —
 this project is already installed; `/adopt` is what re-runs calibration on
 an existing install, `/bootstrap` is one-time.
+
+Scripts and templates below are referenced as
+`${CLAUDE_SKILL_DIR}/../../scripts/<name>` /
+`${CLAUDE_SKILL_DIR}/../../templates/<name>` — hand that to the shell
+verbatim, `../../` included. Do **not** lexically collapse it to
+`.claude/`; `.claude/skills/bootstrap` is a symlink into the spine core
+checkout, and collapsing the text yields a nonexistent `.claude/scripts/...`
+path.
 
 ## 1. Charter first — before any code exists
 
@@ -38,7 +46,7 @@ amended, they're not a gate on installation.
 
 Check `~/.spine/user-config.json`. If present: display it, ask for a quick
 confirm-or-override, don't re-interview from scratch. If absent: ask the
-three Layer 1 questions (build prompt §0) — ceremony (one or two adversaries
+three Layer 1 questions — ceremony (one or two adversaries
 on Class 1; smoke in the floor when its runtime fits the budget), budget
 sensitivity (default: no cap), work mode (default: solo, single-stream) —
 and write the file. This file is never project-specific; once it exists,
@@ -89,8 +97,8 @@ genuinely nothing to run yet, note that honestly — a brand-new project
 often doesn't, and capabilities can move from `not-applicable` to
 `implemented` in a later `/adopt`-style recalibration once something exists).
 These answers are consumed **only** here, in adapter generation — nothing
-outside `.spine/adapters/` may ever read them (build prompt §2.5), and
-nothing in `spine/` may name a language, framework, or tool.
+outside `.spine/adapters/` may ever read them, and nothing in `spine/` may
+name a language, framework, or tool.
 
 **Ask specifically, as its own question, not folded into "runtime
 shape": does this project serve a browser UI a person looks at?**
@@ -149,8 +157,8 @@ extended-regex fragment per line (grep -E syntax) recognizing this
 project's own dependency-install commands — derived from the confirmed
 package manager(s), same answers as adapter generation above. This is what
 `core/hooks/dep-gate` reads for its Bash-command check; it never hardcodes a
-package-manager name itself (build prompt §3's stack-independence rule
-applies to hooks too). If this project's stack has no recognizable
+package-manager name itself (the stack-independence rule applies to hooks
+too). If this project's stack has no recognizable
 install-command shape, leave the file absent — `dep-gate`'s Bash check
 no-ops without it, and its Edit/Write manifest-tag check is unaffected.
 
@@ -218,9 +226,9 @@ Commit the symlinks, `.claude/settings.json`, `docs/charter.md`,
 `.spine/install-command-patterns.conf` (if written),
 `.spine/ui-paths.conf` (if written), `.spine/profile.json`,
 `.spine/ticket-pattern.conf` (if written), and
-`.spine/adapters/` as one setup commit — this is the one commit any install
-mechanism requires (build prompt §3); everything after this is `git pull`
-inside `spine/` with zero further commits in `<project>`.
+`.spine/adapters/` as one setup commit — this is the one commit any
+install mechanism requires; everything after this is `git pull` inside
+`spine/` with zero further commits in `<project>`.
 
 **Tell the engineer to start a fresh session in `<project>` before doing
 anything else.** Hook and skill wiring does not hot-reload mid-session —

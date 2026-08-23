@@ -116,6 +116,28 @@ Conceded by design, not bugs waiting to be fixed:
   deviations actually logged to `deviations.md`; nothing forces one to get
   logged. That's a norm the skill instructions ask for, not something a
   hook enforces.
+- **Phase-transition ledger marks run on an honor system too.** Marking
+  `verify` (which harvests `implement`'s token window, `task/SKILL.md`
+  §6) is a documented step in `task/SKILL.md` §5, not something a hook
+  enforces — a session that moves on without it leaves that phase's cost
+  looking unrecorded even when real, expensive work (a falsifier/security
+  round) happened under it. In a sample of real installed-project tasks,
+  roughly two-thirds were missing this mark. `render-task` surfaces
+  recorded subagent cost against the umbrella phase even when it was never
+  itself marked, so the spend isn't hidden from a human reading the
+  report — but the per-phase timestamp/duration breakdown stays only as
+  reliable as the session that ran it, and nothing currently forces the
+  mark to happen.
+- **A ledger field can still go dead between audits.** `core/scripts/
+  ledger-field-audit` heuristically checks that every `ledger set
+  <task-id> <field>` documented in a skill has at least one reader-shaped
+  reference elsewhere in the deterministic layer — added after this exact
+  "written every task, read by nothing" bug recurred across two audit
+  rounds (nine fields total). It's grep-based, not a real parser, and
+  nothing runs it automatically — no hook, no floor, no `/task` path calls
+  it. Run it by hand periodically; a field it flags is a lead to check,
+  not a settled fact, and a field it doesn't flag isn't proof of a real
+  reader either (a coincidental substring match reads as clean).
 - **Adversary findings are checked for evidence shape, not evidence
   truth.** A finding needs a real file:line or command output to survive
   filtering — but nothing confirms the cited evidence actually supports
@@ -147,6 +169,14 @@ Conceded by design, not bugs waiting to be fixed:
   thought to seed.
 - **Concurrency defects are out of scope.** No stress or
   concurrency-testing lane exists.
+- **A briefing.md heading convention only binds tasks shipped after it
+  changed.** The template's bold-label convention (`**Floor:**`,
+  `**Overrides & bypasses:**`) is kept stable specifically so a future
+  aggregate reader can rely on it — but that stability is prospective
+  only; a real project's older briefings, written under a prior heading
+  shape, don't get rewritten when the convention changes. An aggregate
+  reader built later needs to tolerate the older shape too, or accept it
+  will miss/misparse a project's earliest tasks.
 
 ## Working with other engineers
 

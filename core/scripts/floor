@@ -11,8 +11,7 @@
 # Exit 0 iff every capability that ran passed. Fail-fast: stops at the first
 # failing capability and prints its full diagnostics. A capability marked
 # unavailable/not-applicable never fails the run — it is recorded as an
-# explicit degradation instead (see build prompt §2.5, "no silently skipped
-# gate").
+# explicit degradation instead ("no silently skipped gate").
 #
 # --full: whole-tree mode (Phase E). `lint` and `typecheck` are, by
 # default, changed-file-set capabilities (ADAPTER-CONTRACT.md §3.1) — a
@@ -62,7 +61,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ "$class" != "1" && "$class" != "2" ]]; then
-  echo "floor: class must be 1 or 2 — Class 0 tasks run no floor (build prompt §2.2)" >&2
+  echo "floor: class must be 1 or 2 — Class 0 tasks run no floor" >&2
   exit 2
 fi
 
@@ -353,15 +352,38 @@ if [[ "${finish:-0}" -ne 1 ]]; then
         include_smoke=1
       fi
     else
-      cache_file="$project/.spine/.smoke-runtime-seconds"
-      if [[ -f "$cache_file" ]]; then
-        cached="$(cat "$cache_file" 2>/dev/null || echo 999999)"
-        if [[ "$smoke_status" == "implemented" && "$cached" -le "$smoke_budget" ]]; then
+      # smoke_in_floor (.spine/profile.json, default true) is the team's
+      # own opt-out of Class 1 smoke ceremony (ADAPTER-CONTRACT.md's
+      # documented "team profile wins" precedence over the personal
+      # smoke_runtime_budget_seconds setting below) — the `prototype`
+      # preset ships it `false` specifically to keep Class 1 lightweight.
+      # Direct repro before this check existed: profile.json set to
+      # false, smoke implemented and cached well under budget, floor
+      # still ran and passed smoke-seed/run/golden anyway — a real,
+      # avoidable cost for a team that explicitly opted out.
+      # NOT `.smoke_in_floor // true` — jq's `//` treats a present-but-
+      # `false` value as falsy too, same as a missing key, so that
+      # spelling would silently coerce an explicit `false` back to
+      # `true` and never actually skip smoke. `if . == null` is the one
+      # that only fires on missing/null, not on a real `false`.
+      profile_file="$project/.spine/profile.json"
+      smoke_in_floor=true
+      if [[ -f "$profile_file" ]]; then
+        smoke_in_floor="$(jq -r '.smoke_in_floor | if . == null then true else . end' "$profile_file")"
+      fi
+      if [[ "$smoke_in_floor" != "true" ]]; then
+        include_smoke=0
+      else
+        cache_file="$project/.spine/.smoke-runtime-seconds"
+        if [[ -f "$cache_file" ]]; then
+          cached="$(cat "$cache_file" 2>/dev/null || echo 999999)"
+          if [[ "$smoke_status" == "implemented" && "$cached" -le "$smoke_budget" ]]; then
+            include_smoke=1
+          fi
+        elif [[ "$smoke_status" == "implemented" ]]; then
+          echo "floor: smoke runtime not yet measured — measuring now to establish the Class 1 inclusion threshold (budget: ${smoke_budget}s)"
           include_smoke=1
         fi
-      elif [[ "$smoke_status" == "implemented" ]]; then
-        echo "floor: smoke runtime not yet measured — measuring now to establish the Class 1 inclusion threshold (budget: ${smoke_budget}s)"
-        include_smoke=1
       fi
     fi
     if [[ "$include_smoke" -eq 1 ]]; then

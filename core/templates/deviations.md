@@ -1,14 +1,14 @@
 <!--
 One `## Deviation N` record per entry, in the exact field shape below —
 `/ship` greps this file for the literal line `- Status: open` and refuses
-to ship while any exist (build prompt §2.1: "the merge gate — open
-deviations block"). The `- Status: <value>` line must contain exactly the
+to ship while any exist — the merge gate: open deviations block. The
+`- Status: <value>` line must contain exactly the
 word `open` or `resolved` after the colon-space — no backticks, no other
 punctuation, nothing else on the line — or the mechanical check can't see
 it. Same for `- Tier:`, machine-read by nothing today but kept clean for
 the same reason.
 
-The circuit breaker (build prompt §2.4): the third deviation of any kind,
+The circuit breaker: the third deviation of any kind,
 tier notwithstanding, invalidates the current plan. Task state returns to
 `research` — three wrong guesses means the research was wrong once, not that
 each guess gets patched forward individually.

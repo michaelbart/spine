@@ -3,7 +3,7 @@
 # diff, determines which declared contracts (workspace.json's `contracts[]`)
 # this task touches — either the spec itself or a producer's own
 # `producer_paths` — and therefore which consumer repos enter this task's
-# blast radius (build prompt §2, "Cross-repo blast radius"). Also classifies
+# blast radius ("Cross-repo blast radius"). Also classifies
 # each touched contract's spec change as additive/breaking (core/rules/
 # contracts.md) and flags registry staleness (open question §5.3).
 #
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 ws_conf="$project/workspace.json"
-[[ -f "$ws_conf" ]] || { echo "contract-touch: $ws_conf not found — this script only applies to a workspace root (build prompt §2, Extension B)" >&2; exit 2; }
+[[ -f "$ws_conf" ]] || { echo "contract-touch: $ws_conf not found — this script only applies to a workspace root" >&2; exit 2; }
 if ! jq -e . "$ws_conf" >/dev/null 2>&1; then
   echo "contract-touch: $ws_conf is not valid JSON" >&2
   exit 2

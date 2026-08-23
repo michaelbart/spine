@@ -1,6 +1,6 @@
 #!/bin/bash
 # claims-check — intersects a submitting task's declared claims against
-# every other open task's own claims.json (build prompt Extension C §2.3).
+# every other open task's own claims.json.
 # Deterministic, cheap (declared-surface intersection, not semantic
 # analysis — core/rules/... has no "meaning" layer to check against; a
 # collision in undeclared territory is a residual this script does not and
@@ -23,10 +23,10 @@
 # the same file, or one about to rewrite what the other is grounded on
 # reading, is the actual collision.
 #
-# --diff <base-ref> (Phase D, build prompt Extension C self-red-team —
-# "verify the narrow-claims linkage"): the plan-time run above intersects
-# *declared* claims only, by design (build prompt's own "declared surfaces,
-# not meaning"). That leaves a real, named gap: a task that under-declares
+# --diff <base-ref> (Phase D self-red-team — "verify the narrow-claims
+# linkage"): the plan-time run above intersects *declared* claims only,
+# by design — declared surfaces, not meaning. That leaves a real, named
+# gap: a task that under-declares
 # its own predicted_touch to dodge a real conflict, then actually touches
 # the undeclared surface anyway, was previously caught (if at all) only as
 # generic conformance drift — a low precision/recall score with no link
@@ -42,8 +42,8 @@
 # a hit here means a colliding task's own claims changed *after* this
 # one's plan-time check ran without propagate reaching this task, worth
 # surfacing but not this script's own residual to explain away).
-# Never a hard block by itself at this call site — build prompt's own
-# framing of ship-time checks is "surface loudly," and by ship time the
+# Never a hard block by itself at this call site — ship-time checks are
+# framed as "surface loudly," and by ship time the
 # code already exists; core/skills/ship/SKILL.md §0 decides what to do
 # with an UNDECLARED result (a real halt-tier deviation, same tier as a
 # stale check-stale result — see that skill's own comment for why).
@@ -76,8 +76,8 @@ done
 self_claims="$project/work/$self_id/claims.json"
 [[ -f "$self_claims" ]] || { echo "claims-check: $self_claims not found" >&2; exit 2; }
 
-# Registry-reading operations pull first (build prompt §2.2) — narrows,
-# does not close, the race named in open question 7; /ship's own
+# Registry-reading operations pull first — narrows, does not close, the
+# race named in open question 7; /ship's own
 # ship-time re-grounding is the documented backstop for what's left.
 if [[ "$do_pull" -eq 1 ]] && git -C "$project" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "$project" pull --rebase --quiet 2>/dev/null || \

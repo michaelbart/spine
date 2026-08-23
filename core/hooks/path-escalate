@@ -4,9 +4,9 @@
 # A write matching a protected path halts (deny, exit 2) unless the active
 # task is already confirmed Class 2. A write matching a path tagged
 # `#migration` is denied flat regardless of class unless that class is
-# exactly 2 — migrations don't get the softer "not yet escalated" framing,
-# per build prompt §2.3 ("Migration-path edits outside a Class 2 task are
-# denied flat"). With no active task, class defaults to 0, so the same
+# exactly 2 — migrations don't get the softer "not yet escalated" framing:
+# migration-path edits outside a Class 2 task are denied flat. With no
+# active task, class defaults to 0, so the same
 # not-class-2 branch applies — this is the Class 0 backstop from §2.2.
 #
 # Bash is included in the matcher (Phase E fix) because a shell redirect,
@@ -32,7 +32,7 @@
 #   .spine/current-task         — active task-id (or absent -> class 0),
 #                                  always read from $project (the workspace
 #                                  root for a multi-repo task — one task
-#                                  folder at the workspace, build prompt §2)
+#                                  folder at the workspace)
 #   work/<task-id>/class        — single line, "0"|"1"|"2", same rule: one
 #                                  class for the whole multi-repo task, so
 #                                  a protected path in *any* member repo is

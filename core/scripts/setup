@@ -1,7 +1,7 @@
 #!/bin/bash
-# setup — the one per-machine step the portable install mechanism needs
-# (build prompt §2.1, Extension C). Idempotent: safe to re-run on every
-# machine, including the first, including a machine that already ran it.
+# setup — the one per-machine step the portable install mechanism needs.
+# Idempotent: safe to re-run on every machine, including the first,
+# including a machine that already ran it.
 #
 # What "machine-absolute" broke, reproduced before this script existed:
 # core/skills/bootstrap and
@@ -37,7 +37,7 @@
 # allow patterns — both already project-relative, confirmed by direct
 # inspection in Phase A, untouched by this script.
 #
-# Version pin (build prompt Phase A review, 2.1 addition): $project/
+# Version pin: $project/
 # .spine/core-pin.json — {"sha": "<spine HEAD this project is calibrated
 # against>", "mode": "warn|strict"} — IS committed, ordinary project
 # state, bumped only by a maintainer who has actually re-run conformance

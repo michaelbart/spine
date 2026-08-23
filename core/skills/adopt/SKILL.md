@@ -13,7 +13,15 @@ recalibration, not a first install — say so, and treat every step below as
 Unlike `/bootstrap`, there is real code here already. Depth arrives per-task
 via research, not in one encyclopedic pass now — a comprehensive day-one
 survey would be stale within a month and, per the wrong-beats-missing
-constraint (build prompt §1), actively harmful. Stay bounded.
+constraint, actively harmful. Stay bounded.
+
+Scripts and templates below are referenced as
+`${CLAUDE_SKILL_DIR}/../../scripts/<name>` /
+`${CLAUDE_SKILL_DIR}/../../templates/<name>` — hand that to the shell
+verbatim, `../../` included. Do **not** lexically collapse it to
+`.claude/`; `.claude/skills/adopt` is a symlink into the spine core
+checkout, and collapsing the text yields a nonexistent `.claude/scripts/...`
+path.
 
 ## 0.5. Delegate the survey
 

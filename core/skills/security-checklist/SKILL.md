@@ -5,7 +5,7 @@ user-invocable: false
 ---
 
 Checklist for attacking a diff, scoped to the three dominant defect
-categories (build prompt §2.5) — authorization, data integrity, injection.
+categories — authorization, data integrity, injection.
 Stack-blind: no tool or language is named below; read the actual mechanism
 in the diff, don't pattern-match on syntax.
 

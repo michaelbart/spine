@@ -1,6 +1,7 @@
 ---
 name: visualize
 description: Generate a project-wide HTML dashboard — task Gantt timeline, event feed, traced-trivial log, decision store, capability matrix, milestone progress, cost/drift instrument. Bounded window by default with client-side facet/filter/search. Read-only, never a gate.
+disable-model-invocation: true
 argument-hint: [--project <path>] [--since <date> | --all]
 ---
 
@@ -11,6 +12,10 @@ window flag: `--since <date>` or `--all`.
 Confirm the resolved project root is spine-installed
 (`.spine/capabilities.json` exists) — if not, say so and stop rather than
 letting the script fail with a less legible message.
+
+Hand this to the shell verbatim, `../../` included — do **not** lexically
+collapse it to `.claude/`; `.claude/skills/visualize` is a symlink into
+the spine core checkout.
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/render-dashboard --project <project root> [--since <date> | --all]

@@ -146,8 +146,9 @@ escalation and scope-first.
 Always offer escalate-up. If the engineer chooses a class **below** your
 recommendation, that's their call, but record it as an override so `/costs`
 can see it: note it plainly now, and it will be carried into the task's ledger
-(`class_declared` below the recommended, plus a one-line deviation at task
-setup). Escalation and same-as-recommended need no such record.
+(`class_downgraded_from` set to your recommendation, plus a one-line
+deviation at task setup). Escalation and same-as-recommended need no such
+record.
 
 ## 7. Route
 

@@ -8,7 +8,7 @@ paths:
 This rule loads whenever a file under a workspace's `contracts/<name>/`
 directory is read. It generalizes `core/rules/migrations.md`'s
 expand/contract discipline from one repo's schema to the boundary between
-repos — spine's migration discipline at system scale (build prompt §2).
+repos — spine's migration discipline at system scale.
 Nothing here names a spec format (OpenAPI, protobuf, a hand-written
 markdown table) — the registry and this rule are stack-blind; the spec
 content itself is whatever the producer's stack actually needs.

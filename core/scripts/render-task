@@ -83,9 +83,10 @@ render_paragraphs() {
     awk '{ gsub(/^[ \t]+|[ \t]+$/, ""); if ($0 != "") printf "<p>%s</p>\n", $0 }'
 }
 
-# --- metadata: plain single-value files /task writes, preferred over
-# ledger.json's own class_declared (seen null in real fixtures even when
-# the class file itself held the real value) ---
+# --- metadata: plain single-value files /task writes. (ledger.json used
+# to also carry a class_declared field for this — dropped: it was seen
+# null in real fixtures even when the class file itself held the real
+# value, and nothing else ever read it either.) ---
 class_val="unknown"
 [[ -f "$work_dir/class" ]] && class_val="$(cat "$work_dir/class")"
 owner_val=""
@@ -125,13 +126,25 @@ ledger_present=0
 [[ -f "$ledger_file" ]] && ledger_present=1
 
 tokens_for() {
-  # tokens_for <phase...> — sums input+output+cache_create+cache_read
-  # across every listed ledger phase key that exists.
+  # tokens_for <phase-key-or-prefix...> — sums input+output+cache_create+
+  # cache_read across every ACTUAL ledger.json phase key that matches one
+  # of the given names exactly, or starts with "<name>-" (e.g. "falsifier"
+  # also matches a real "falsifier-round2" key). The prefix match is what
+  # makes this backward-compatible with real installed-project ledger.json
+  # files that predate `ledger harvest` becoming additive under the same
+  # phase key (a re-dispatched adversary round used to silently overwrite
+  # round 1's tokens, so some real sessions worked around it by inventing
+  # a "-round2"-suffixed key instead — those historical files still need
+  # to render correctly, not just newly-harvested ones).
   [[ "$ledger_present" -eq 1 ]] || { echo 0; return; }
   local phases_json
   phases_json="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
-  jq --argjson phases "$phases_json" '
-    [ .phases as $p | $phases[] | $p[.].tokens // {input:0,output:0,cache_create:0,cache_read:0} ]
+  jq --argjson names "$phases_json" '
+    .phases as $p
+    | [ ($p | keys)[] as $k
+        | select(any($names[]; . as $name | ($k == $name) or ($k | startswith($name + "-"))))
+        | $k ]
+    | map($p[.].tokens // {input:0,output:0,cache_create:0,cache_read:0})
     | map(.input + .output + .cache_create + .cache_read) | add // 0
   ' "$ledger_file"
 }
@@ -429,8 +442,21 @@ for phase in "${TIMELINE_PHASES[@]}"; do
   ts="$(marked_at_for "$phase")"
   cost="$(tokens_for $(phase_source_keys "$phase"))"
   if [[ -z "$ts" ]]; then
-    printf '<a class="empty" href="#%s"><span class="phase">%s</span><span class="ts">not reached</span></a>\n' \
-      "$phase" "$phase"
+    # A phase can have real recorded cost with no `marked_at` of its own —
+    # e.g. `verify` absorbing falsifier/security tokens (see
+    # phase_source_keys above) when the session harvested those subagent
+    # phases but never itself called `ledger mark <task-id> verify` (a
+    # real, confirmed gap in practice: 65% of a sample of real installed-
+    # project tasks). Silently showing "not reached" then hid genuine,
+    # often expensive, adversary-review spend. Show the cost with an
+    # honest caveat instead of dropping it.
+    if [[ "$cost" != "0" ]]; then
+      printf '<a class="empty" href="#%s"><span class="phase">%s</span><span class="ts">not reached (%s tok recorded under a subagent phase)</span></a>\n' \
+        "$phase" "$phase" "$(fmt_tokens "$cost")"
+    else
+      printf '<a class="empty" href="#%s"><span class="phase">%s</span><span class="ts">not reached</span></a>\n' \
+        "$phase" "$phase"
+    fi
   else
     dur=""
     if [[ -n "$prev_ts" ]]; then
@@ -651,13 +677,36 @@ if [[ "$ledger_present" -eq 1 ]]; then
   rg_index="$(jq -r '.ship_time_regrounding_index // empty' "$ledger_file")"
   plan_lines="$(jq -r '.plan_line_count // empty' "$ledger_file")"
   briefing_lines="$(jq -r '.briefing_line_count // empty' "$ledger_file")"
+  briefing_words="$(jq -r '.briefing_word_count // empty' "$ledger_file")"
   items=""
+  # Both counts are meant to be written via `ledger set <task-id>
+  # plan_line_count <n>` with a clean `wc -l` integer. An earlier version
+  # of task/SKILL.md and ship/SKILL.md didn't specify `wc -l <file`
+  # (redirect stdin) vs. `wc -l file` — the latter (natural to type)
+  # prints "<n> <filename>", which `ledger set` stores verbatim as a
+  # string when it isn't valid JSON, and a raw `-gt` comparison against
+  # that string killed this whole render under `set -uo pipefail` (bash
+  # 3.2 nounset abort mid-arithmetic) with exit 0 and no output file —
+  # reproduced directly. Both skill files now specify the redirect form,
+  # but this guard stays as defense in depth against a hand-authored or
+  # older-session value in the same shape.
+  # The digits-only guard renders the raw value without the cap check
+  # instead of crashing when it isn't a clean integer.
   if [[ -n "$plan_lines" ]]; then
-    over=""; [[ "$plan_lines" -gt 200 ]] && over=" — over the 200-line cap"
+    over=""
+    [[ "$plan_lines" =~ ^[0-9]+$ && "$plan_lines" -gt 200 ]] && over=" — over the 200-line cap"
     items+="<li><strong>plan.md length:</strong> $(html_escape <<<"$plan_lines") lines$over</li>"$'\n'
   fi
   if [[ -n "$briefing_lines" ]]; then
-    over=""; [[ "$briefing_lines" -gt 60 ]] && over=" — over the ~1-page cap"
+    over=""
+    [[ "$briefing_lines" =~ ^[0-9]+$ && "$briefing_lines" -gt 60 ]] && over=" — over the ~1-page cap"
+    # briefing.md is one unwrapped paragraph per label, so a line count
+    # alone under-detects an over-length briefing (unlike plan.md's
+    # wrapped-bullet style, where line count tracks page length) — the
+    # word count is the signal that actually catches it.
+    if [[ -n "$briefing_words" && "$briefing_words" =~ ^[0-9]+$ && "$briefing_words" -gt 600 && -z "$over" ]]; then
+      over=" — over the ~1-page cap ($(html_escape <<<"$briefing_words") words)"
+    fi
     items+="<li><strong>briefing.md length:</strong> $(html_escape <<<"$briefing_lines") lines$over</li>"$'\n'
   fi
   [[ -n "$conformance_score" ]] && items+="<li><strong>Conformance (plan vs. actual, F1):</strong> $(html_escape <<<"$conformance_score")</li>"$'\n'

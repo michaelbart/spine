@@ -6,7 +6,9 @@ context: fork
 ---
 
 Survey this repository and rewrite `docs/map.md` from
-`${CLAUDE_SKILL_DIR}/../../templates/map.md`'s structure — real module
+`${CLAUDE_SKILL_DIR}/../../templates/map.md` (hand this path to the shell
+verbatim, `../../` included — do **not** lexically collapse it to
+`.claude/`, which is a symlink into the spine core checkout) — real module
 boundaries, real data flow for the flows that matter most (entry to
 persistence and back, not every path), real entry points, and a
 `## Known weirdness` section stating plainly what you find (half-finished

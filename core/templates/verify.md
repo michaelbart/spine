@@ -3,16 +3,16 @@ Assembled by /verify, not hand-written. Every section here has a mechanical
 source — this file quotes scripts, it doesn't paraphrase them. A degraded
 gate (a capability that's `unavailable`/`not-applicable`) must appear here
 explicitly; a silently missing section is exactly the "silently skipped
-gate" the build prompt calls the worst object this system can produce.
+gate" — the worst object this system can produce.
 
 Multi-repo (Extension B): §"Floor results" repeats once per repo this task
-*edited* — full floor, unmodified per-repo, per build prompt §2's
-edited-vs-affected rule. §"Contract conformance" is new, and covers every
+*edited* — full floor, unmodified per-repo, per the edited-vs-affected
+rule. §"Contract conformance" is new, and covers every
 repo this task's diff put in *contract* blast radius without editing it
 directly (core/scripts/contract-touch) — those repos never run their own
 floor for this task, only contract-check, so a consumer's pre-existing
 unrelated failures can never block a producer task forever (the "stranger's
-mess" anti-pattern, build prompt §1). A single-repo task has exactly one
+mess" anti-pattern). A single-repo task has exactly one
 "Floor results" table and an empty "Contract conformance" section — this
 is the same zero-behavioral-change guarantee as everywhere else in
 Extension B, expressed at the template level.
@@ -69,7 +69,7 @@ Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
 ## Conformance
 
 <!-- Verbatim from core/scripts/conformance against this task's plan.md.
-     Informational only — never a merge gate, per build prompt §2.5 Layer 4.
+     Informational only — never a merge gate (Layer 4).
      A low score here means research or planning is failing; track the
      trend across tasks via /costs, don't chase a single low score. -->
 

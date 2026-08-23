@@ -5,16 +5,18 @@ disable-model-invocation: true
 argument-hint: []
 ---
 
-You are running `/tasks` (build prompt Extension C §2.2). No arguments.
+You are running `/tasks`. No arguments.
 Project root: the workspace root if `workspace.json` exists here, otherwise
-this project. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
+this project. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>` — hand
+that to the shell verbatim, `../../` included; do **not** lexically
+collapse it to `.claude/`, which is a symlink into the spine core checkout.
 
 ## 1. Pull the shared mainline first
 
 **This is not optional** — the registry is whatever the shared mainline
 says, and a stale local checkout re-opens exactly the visibility hole the
-registry exists to close (build prompt §2.2: "registry-reading operations
-pull the shared mainline before reading"):
+registry exists to close: registry-reading operations pull the shared
+mainline before reading.
 
 ```
 git -C <project root> pull --rebase --quiet
@@ -69,6 +71,6 @@ something.
 
 This skill never blocks, resolves, or recommends — it's the read-only view
 `claims-check` and `propagate` also read state from, so a human seeing the
-same table they'd see is the point (build prompt §2.2: "exists so humans
-and scripts see the same picture"). If the list is empty, say so plainly —
+same table they'd see is the point — exists so humans and scripts see the
+same picture. If the list is empty, say so plainly —
 "no open tasks" is a real, useful answer, not nothing to report.

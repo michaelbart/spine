@@ -4,12 +4,19 @@
 # Package-manifest edits (paths tagged `#manifest` in protected-paths.conf)
 # and shell commands that look like a dependency install/change are forced
 # to a human decision via permissionDecision: "ask" — never a hardcoded
-# filename or package-manager list, per build prompt §2.3 and the "no file
-# in the spine may reference a language, framework, or tool" rule (build
-# prompt §3). In a headless subprocess (no interactive user to ask) this
-# fails closed: Claude Code blocks the call and surfaces the reason as an
-# error rather than silently proceeding — verified empirically in Phase B,
-# since "ask" behavior under a missing user isn't documented.
+# filename or package-manager list, since no file in spine may reference a
+# language, framework, or tool by name. In a headless subprocess (no
+# interactive user to ask) this fails closed: Claude Code blocks the call
+# and surfaces the reason as an error rather than silently proceeding —
+# verified empirically, since "ask" behavior under a missing user isn't
+# documented.
+#
+# The manifest-tag check (below) applies to BOTH Edit/Write's file_path and
+# every write target _bash-write-targets extracts from a Bash command — a
+# direct repro once showed a Bash redirect/`sed -i`/`cp` onto a
+# `#manifest`-tagged path going through unasked while the identical target
+# via Edit/Write correctly asked, because only the Edit/Write branch ran
+# the manifest check. Both branches now share check_manifest_target.
 #
 # Project state consulted:
 #   .spine/protected-paths.conf          — lines tagged `#manifest` are
@@ -49,32 +56,55 @@ ask() {
   exit 0
 }
 
+check_manifest_target() {
+  # check_manifest_target <file_path-as-given> — asks per the owning root's
+  # protected-paths.conf #manifest tag (workspace_route resolves which root
+  # that is; single-repo projects always resolve to $project itself).
+  local file_path="$1" rel display conf line glob
+  workspace_route "$project" "$file_path"
+  [[ -n "$WSR_OWNER_ROOT" ]] || return 0
+  conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
+  [[ -f "$conf" ]] || return 0
+  rel="$WSR_REL"
+  if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$rel"; else display="$rel"; fi
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    line="$raw"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" == *"#manifest"* ]] || continue
+    glob="${line%%#*}"
+    glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
+    [[ -z "$glob" ]] && continue
+    if [[ "$rel" == $glob ]]; then
+      ask "Editing dependency manifest '$display' — package changes always require a human decision (supply-chain and accretion control)."
+    fi
+  done < "$conf"
+}
+
 case "$tool_name" in
   Edit|Write)
     file_path="$(jq -r '.tool_input.file_path // empty' <<<"$input")"
     [[ -n "$file_path" ]] || exit 0
-    workspace_route "$project" "$file_path"
-    [[ -n "$WSR_OWNER_ROOT" ]] || exit 0
-    conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
-    [[ -f "$conf" ]] || exit 0
-    rel="$WSR_REL"
-    if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$rel"; else display="$rel"; fi
-    while IFS= read -r raw || [[ -n "$raw" ]]; do
-      line="$raw"
-      [[ -z "$line" || "$line" == \#* ]] && continue
-      [[ "$line" == *"#manifest"* ]] || continue
-      glob="${line%%#*}"
-      glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
-      [[ -z "$glob" ]] && continue
-      if [[ "$rel" == $glob ]]; then
-        ask "Editing dependency manifest '$display' — package changes always require a human decision (supply-chain and accretion control, build prompt §2.3)."
-      fi
-    done < "$conf"
+    check_manifest_target "$file_path"
     exit 0
     ;;
   Bash)
     command="$(jq -r '.tool_input.command // empty' <<<"$input")"
     [[ -n "$command" ]] || exit 0
+
+    source "$SCRIPT_DIR/_bash-write-targets"
+    declare -F bash_write_targets >/dev/null || { echo "dep-gate: _bash-write-targets did not load — failing closed, cannot evaluate this Bash write safely" >&2; exit 2; }
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      case "$line" in
+        UNRESOLVED:*)
+          ask "Bash command '$command' plausibly writes a file this gate can't confidently locate (${line#UNRESOLVED:}) — forced to a human decision since a dependency manifest can't be ruled out."
+          ;;
+        PATH:*)
+          check_manifest_target "${line#PATH:}"
+          ;;
+      esac
+    done < <(bash_write_targets "$command")
+
     pattern_files=("$project/.spine/install-command-patterns.conf")
     ws_conf="$project/workspace.json"
     if [[ -f "$ws_conf" ]]; then

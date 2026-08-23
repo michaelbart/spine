@@ -1,0 +1,121 @@
+#!/bin/bash
+# adversary-cache-tier — computes /verify's adversary re-run caching
+# decision (REUSED / FOCUSED / FULL) mechanically. Replaces what
+# verify/SKILL.md used to ask the model to hand-derive itself, every single
+# /verify invocation, via ~90 lines of three-outcome prose (content hashing,
+# severity thresholds) — a real, recurring token cost paid specifically to
+# *save* cost on adversary re-runs, with nothing checking the model got the
+# hand-computation right. Same algorithm, same three-outcome rule
+# (docs/tradeoffs.md "design-mode adversary cost tiers" / its "content-hash
+# correction" addendum) — this script is a mechanical restatement, not a
+# new policy:
+#
+#   REUSED  — every blast-radius file's current content hash matches
+#             work/<task-id>/artifacts/<agent>-coverage.json exactly, AND
+#             the prior work/<task-id>/artifacts/<agent>-verdict.json kept
+#             no medium/high severity verdict (empty or low-only qualify).
+#   FOCUSED — some but not all of the blast radius matches by hash, AND the
+#             prior verdict kept no high severity finding (medium/low/empty
+#             qualify).
+#   FULL    — everything else: no coverage file yet (first dispatch), zero
+#             blast-radius files match by hash, or the prior verdict kept a
+#             high severity finding — regardless of how much of the blast
+#             radius is otherwise stable.
+#
+# This script only ever narrows *effort* (dispatch budget), never *input* —
+# the caller still hands the adversary the complete current diff on every
+# outcome except REUSED. Computing "which files make up the blast radius"
+# (diff ∪ callers.md ∪ dep-diff.md ∪ touched-contract specs) stays the
+# orchestrating skill's job, since it already needs that list for the
+# delegation message; this script only turns a already-known file list plus
+# on-disk state into the REUSED/FOCUSED/FULL decision.
+#
+# Usage:
+#   adversary-cache-tier <task-id> <agent> --project <path>
+# Blast-radius file paths (relative to <path>, one per line) are read from
+# stdin. Prints exactly one line to stdout: REUSED, FOCUSED, or FULL.
+# Reasoning (match count, prior severity) goes to stderr for the record.
+set -euo pipefail
+
+usage() { echo "usage: adversary-cache-tier <task-id> <agent> --project <path> (blast-radius file list on stdin, one path per line)" >&2; exit 2; }
+
+[[ $# -ge 2 ]] || usage
+task_id="$1"; agent="$2"; shift 2
+project=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$project" ]] || usage
+
+coverage_file="$project/work/$task_id/artifacts/${agent}-coverage.json"
+verdict_file="$project/work/$task_id/artifacts/${agent}-verdict.json"
+
+blast_radius=()
+# `|| [[ -n "$line" ]]` is required, not decoration: without it, a stdin
+# whose last line has no trailing newline (e.g. a caller building the list
+# via `printf '%s'` rather than `printf '%s\n'`) silently drops that final
+# entry — `read` returns non-zero on that last, unterminated line even
+# though it did populate $line, and a bare `while read line; do` loop
+# treats that non-zero status as "stop," never entering the body for it.
+# Caught by this script's own core-selftest coverage, which happened to
+# pass its blast-radius fixture without a trailing newline.
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ -n "$line" ]] && blast_radius+=("$line")
+done
+
+if [[ ! -f "$coverage_file" ]]; then
+  echo "adversary-cache-tier: no prior coverage file ($coverage_file) — first dispatch for this agent on this task" >&2
+  echo "FULL"
+  exit 0
+fi
+
+if [[ "${#blast_radius[@]}" -eq 0 ]]; then
+  echo "adversary-cache-tier: empty blast-radius list given — nothing to compare, treating as FULL" >&2
+  echo "FULL"
+  exit 0
+fi
+
+matched=0
+total=0
+for f in "${blast_radius[@]}"; do
+  total=$((total + 1))
+  fpath="$project/$f"
+  if [[ ! -f "$fpath" ]]; then
+    continue # a deleted/renamed blast-radius file can't hash-match anything
+  fi
+  actual_hash="$(shasum -a 256 "$fpath" 2>/dev/null | awk '{print $1}')"
+  recorded_hash="$(jq -r --arg p "$f" '.files[$p] // empty' "$coverage_file")"
+  if [[ -n "$actual_hash" && -n "$recorded_hash" && "$actual_hash" == "$recorded_hash" ]]; then
+    matched=$((matched + 1))
+  fi
+done
+
+full_match=0
+[[ "$matched" -eq "$total" ]] && full_match=1
+zero_match=0
+[[ "$matched" -eq 0 ]] && zero_match=1
+
+max_sev="none"
+if [[ -f "$verdict_file" ]]; then
+  max_sev="$(jq -r '
+    [(.verdicts // [])[] | .severity] as $s
+    | if ($s | any(. == "high")) then "high"
+      elif ($s | any(. == "medium")) then "medium"
+      elif ($s | any(. == "low")) then "low"
+      else "none" end
+  ' "$verdict_file" 2>/dev/null || echo "none")"
+  [[ -n "$max_sev" ]] || max_sev="none"
+fi
+
+echo "adversary-cache-tier: $matched/$total blast-radius files hash-match prior coverage; prior max severity=$max_sev" >&2
+
+if [[ "$full_match" -eq 1 && ( "$max_sev" == "none" || "$max_sev" == "low" ) ]]; then
+  echo "REUSED"
+elif [[ "$full_match" -ne 1 && "$zero_match" -ne 1 && "$max_sev" != "high" ]]; then
+  echo "FOCUSED"
+else
+  echo "FULL"
+fi

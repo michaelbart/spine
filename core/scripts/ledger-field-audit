@@ -1,0 +1,87 @@
+#!/bin/bash
+# ledger-field-audit — heuristic, best-effort scan for a `ledger set
+# <task-id> <field>` write site (documented in a skill's prose) with no
+# matching reader anywhere in the deterministic layer. Grep-based, not a
+# real parser — a false positive (a real reader phrased in a shape this
+# script doesn't recognize) is possible; treat a flagged field as a lead
+# to check by hand, not a settled fact. Never a gate: nothing wires this
+# into `floor` or any per-task path, and it isn't part of core-selftest's
+# pass/fail — it's a periodic/manual check, the same spirit as `/ratchet`.
+#
+# Exists because "a field gets written every task, nothing ever reads it"
+# has now recurred twice across two audit rounds on this exact codebase —
+# six ledger fields the first round caught (conformance_score,
+# second_approver, four ship_time_regrounding_* variants), three more the
+# second round caught (spec_hash in workspace.json, class_declared,
+# pr_description before it got a reader added). A three-line fix each
+# time a human happens to notice is not a durable answer to a bug class
+# that keeps recurring; this is the mechanical backstop instead.
+#
+# Usage: ledger-field-audit [--core <path-to-spine-core>]
+# (default: this script's own core/ checkout)
+# Prints one line per field with no detected reader. Exit 1 if any found,
+# 0 if clean.
+set -euo pipefail
+
+CORE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --core) CORE="$2"; shift 2 ;;
+    *) echo "usage: ledger-field-audit [--core <path-to-spine-core>]" >&2; exit 2 ;;
+  esac
+done
+
+skills_dir="$CORE/skills"
+scripts_dir="$CORE/scripts"
+
+# Candidate field names: the token right after `ledger set <task-id>` in
+# every skill's own documented examples (prose, not live execution — this
+# script never runs a task, it only reads what tasks are told to do).
+# Each file's newlines are first collapsed to spaces before matching — this
+# codebase's own comments wrap at ~80 columns, so `ledger set <task-id>`
+# and the field name can legitimately land on two different source lines
+# (confirmed: core/skills/task/SKILL.md's class_downgraded_from reference
+# is exactly this shape) — a line-bound grep silently never sees that
+# field at all, neither flagged nor cleared. The trailing `|| true` on the
+# grep itself (not the whole assignment) is load-bearing for the same
+# reason the `hits=` line below needs it: grep exits 1 on zero matches,
+# and under `set -e`/pipefail that would silently kill this whole script
+# rather than report the correct "0 candidate fields" case. Caught by this
+# script's own negative-case test before this guard was added.
+fields="$(for f in "$skills_dir"/*/SKILL.md; do tr '\n' ' ' <"$f"; printf ' '; done \
+  | { grep -oE 'ledger set <task-id>[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' || true; } \
+  | awk '{print $NF}' | sort -u)"
+
+missing=0
+while IFS= read -r field; do
+  [[ -n "$field" ]] || continue
+  # A reader-shaped reference: a jq field access (.field), or the name
+  # quoted as a key ("field" / 'field') — checked across the scripts that
+  # actually read ledger.json back (ledger's own `aggregate`/`harvest`
+  # reads, render-task, render-dashboard) plus the two skills whose whole
+  # job is reporting on ledger fields (costs, task-report). `ledger set`
+  # itself is fully generic (`.[$key] = $value`, core/scripts/ledger:160)
+  # so it never contributes a false-positive "reader" hit for its own
+  # write side.
+  # `|| true` is load-bearing, not decoration: grep -l exits 1 when
+  # nothing matches — exactly the "no reader" case this script exists to
+  # report — and under `set -e` an unguarded failing command substitution
+  # here would silently kill the whole script before it ever printed
+  # anything. Caught by this script's own negative-case test (a
+  # synthetic dead field) before this guard was added.
+  hits="$( (grep -lE "\\.${field}\\b|\"${field}\"|'${field}'|\`${field}\`" \
+      "$scripts_dir/ledger" "$scripts_dir/render-task" "$scripts_dir/render-dashboard" \
+      "$skills_dir/costs/SKILL.md" "$skills_dir/task-report/SKILL.md" 2>/dev/null || true) | wc -l | tr -d ' ')"
+  if [[ "$hits" -eq 0 ]]; then
+    echo "NO READER FOUND: $field"
+    missing=$((missing + 1))
+  fi
+done <<<"$fields"
+
+if [[ "$missing" -eq 0 ]]; then
+  echo "ledger-field-audit: clean — every ledger set <task-id> <field> in core/skills/*/SKILL.md has at least one reader-shaped reference"
+  exit 0
+else
+  echo "ledger-field-audit: $missing field(s) with no detected reader — verify by hand before treating as dead (see this script's header on false positives)" >&2
+  exit 1
+fi

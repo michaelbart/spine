@@ -538,8 +538,7 @@ would have caught a rescoped-in-name-only adapter — see
 `docs/tradeoffs.md`'s Phase E section for the concrete horizon/synthetic
 runs that exercised it.
 
-This is a builder decision, not something the build prompt specifies
-directly — it's the mechanism that makes `adapter-conformance` possible
+This is a builder decision — it's the mechanism that makes `adapter-conformance` possible
 without inventing a second, stack-specific fixture-delivery channel. An
 adapter author validating a hand-written adapter gets the same self-test
 modes `adapter-conformance` uses; there's only one path to "conformant."
@@ -566,7 +565,7 @@ self-test (e.g. it always trivially passes/fails independent of input), that
 is itself a sign the capability should be `unavailable` or `not-applicable`
 rather than `implemented` — conformance existing to prove the teeth are real
 (`core/scripts/adapter-conformance` on an always-passing adapter must fail
-its own suite by construction, per §2.5 of the build prompt).
+its own suite by construction).
 
 ## 5. Verdict schema (adversary output, validated by `verdict-filter`)
 
@@ -605,7 +604,7 @@ per run:
 ```
 
 `attacked` is mandatory and non-empty even when `verdicts` is empty — it's
-the clean-bill enumeration ("what was attacked") the build prompt requires.
+the clean-bill enumeration ("what was attacked") this schema requires.
 `evidence.kind` is `file_line` (requires non-empty `file` and integer
 `line`), `command` (requires non-empty `command` and `output`), or
 `decision` (design-stage extension, Extension A — requires non-empty
@@ -661,7 +660,7 @@ any other trailer (e.g. `Co-Authored-By:`) and any Conventional-Commits-style
 subject prefix a project's own CI enforces — the trailer says nothing about
 commit-message grammar and never fights it.
 
-This makes the untracked-commit ratio (§2.6 of the build prompt) mechanical:
+This makes the untracked-commit ratio mechanical:
 `core/scripts/ledger scan-untracked-ratio` greps `git log` trailers over a
 window and reports commits carrying none of `Spine-Task:`,
 `Spine-Ticket:`, or `Spine-Bypass:` as off-spine work, by definition — no

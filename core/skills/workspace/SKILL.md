@@ -5,9 +5,13 @@ disable-model-invocation: true
 argument-hint: --root <path> [--repo <name>=<path> ...] [--from-design <project-path>]
 ---
 
-You are running `/workspace` (build prompt §2, Extension B). Scripts at
+You are running `/workspace` (Extension B). Scripts at
 `${CLAUDE_SKILL_DIR}/../../scripts/<name>`, templates at
-`${CLAUDE_SKILL_DIR}/../../templates/<name>`.
+`${CLAUDE_SKILL_DIR}/../../templates/<name>`. Hand
+`${CLAUDE_SKILL_DIR}/../../...` to the shell verbatim, `../../` included —
+do **not** lexically collapse it to `.claude/`; `.claude/skills/workspace`
+is a symlink into the spine core checkout, and collapsing the text yields
+a nonexistent `.claude/scripts/...` path.
 
 **This is setup, not a task** — it produces zero `work/<task-id>/` folders,
 runs no floor, needs no class. It runs once per workspace, the same
@@ -74,16 +78,16 @@ didn't know about yet):
   (`docs/decisions/D-<n>-*.md`, `Category: repo-topology`) says "more than
   one repository." Read that record's `## Decision` and `## Context`
   sections and present them to the human — decision.md's body is prose, by
-  design (§1 of the build prompt's own decision-record shape has no
-  structured repo-list field, and inventing one now would be a second,
-  parallel schema for something one conversation turn resolves better) —
+  design (the decision-record shape has no structured repo-list field,
+  and inventing one now would be a second, parallel schema for something
+  one conversation turn resolves better) —
   `core/templates/decision.md` itself is unchanged by this skill, so
   this step is a **facilitated confirmation**, not a parse: ask the human
   to name each repo the decision implies (name, absolute path — create the
-  directory if it doesn't exist yet, role) one at a time — build prompt §2
-  is explicit that decision.md's own `## Decision` prose is what's
-  authoritative here, this step just confirms it against the human rather
-  than re-deriving it — and confirm the original project itself becomes
+  directory if it doesn't exist yet, role) one at a time — decision.md's
+  own `## Decision` prose is what's authoritative here, this step just
+  confirms it against the human rather than re-deriving it — and confirm
+  the original project itself becomes
   one of the member repos (usually the first-named one). Each named repo
   still needs its own `/bootstrap` run
   before it has real capabilities — say so plainly, this skill does not
@@ -94,9 +98,9 @@ didn't know about yet):
   involved. Confirm each path exists and is a spine-installed project
   (`.spine/capabilities.json` present) before proceeding — if one isn't
   installed yet, tell the human to `/bootstrap` or `/adopt` it first; this
-  skill registers repos, it does not install spine into them (build prompt
-  §2: "each repo keeps its own adapters and capability manifest, correctly,
-  because the stacks differ").
+  skill registers repos, it does not install spine into them — each repo
+  keeps its own adapters and capability manifest, correctly, because the
+  stacks differ.
 
 Either path ends with the same set of facts: a workspace root path, and a
 list of `(name, absolute path, role)` triples. Everything from §1 onward is
@@ -109,9 +113,9 @@ identical regardless of which path got you there.
 `mkdir -p <root>/{contracts,work,docs/decisions,.spine}`. `cd <root> && git
 init` — the workspace root is its own small git repo (workspace.json,
 contract specs, work/, docs/), never a superset of any member repo's own
-history. This is required, not optional: `contract-touch` (§4 of the build
-prompt) detects a touched contract by diffing `contracts/<name>/spec*`
-against history, and there is no history to diff without a real repo here.
+history. This is required, not optional: `contract-touch` detects a
+touched contract by diffing `contracts/<name>/spec*` against history, and
+there is no history to diff without a real repo here.
 
 Write `<root>/workspace.json` from
 `${CLAUDE_SKILL_DIR}/../../templates/workspace.json`: one `repos[]` entry
@@ -132,8 +136,8 @@ the kind of cross-repo, high-blast-radius edit Class 2 exists for. Tagging
 escalation path — because a change to the repo/contract topology mid-task
 is never something to improvise past.)
 
-Write `<root>/docs/charter.md` — the **one system charter** (build prompt
-§2: "one system charter at the workspace; per-repo maps as today"). If this
+Write `<root>/docs/charter.md` — the **one system charter** (one system
+charter at the workspace; per-repo maps as today). If this
 is the greenfield path, this is a short pointer document: what the system
 is, and a one-line reference to each member repo's own charter/map for
 stack-specific detail — not a duplicate of any member repo's charter. Draft
@@ -157,7 +161,7 @@ add one new `repos[]` entry per newly-named triple from §0
 (`producer_paths_match_count` on any *existing* `contracts[]` entry stays
 exactly as it was — a new consumer repo does not by itself change an
 existing contract's producer-path count), and write the file back whole.
-**Every existing `contracts[]` entry — spec_path, spec_hash,
+**Every existing `contracts[]` entry — spec_path,
 producer_paths, consumers, registered date — must come out byte-for-byte
 identical to how it went in.** This is the one genuinely destructive
 mistake this mode exists to prevent: writing `workspace.json` fresh from
@@ -221,8 +225,8 @@ started directly inside that repo.
 knows the first contract this workspace exists to coordinate, declare it
 now (same shape a later `/task` would use): create
 `<root>/contracts/<name>/spec.md` (or whatever spec format fits the
-producer's stack — stack-specific content, per build prompt §2, is fine
-here, the registry entry around it is what's stack-blind), compute its hash
+producer's stack — stack-specific content is fine here, the registry
+entry around it is what's stack-blind), compute its hash
 (`${CLAUDE_SKILL_DIR}/../../scripts/decision-hash <spec-path>` — the same
 whole-file hash algorithm, no status-line exclusion needed since a spec has
 no status line), and append a `contracts[]` entry to `workspace.json` with

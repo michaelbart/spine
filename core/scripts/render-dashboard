@@ -1048,6 +1048,13 @@ else
   bypass_count="$(jq -r '.bypass_count // 0' <<<"$ledger_aggregate_json")"
   tooling_gap_count="$(jq -r '.tooling_gap_count // 0' <<<"$ledger_aggregate_json")"
   hand_tracked="$(jq -r '.hand_tracked_task_count // 0' <<<"$ledger_aggregate_json")"
+  # avg_conformance_score/second_approver_count: added to `ledger aggregate`
+  # (both plain and --by-engineer) alongside the other cross-task quality
+  # signals above, but this dashboard has its own independent call to
+  # `ledger aggregate` and its own stat-grid rendering, so it needed its
+  # own wiring too — missed the first time these two were added elsewhere.
+  avg_conf="$(jq -r '.avg_conformance_score' <<<"$ledger_aggregate_json")"
+  second_approver_count="$(jq -r '.second_approver_count // 0' <<<"$ledger_aggregate_json")"
   fmt_dev="$(awk -v n="$avg_dev" 'BEGIN{printf "%.2f", n}')"
   ratio="$(sed -n 's/^untracked-commit ratio: \([0-9.]*\).*/\1/p' <<<"$untracked_line")"
   echo '<div class="stat-grid">'
@@ -1057,6 +1064,11 @@ else
   printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">bypasses</div></div>\n' "$bypass_count"
   printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">tooling gaps</div></div>\n' "$tooling_gap_count"
   printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">hand-tracked tasks</div></div>\n' "$hand_tracked"
+  if [[ "$avg_conf" != "null" ]]; then
+    fmt_conf="$(awk -v n="$avg_conf" 'BEGIN{printf "%.2f", n}')"
+    printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">avg conformance score</div></div>\n' "$fmt_conf"
+  fi
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">second-approver reviews</div></div>\n' "$second_approver_count"
   [[ -n "$ratio" ]] && printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">untracked-commit ratio</div></div>\n' "$ratio"
   echo '</div>'
 
@@ -1070,13 +1082,14 @@ else
   eng_rows="$(jq -r 'length' <<<"$ledger_by_engineer_json" 2>/dev/null || echo 0)"
   if [[ "$eng_rows" -gt 1 ]]; then
     echo '<h3 style="margin-top:20px;">By engineer</h3>'
-    echo '<table class="simple"><tr><th>Engineer</th><th>Tasks</th><th>Total cost</th><th>Avg deviations/task</th><th>Bypasses</th><th>Tooling gaps</th></tr>'
-    while IFS=$'\t' read -r eng tc tk ad bc tg; do
+    echo '<table class="simple"><tr><th>Engineer</th><th>Tasks</th><th>Total cost</th><th>Avg deviations/task</th><th>Bypasses</th><th>Tooling gaps</th><th>Avg conformance</th><th>2nd-approver reviews</th></tr>'
+    while IFS=$'\t' read -r eng tc tk ad bc tg ac sac; do
       [[ -n "$eng" ]] || continue
       fmt_ad="$(awk -v n="$ad" 'BEGIN{printf "%.2f", n}')"
-      printf '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n' \
-        "$(html_escape <<<"$eng")" "$tc" "$(fmt_tokens "$tk")" "$fmt_ad" "$bc" "$tg"
-    done < <(jq -r '.[] | [.engineer, .task_count, .total_tokens, .avg_deviation_count, .bypass_count, .tooling_gap_count] | @tsv' <<<"$ledger_by_engineer_json" 2>/dev/null)
+      fmt_ac="$([[ "$ac" == "null" || -z "$ac" ]] && echo "—" || awk -v n="$ac" 'BEGIN{printf "%.2f", n}')"
+      printf '<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n' \
+        "$(html_escape <<<"$eng")" "$tc" "$(fmt_tokens "$tk")" "$fmt_ad" "$bc" "$tg" "$fmt_ac" "${sac:-0}"
+    done < <(jq -r '.[] | [.engineer, .task_count, .total_tokens, .avg_deviation_count, .bypass_count, .tooling_gap_count, (.avg_conformance_score // "null"), (.second_approver_count // 0)] | @tsv' <<<"$ledger_by_engineer_json" 2>/dev/null)
     echo '</table>'
   fi
 

@@ -10,6 +10,11 @@
 #     only at Class 2 when the diff touches a migration path, records a
 #     degraded gap when the capability isn't implemented, never appears
 #     otherwise.
+#   - floor's smoke_in_floor Class 1 opt-out (.spine/profile.json):
+#     defaults true, an explicit false skips smoke even when implemented
+#     and cached under budget, an explicit true behaves like the default.
+#   - adversary-cache-tier's REUSED/FOCUSED/FULL decision (content-hash
+#     match against blast radius, severity of the prior verdict).
 #   - adapter-conformance's shell-strictness lint (ADAPTER-CONTRACT.md
 #     §2.1): flags a bash adapter missing `set -euo pipefail` and a
 #     bash-4-only construct with no $BASH_VERSINFO guard.
@@ -19,6 +24,17 @@
 #     (the real shape found in the wild — assumes the stack is already
 #     up) fails it, and a capability with no environment assumption is
 #     never asked for `--self-test cold` at all.
+#   - floor's Class 2 smoke hard-gate: an unimplemented smoke-run fails
+#     floor outright, not a soft skip (a prior audit round found this used
+#     to log "HARD GATE" but never actually fail).
+#   - phase-gate/path-escalate/dep-gate direct repro coverage: a protected
+#     path reached through a real symlinked alias of the project root still
+#     denies (three separate real bypasses of this shape — a lexical `../`,
+#     a planted symlink, and a project-root alias mismatch — have each been
+#     found in this layer by direct testing after code review alone missed
+#     them), a `../` traversal, a planted symlink into a protected path,
+#     and dep-gate asking on a Bash write to a `#manifest` path (previously
+#     checked only for Edit/Write).
 #
 # Usage: core-selftest
 # Exit 0 iff every case passes.
@@ -168,6 +184,165 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# floor: smoke_in_floor (.spine/profile.json) Class 1 opt-out
+# ---------------------------------------------------------------------------
+# Direct repro that motivated this coverage: with smoke implemented, cached
+# well under budget, and profile.json's smoke_in_floor explicitly false,
+# floor still ran smoke-seed/run/golden anyway before this was wired in —
+# ADAPTER-CONTRACT.md's documented "team profile wins" precedence was pure
+# prose with nothing behind it. This also guards the jq idiom itself: a
+# naive `.smoke_in_floor // true` silently coerces an explicit `false` back
+# to `true` (jq's `//` treats `false` as falsy, same as missing/null), so
+# case 7 below fails loudly if that regresses.
+
+new_smoke_profile_fixture() {
+  # new_smoke_profile_fixture <profile.json-content-or-empty>
+  local profile_json="$1" proj
+  proj="$(mktemp -d "$tmp_root/smokeproj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/.spine/adapters" "$proj/src"
+  echo "seed" >"$proj/src/app.js"
+  cat >"$proj/.spine/capabilities.json" <<EOF
+{
+  "typecheck": {"status":"not-applicable","reason":"selftest fixture"},
+  "lint": {"status":"not-applicable","reason":"selftest fixture"},
+  "test": {"status":"not-applicable","reason":"selftest fixture"},
+  "secret-scan": {"status":"not-applicable","reason":"selftest fixture"},
+  "dep-diff": {"status":"not-applicable","reason":"selftest fixture"},
+  "clone-scan": {"status":"not-applicable","reason":"selftest fixture"},
+  "callers": {"status":"not-applicable","reason":"selftest fixture"},
+  "mutate": {"status":"not-applicable","reason":"selftest fixture"},
+  "smoke-seed": {"status":"implemented"},
+  "smoke-run": {"status":"implemented"},
+  "smoke-golden": {"status":"implemented"}
+}
+EOF
+  for cap in smoke-seed smoke-run smoke-golden; do
+    cat >"$proj/.spine/adapters/$cap" <<EOF2
+#!/bin/bash
+set -euo pipefail
+echo "$cap selftest stub: ok"
+EOF2
+    chmod +x "$proj/.spine/adapters/$cap"
+  done
+  [[ -n "$profile_json" ]] && echo "$profile_json" >"$proj/.spine/profile.json"
+  # Pre-cache a runtime well under the 60s default budget so Class 1 would
+  # include smoke on its own merits if smoke_in_floor didn't override it.
+  echo 1 >"$proj/.spine/.smoke-runtime-seconds"
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  echo "more" >>"$proj/src/app.js"
+  git -C "$proj" add -A
+  printf '%s' "$proj"
+}
+
+run_smoke_profile_case() {
+  # run_smoke_profile_case <name> <profile.json-content-or-empty>
+  local name="$1" profile_json="$2" proj out log code
+  proj="$(new_smoke_profile_fixture "$profile_json")"
+  out="$tmp_root/${name}.json"
+  log="$tmp_root/logs/${name}.log"
+  if ( cd "$proj" && "$FLOOR" 1 --out "$out" >"$log" 2>&1 ); then code=0; else code=$?; fi
+  echo "$code|$out"
+}
+
+# Case 6: no profile.json -> smoke_in_floor defaults true, smoke runs.
+r="$(run_smoke_profile_case case6 "")"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" == "0" && "$(result_status "$out" smoke-run)" == "pass" ]]; then
+  pass "floor: class 1, no profile.json -> smoke_in_floor defaults true, smoke runs"
+else
+  fail "floor: class 1, no profile.json -> smoke_in_floor defaults true, smoke runs (exit=$code status=$(result_status "$out" smoke-run))"
+fi
+
+# Case 7: smoke_in_floor: false -> smoke never dispatched, even implemented
+# and cached under budget. This is the case a naive `// true` jq idiom
+# would silently get wrong.
+r="$(run_smoke_profile_case case7 '{"smoke_in_floor": false}')"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" == "0" ]] && ! result_present "$out" smoke-run; then
+  pass "floor: class 1, smoke_in_floor:false -> smoke never dispatched despite being implemented+cached-under-budget"
+else
+  fail "floor: class 1, smoke_in_floor:false -> smoke never dispatched (exit=$code present=$(result_present "$out" smoke-run && echo yes || echo no))"
+fi
+
+# Case 8: smoke_in_floor: true (explicit) -> smoke runs, same as default.
+r="$(run_smoke_profile_case case8 '{"smoke_in_floor": true}')"
+code="${r%%|*}"; out="${r#*|}"
+if [[ "$code" == "0" && "$(result_status "$out" smoke-run)" == "pass" ]]; then
+  pass "floor: class 1, smoke_in_floor:true -> smoke runs"
+else
+  fail "floor: class 1, smoke_in_floor:true -> smoke runs (exit=$code status=$(result_status "$out" smoke-run))"
+fi
+
+# ---------------------------------------------------------------------------
+# adversary-cache-tier: /verify's REUSED/FOCUSED/FULL decision
+# ---------------------------------------------------------------------------
+# Mechanical restatement of verify/SKILL.md's three-outcome caching rule —
+# these cases are the same ones used to spot-check the script by hand
+# before this coverage existed; kept here so a future edit to the tiering
+# logic can't silently drift from the documented algorithm.
+
+ACT="$SCRIPT_DIR/adversary-cache-tier"
+act_proj="$(mktemp -d "$tmp_root/actproj.XXXXXX")"
+mkdir -p "$act_proj/work/actT/artifacts" "$act_proj/src"
+printf 'content A\n' >"$act_proj/src/a.txt"
+printf 'content B\n' >"$act_proj/src/b.txt"
+printf 'content C\n' >"$act_proj/src/c.txt"
+act_hash_a="$(shasum -a 256 "$act_proj/src/a.txt" | awk '{print $1}')"
+act_hash_b="$(shasum -a 256 "$act_proj/src/b.txt" | awk '{print $1}')"
+
+act_check() {
+  # act_check <desc> <expected> <blast-radius-lines>
+  local desc="$1" expected="$2" lines="$3" got
+  got="$(printf '%s' "$lines" | "$ACT" actT falsifier --project "$act_proj" 2>/dev/null || true)"
+  if [[ "$got" == "$expected" ]]; then
+    pass "adversary-cache-tier: $desc -> $expected"
+  else
+    fail "adversary-cache-tier: $desc -> expected $expected, got '$got'"
+  fi
+}
+
+act_check "no coverage file yet" "FULL" "src/a.txt
+src/b.txt"
+
+jq -n --arg a "$act_hash_a" --arg b "$act_hash_b" '{files:{"src/a.txt":$a,"src/b.txt":$b}}' \
+  >"$act_proj/work/actT/artifacts/falsifier-coverage.json"
+act_check "full match, no prior verdict file" "REUSED" "src/a.txt
+src/b.txt"
+
+jq -n '{agent:"falsifier",task_id:"actT",attacked:["x"],verdicts:[{severity:"low"}]}' \
+  >"$act_proj/work/actT/artifacts/falsifier-verdict.json"
+act_check "full match, prior verdict low-only" "REUSED" "src/a.txt
+src/b.txt"
+
+jq -n '{agent:"falsifier",task_id:"actT",attacked:["x"],verdicts:[{severity:"medium"}]}' \
+  >"$act_proj/work/actT/artifacts/falsifier-verdict.json"
+act_check "full match, prior verdict has medium (not REUSED)" "FULL" "src/a.txt
+src/b.txt"
+
+act_check "partial match (c.txt uncovered), prior verdict medium" "FOCUSED" "src/a.txt
+src/b.txt
+src/c.txt"
+
+jq -n '{agent:"falsifier",task_id:"actT",attacked:["x"],verdicts:[{severity:"high"}]}' \
+  >"$act_proj/work/actT/artifacts/falsifier-verdict.json"
+act_check "partial match, prior verdict has high (never reduced effort)" "FULL" "src/a.txt
+src/b.txt
+src/c.txt"
+
+printf 'changed\n' >"$act_proj/src/a.txt"
+printf 'changed\n' >"$act_proj/src/b.txt"
+jq -n '{agent:"falsifier",task_id:"actT",attacked:["x"],verdicts:[]}' \
+  >"$act_proj/work/actT/artifacts/falsifier-verdict.json"
+act_check "zero match (content changed)" "FULL" "src/a.txt
+src/b.txt"
+
+act_check "empty blast radius" "FULL" ""
+
+# ---------------------------------------------------------------------------
 # adapter-conformance: shell-strictness lint (ADAPTER-CONTRACT.md §2.1)
 # ---------------------------------------------------------------------------
 
@@ -313,6 +488,151 @@ else
   fail "adapter-conformance: capability with no environment assumption never asked for --self-test cold (exit=$code)"
   echo "$out"
 fi
+
+# ---------------------------------------------------------------------------
+# floor: Class 2 smoke hard-gate (ADAPTER-CONTRACT.md §3.8) — an
+# unimplemented smoke-run must fail floor outright at Class 2, never a soft
+# skip. Deliberately uses a different "not implemented" status string
+# ("unavailable") than the original bug report ("not-applicable") did, per
+# the lesson that a fix's own repro isn't enough to trust it's general.
+# ---------------------------------------------------------------------------
+
+new_smoke_hardgate_fixture() {
+  local proj
+  proj="$(mktemp -d "$tmp_root/hardgateproj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/.spine/adapters" "$proj/src"
+  echo "seed" >"$proj/src/app.js"
+  cat >"$proj/.spine/capabilities.json" <<EOF
+{
+  "typecheck": {"status":"not-applicable","reason":"selftest fixture"},
+  "lint": {"status":"not-applicable","reason":"selftest fixture"},
+  "test": {"status":"not-applicable","reason":"selftest fixture"},
+  "secret-scan": {"status":"not-applicable","reason":"selftest fixture"},
+  "dep-diff": {"status":"not-applicable","reason":"selftest fixture"},
+  "clone-scan": {"status":"not-applicable","reason":"selftest fixture"},
+  "callers": {"status":"not-applicable","reason":"selftest fixture"},
+  "mutate": {"status":"not-applicable","reason":"selftest fixture"},
+  "smoke-seed": {"status":"implemented"},
+  "smoke-run": {"status":"unavailable","reason":"selftest: deliberately not implemented"},
+  "smoke-golden": {"status":"implemented"}
+}
+EOF
+  cat >"$proj/.spine/adapters/smoke-seed" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+echo "smoke-seed selftest stub: ok"
+EOF
+  chmod +x "$proj/.spine/adapters/smoke-seed"
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  echo "more" >>"$proj/src/app.js"
+  git -C "$proj" add -A
+  printf '%s' "$proj"
+}
+
+hg_proj="$(new_smoke_hardgate_fixture)"
+hg_out="$tmp_root/hardgate.json"
+hg_log="$tmp_root/logs/hardgate.log"
+if ( cd "$hg_proj" && "$FLOOR" 2 --out "$hg_out" >"$hg_log" 2>&1 ); then hg_code=0; else hg_code=$?; fi
+if [[ "$hg_code" != "0" && "$(result_status "$hg_out" smoke-run)" == "fail" ]]; then
+  pass "floor: class 2, smoke-run not implemented -> hard gate fails floor (not a soft skip)"
+else
+  fail "floor: class 2, smoke-run not implemented -> hard gate fails floor (exit=$hg_code status=$(result_status "$hg_out" smoke-run))"
+fi
+
+# ---------------------------------------------------------------------------
+# hooks: phase-gate / path-escalate / dep-gate direct repro coverage
+# ---------------------------------------------------------------------------
+# Three separate real bypasses of this layer have each been found only by
+# direct testing, after code review and the previous round's own tests
+# missed them: a lexical `../` (round 1), a planted/live symlink (round 2),
+# and a project-root reached through a different real alias than the one
+# $file_path was given through (round 3). These cases exist so the next
+# edit to _workspace-route/_bash-write-targets/the hooks themselves can't
+# silently reopen any of the three. The alias case uses a self-created
+# symlink rather than depending on the host's own /tmp layout, so this
+# suite is portable — but exercises the identical code path a real /tmp ->
+# /private/tmp alias would (ownership decided from a lexical prefix match
+# with a resolved-path fallback).
+
+PHASE_GATE="$SCRIPT_DIR/../hooks/phase-gate"
+PATH_ESCALATE="$SCRIPT_DIR/../hooks/path-escalate"
+DEP_GATE="$SCRIPT_DIR/../hooks/dep-gate"
+
+new_hook_fixture() {
+  local real alias
+  real="$(mktemp -d "$tmp_root/hookproj.XXXXXX")"
+  mkdir -p "$real/.spine" "$real/src/auth" "$real/src/other" "$real/pkg" "$real/work/T1"
+  printf 'src/auth/**\npkg/manifest.json #manifest\n' >"$real/.spine/protected-paths.conf"
+  printf 'npm install\n' >"$real/.spine/install-command-patterns.conf"
+  echo secret >"$real/src/auth/secret.txt"
+  echo '{}' >"$real/pkg/manifest.json"
+  echo T1 >"$real/.spine/current-task"
+  echo research >"$real/work/T1/state"
+  echo 0 >"$real/work/T1/class"
+  alias="$(mktemp -u "$tmp_root/hookalias.XXXXXX")"
+  ln -s "$real" "$alias"
+  printf '%s|%s' "$real" "$alias"
+}
+
+hook_run() {
+  # hook_run <hook-bin> <CLAUDE_PROJECT_DIR-value> <json> -> "<exit>|<output>"
+  local bin="$1" proj="$2" json="$3" out code=0
+  out="$(CLAUDE_PROJECT_DIR="$proj" "$bin" <<<"$json" 2>&1)" || code=$?
+  printf '%s|%s' "$code" "$out"
+}
+
+hook_check() {
+  # hook_check <desc> <result> <expect:deny|allow|ask>
+  local desc="$1" result="$2" expect="$3" code="${2%%|*}" out="${2#*|}"
+  case "$expect" in
+    deny) [[ "$code" != "0" ]] && pass "hooks: $desc" || fail "hooks: $desc (expected deny, got exit=$code: $out)" ;;
+    allow) [[ "$code" == "0" && "$out" != *permissionDecision* ]] && pass "hooks: $desc" || fail "hooks: $desc (expected allow, got exit=$code: $out)" ;;
+    ask) [[ "$out" == *'"permissionDecision": "ask"'* ]] && pass "hooks: $desc" || fail "hooks: $desc (expected ask, got exit=$code: $out)" ;;
+  esac
+}
+
+hf="$(new_hook_fixture)"
+hook_real="${hf%%|*}"
+hook_alias="${hf#*|}"
+
+hook_check "path-escalate denies canonical protected path (control)" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$hook_real"'/src/auth/secret.txt"}}')" deny
+
+hook_check "path-escalate denies a protected path reached via a project-root alias" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$hook_alias"'/src/auth/secret.txt"}}')" deny
+
+hook_check "path-escalate denies a Bash write to a protected path via a project-root alias" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"echo pwned > '"$hook_alias"'/src/auth/secret.txt"}}')" deny
+
+hook_check "phase-gate denies an out-of-task-dir write reached via a project-root alias" \
+  "$(hook_run "$PHASE_GATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$hook_alias"'/src/other/x.txt"}}')" deny
+
+hook_check "dep-gate asks on a manifest write reached via a project-root alias" \
+  "$(hook_run "$DEP_GATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$hook_alias"'/pkg/manifest.json"}}')" ask
+
+hook_check "dep-gate asks on a Bash write to a #manifest path (not just Edit/Write)" \
+  "$(hook_run "$DEP_GATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"echo x > '"$hook_real"'/pkg/manifest.json"}}')" ask
+
+hook_check "dep-gate asks on a Bash sed -i to a #manifest path" \
+  "$(hook_run "$DEP_GATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"sed -i \"\" -e s/a/b/ '"$hook_real"'/pkg/manifest.json"}}')" ask
+
+hook_check "path-escalate allows a genuinely unrelated external path (control)" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$tmp_root"'/unrelated.txt"}}')" allow
+
+hook_check "path-escalate denies (reverse alias direction: project via alias, target canonical)" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_alias" '{"tool_name":"Write","tool_input":{"file_path":"'"$hook_real"'/src/auth/secret.txt"}}')" deny
+
+hook_check "path-escalate denies a ../ traversal to a protected path" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"src/other/../auth/secret.txt"}}')" deny
+
+ln -sf "$hook_real/src/auth/secret.txt" "$hook_real/src/other/innocuous.txt"
+hook_check "path-escalate denies a planted symlink into a protected path" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"src/other/innocuous.txt"}}')" deny
+rm -f "$hook_real/src/other/innocuous.txt"
 
 if [[ $overall -eq 0 ]]; then
   echo "core-selftest: PASS"

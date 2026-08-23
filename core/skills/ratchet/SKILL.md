@@ -19,8 +19,11 @@ Once for real: convert it into exactly one of these, cheapest first —
    should have caught, edit the relevant `.spine/adapters/<name>` (project-
    owned, stack-specific — this is fine to be stack-specific, it lives in
    the one place stack-specificity belongs). Re-run
-   `${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance <name>` after —
-   an edited adapter that breaks its own self-test isn't done.
+   `${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance <name>` (hand
+   this path to the shell verbatim, `../../` included — do **not**
+   lexically collapse it to `.claude/`, a symlink into the spine core
+   checkout) after — an edited adapter that breaks its own self-test isn't
+   done.
 2. **A test.** If the finding is a specific behavior that should never
    regress, add the test that pins it.
 3. **A `.spine/protected-paths.conf` entry.** If the finding is "this path
@@ -32,7 +35,7 @@ Once for real: convert it into exactly one of these, cheapest first —
    belong in the shared spine core at `core/rules/`), or a `CLAUDE.md`
    line** — only when none of the above can express it, because both are
    always-loaded or load-on-path-read surface, and that surface is capped
-   and audited (build prompt §2.6). This is the only skill permitted to add
+   and audited. This is the only skill permitted to add
    to either. (A finding general enough to belong in the *shared* stack-
    blind `core/rules/` — rare — is a spine-maintainer change to the spine
    checkout itself, not a routine `/ratchet` run inside one project.)

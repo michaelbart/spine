@@ -1,6 +1,6 @@
 #!/bin/bash
-# propagate — supersession propagation (build prompt Extension C §2.5).
-# Invoked by /ship right after a task's own commit(s) land, and by
+# propagate — supersession propagation. Invoked by /ship right after a
+# task's own commit(s) land, and by
 # whatever supersedes a decision or a contract spec (Extension A / B,
 # when present). Scans every *other* open task's claims.json for
 # grounding on what just changed and writes a structured flag into each
@@ -16,8 +16,8 @@
 # workspace.json's registry — no separate presence check needed, the data
 # just won't be there.
 #
-# Open question 2 (build prompt §5.2): "same flag, different urgency?" —
-# answered here, mechanically, not just in prose: each flag records the
+# Same flag, different urgency? — answered here, mechanically, not just
+# in prose: each flag records the
 # target task's *own* phase at write time as `severity` — advisory for a
 # task still in research/plan (nothing implemented yet, cheapest to
 # redirect), disruptive for implement/verify/ship (real work may need

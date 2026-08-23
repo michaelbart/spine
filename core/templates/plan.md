@@ -28,8 +28,8 @@ bearing, because those skills fail silently and partially on a
 malformed section, never loudly the way a script would. Keep them exact.
 
 **Multi-repo tasks (Extension B, one plan for the whole workspace task —
-build prompt §2, "one task folder at the workspace, one plan, one human
-approval"):** every `## Predicted touch` entry is repo-qualified,
+one task folder at the workspace, one plan, one human approval):** every
+`## Predicted touch` entry is repo-qualified,
 `<repo-name>:<path>` (e.g. `api:src/routes/items.ts`), even for a repo
 this plan only touches once. `/verify` is what splits these apart per
 repo when it runs `conformance` and `contract-touch` (it writes a
@@ -92,8 +92,8 @@ grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan
 
 ## What I'll decide alone vs. stop and ask
 
-<!-- build prompt §2.4. Every kind of decision this task might hit, sorted
-     into exactly one of the three tiers below. Each list's parenthetical
+<!-- Every kind of decision this task might hit, sorted into exactly one
+     of the three tiers below. Each list's parenthetical
      keyword is the literal `- Tier:` value `deviations.md` records against
      it (core/templates/deviations.md) — keep the keyword even though the
      heading text around it is free prose, so a real deviation can always

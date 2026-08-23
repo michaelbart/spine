@@ -5,7 +5,7 @@ disable-model-invocation: true
 argument-hint: [description of the work] [--milestone <milestone-id>]
 ---
 
-You are running `/task`, the spine (build prompt §2.2). `$ARGUMENTS` is the
+You are running `/task`, the spine. `$ARGUMENTS` is the
 task description as given, plus an optional `--milestone <milestone-id>`.
 
 **If the description is empty, try auto-continue before asking for one.**
@@ -86,8 +86,8 @@ note it and proceed, don't treat an unreachable check as a passing one.
 **Multi-repo (Extension B)**: if `workspace.json` exists at the project
 root, this session's own project root *is* the workspace root, and this
 one `/task` invocation is the single task folder, single plan, single
-human approval for however many member repos the change touches (build
-prompt §2 — never a separate `/task` per repo). Every step below runs
+human approval for however many member repos the change touches — never
+a separate `/task` per repo. Every step below runs
 exactly once, at the workspace root; the only things that change shape are
 the `## Predicted touch` list (repo-qualified) and the plan-time escalation
 check in §3 — both called out inline below. **A project with no
@@ -167,8 +167,8 @@ that flag entry (`"acknowledged": true`, `"acknowledged_at"`,
 `"acknowledged_by"` set) — never by silently clearing it or advancing
 around it. This is the mechanism `core/scripts/propagate`'s flags exist to
 be *for*; a flag nothing ever reads back would be exactly the "manufactures
-confidence" failure shape build prompt §1 names for a hook that doesn't
-fire — `/task` is what performs every phase transition, so `/task` is what
+confidence" failure shape a hook that doesn't fire produces — `/task` is
+what performs every phase transition, so `/task` is what
 owns this check, the same way `phase-gate` owns write-restriction during
 research/plan.
 
@@ -260,16 +260,16 @@ was null), which `/ship` reads for the `Spine-Ticket:` trailer; write
 to `guided` regardless of what the handoff says — the ceiling); for a direct
 `/task` with no handoff, write the autonomy the human just chose in the step
 above (Class 2 / a downgraded task ⇒ `guided`); and if
-`class_below_recommended` is true, when you record `class_declared` (§6) also
-`ledger set <task-id> class_downgraded_from <recommended_class>` and add a
+`class_below_recommended` is true, `ledger set <task-id>
+class_downgraded_from <recommended_class>` and add a
 `notes.md` line — the downgrade stays visible without consuming a
 circuit-breaker slot (it is a classification choice, not a plan-vs-reality
 deviation, so it is **not** a `deviations.md` record). Then **delete
 `.spine/current-intake`** and continue to §2. The class-suggestion list below is
 only for a `/task` invoked directly, with no intake handoff.
 
-Every task gets a class, and the human confirms it — not the model alone
-(build prompt §2.7). Suggest one, don't decide it unilaterally (for a direct `/task` you also
+Every task gets a class, and the human confirms it — not the model alone.
+Suggest one, don't decide it unilaterally (for a direct `/task` you also
 confirm an autonomy right after the class — see "Autonomy for a direct
 `/task`" below; `/intake` instead proposes it from a code-grounded pre-scan):
 
@@ -292,8 +292,8 @@ confirm an autonomy right after the class — see "Autonomy for a direct
   `path-escalate`: with no active task it defaults to class 0, so if the
   edit turns out to touch a protected path, the hook halts it and you tell
   the human plainly: "this stopped being trivial" — then restart as a real
-  task. This threshold is an initial value (build prompt open question
-  §5.2); `/costs` data is what should revise it, not intuition.
+  task. This threshold is an initial value; `/costs` data is what should
+  revise it, not intuition.
 - **Class 1 (standard):** the default for anything bigger than that.
 - **Class 2 (high blast radius):** suggest when the human's description or
   your own quick read implies protected-path or schema/contract/auth
@@ -353,8 +353,8 @@ approval, §3). Write `work/<task-id>/flags.json` = `[]`. Then:
 ${CLAUDE_SKILL_DIR}/../../scripts/registry-sync <task-id> --project <project root> --message "task: open <task-id>"
 ```
 
-This is the literal "committed and pushed to it at task creation" build
-prompt §2.2 requires — a task invisible to a colleague's `claims-check`
+This is the literal "committed and pushed to it at task creation" the
+registry requires — a task invisible to a colleague's `claims-check`
 until `/ship` would defeat the entire mechanism, so this happens now, not
 deferred to the end of the phase.
 
@@ -371,9 +371,9 @@ the files the change will directly touch or directly call into, and skip a
 wider subsystem survey unless the change's own blast radius forces it (e.g.
 it touches a symbol the charter or an existing `docs/decisions/` entry
 already flags as widely shared). **Class 2 is full research:** no such
-limit — survey the actual subsystem and its real callers. This line is the
-crisp version of build prompt open question §5.5; defend or revise it in
-`docs/tradeoffs.md`, don't silently drift from it task to task.
+limit — survey the actual subsystem and its real callers. This line is a
+real design decision; defend or revise it in `docs/tradeoffs.md`, don't
+silently drift from it task to task.
 
 The researcher's entire reply is the complete `research.md` content
 (including its header) — write it verbatim to `work/<task-id>/research.md`.
@@ -411,7 +411,11 @@ if it doesn't fit, the task splits into two, it does not get compressed
 into unreadability. This cap has no other backstop — record the actual
 count (`ledger set <task-id> plan_line_count <n>`) so an oversized plan
 that slipped through is visible in `/task-report` after the fact, not just
-self-checked once and forgotten. Multi-repo, additionally: write `## Ship order` the
+self-checked once and forgotten. Use `wc -l < plan.md` (redirect stdin),
+not `wc -l plan.md` — the latter prints the filename alongside the count
+(`"42 plan.md"`), which `ledger set` stores as-is since it isn't valid
+JSON, and a non-numeric `plan_line_count` breaks the cap check it exists
+to feed. Multi-repo, additionally: write `## Ship order` the
 moment `## Predicted touch` names more than one repo. Write `## Contract
 change` if research or your own reading of `## Predicted touch` suggests
 this plan touches a declared contract's producer paths or spec — this is a
@@ -468,18 +472,17 @@ each entry against its *own* repo's `.spine/protected-paths.conf`**
 (strip the `<repo-name>:` prefix, resolve the repo's absolute path via
 `workspace.json`, read that repo's own conf) — checking every entry across
 every repo in one pass is what makes this "escalate if *any* repo's
-protected path is hit" loop the mechanical form of build prompt §2's "class
-escalation composes as max across repos": there is no separate max
+protected path is hit" loop the mechanical form of "class escalation
+composes as max across repos": there is no separate max
 computation to write, it falls out of checking every entry regardless of
 which repo it belongs to. If any match and `work/<task-id>/class` is not
 already `2`, auto-escalate: rewrite the class file to `2` (one file, at the
 workspace root for a multi-repo task — one class for the whole task), **and
 rewrite `work/<task-id>/autonomy` = `guided`** (the ceiling — a Class 2 task
 is never `auto`/`checkpointed`; escalation pulls the human back in), and
-say so plainly when you present the plan — this is the plan-triggered
-escalation build prompt §2.2 describes; it does not need a separate
-confirmation prompt beyond the plan approval you're about to ask for
-anyway.
+say so plainly when you present the plan — this is plan-triggered
+escalation; it does not need a separate confirmation prompt beyond the
+plan approval you're about to ask for anyway.
 
 **Populate `work/<task-id>/claims.json` for real** (Extension C §2.2/§2.3),
 now that a plan exists: `predicted_touch` from `## Predicted touch`
@@ -535,9 +538,9 @@ iteration.
 
 - **Class 0/1**: the approver is whoever's session this is — resolve from
   `git config user.name`/`user.email` in *this* session, same as `owner`.
-  Self-approval is expected and correct here; build prompt §2.6 is explicit
-  that mandatory cross-review does not extend to Class 1 — "recreates the
-  review-bottleneck theater spine exists to escape."
+  Self-approval is expected and correct here; mandatory cross-review does
+  not extend to Class 1 — it would recreate the review-bottleneck theater
+  spine exists to escape.
 - **Class 2**: the approver must be a *different* git identity than
   `work/<task-id>/owner`. This session cannot manufacture that identity —
   it can only ever resolve its own `git config`. So: if this session's own
@@ -583,9 +586,9 @@ vocabulary translation:
   dependencies, auth logic, or anything protected-path (the hooks enforce
   the file-level cases independently). Append a deviations.md record with
   status `open`, stop implementing, and tell the human what you need
-  resolved. This is a legitimate non-recurring touchpoint (build prompt
-  §2.7) — it does not happen on every task, only when reality diverges
-  from the plan in a halt-tier way.
+  resolved. This is a legitimate non-recurring touchpoint — it does not
+  happen on every task, only when reality diverges from the plan in a
+  halt-tier way.
 
 **Circuit breaker:** count every deviations.md record regardless of tier.
 On the third for this task, the plan is invalidated — `git stash push -u -m
@@ -683,6 +686,5 @@ result) in full under its own phase key (`research-agent`, `falsifier`,
 above, not a replacement for it; the orchestrating phase's own window still
 covers the main session's overhead around the delegation.
 
-`ledger set <task-id> class_declared <class>` at step 1;
 `ledger set <task-id> class_escalated true` if step 3's auto-escalation
 fired; `ledger set <task-id> deviation_count <n>` whenever it changes.

@@ -8,8 +8,8 @@ argument-hint: [--since <git-date>]
 You are running `/costs`. Parse an optional `--since <git-date>` from
 `$ARGUMENTS` (default: no lower bound — full history).
 
-**Surface the untracked-commit ratio first, never buried** (build prompt
-§2.6) — this is the deliberate close for the blind spot Class 0 tasks leave:
+**Surface the untracked-commit ratio first, never buried** — this is the
+deliberate close for the blind spot Class 0 tasks leave:
 they write no ledger entry, so drift toward doing everything as Class 0
 would otherwise look like an absence of data, indistinguishable from a
 quiet week.
@@ -34,7 +34,9 @@ instrument. It does not excuse a genuinely high ratio on a project with real
 off-spine work mixed in — the caveat explains the mechanical *source* of
 inflation, it doesn't zero it out; if bypass count or tooling gaps are also
 nonzero, or the project has commits with no task association at all, still
-say so plainly. Then:
+say so plainly. Then (hand `${CLAUDE_SKILL_DIR}/../../...` to the shell
+verbatim — do **not** lexically collapse it to `.claude/`; `.claude/skills/
+costs` is a symlink into the spine core checkout):
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/ledger aggregate [--since <date>]
@@ -43,9 +45,11 @@ ${CLAUDE_SKILL_DIR}/../../scripts/ledger aggregate [--since <date>]
 Report `task_count`, `fresh_tokens`, `cache_read_tokens`, `total_tokens`,
 `avg_deviation_count`, `class_escalation_count`, `bypass_count`,
 `tooling_gap_count`, `hand_tracked_task_count`, `avg_conformance_score`
-(plan-vs-actual F1, null if no task recorded one yet), and
+(plan-vs-actual F1, null if no task recorded one yet),
 `second_approver_count` (Class 2 ships with a real or override second
-approver) from its JSON.
+approver), and `pr_description_count` (ships that produced a
+`pr-description.md` — compare against `task_count` to notice ships that
+skipped it) from its JSON.
 
 **Lead with `fresh_tokens`, not `total_tokens`, when you talk about
 cost.** `fresh_tokens` (input + output + cache writes) is genuinely
@@ -64,7 +68,7 @@ it or it reads as a much bigger number than the work actually was.
 
 Put the bypass count next to the untracked ratio in your summary, not at
 the bottom — both are "work that happened outside the normal gates," and
-the build prompt is explicit that bypass must stay visible, never quiet.
+bypass must stay visible, never quiet.
 
 **`tooling_gap_count` and `hand_tracked_task_count` go right alongside
 them, not at the bottom either.** These count a different failure mode
@@ -123,8 +127,8 @@ Skip this whole subsection on a solo project (one engineer, or every
 to compare.
 
 Don't editorialize with targets or thresholds this skill doesn't have —
-Layer 1 calibration (build prompt §0) intentionally sets no budget cap by
-default and expects `/costs` data, not guesses, to justify one later. If the
+Layer 1 calibration intentionally sets no budget cap by default and
+expects `/costs` data, not guesses, to justify one later. If the
 untracked ratio or bypass count looks high, say so plainly and let the
 engineer decide what it means; this command's job is to surface numbers
 the engineer would otherwise have to dig for, not to interpret them for

@@ -12,7 +12,7 @@
 # every committed project has exactly this shape on a machine that hasn't
 # run `setup` yet: real, matching PreToolUse entries, pointing at nothing.
 # Fail-open there is precisely the "manufactures confidence" failure shape
-# build prompt §1 exists to prevent — a hook that doesn't fire is spine's
+# this design exists to prevent — a hook that doesn't fire is spine's
 # worst failure shape, worse than no hook, because nothing about the
 # experience of editing a file looks any different from a fully-enforced
 # session.

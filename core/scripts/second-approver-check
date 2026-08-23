@@ -1,15 +1,14 @@
 #!/bin/bash
-# second-approver-check — Class 2's second-approver gate (build prompt
-# Extension C §2.6), as a real executable with a real exit code, not just
-# skill prose describing the logic. Extracted during Phase D's self-red-
-# team ("populated but not gated" sweep): every other Extension C gate
-# (claims-check, propagate) has a script backing its check that a human
-# or a future automated caller (the build prompt's own named insertion
-# point: "every check here is a script CI could invoke") can run
-# independently and get a real answer from; this one didn't, until now —
-# it was jq logic embedded in ship/SKILL.md's prose, verified only by
-# hand-running matching commands. Same shape as claims-check now: one
-# script, one job, real exit codes.
+# second-approver-check — Class 2's second-approver gate, as a real
+# executable with a real exit code, not just skill prose describing the
+# logic. Extracted during Phase D's self-red-team ("populated but not
+# gated" sweep): every other Extension C gate (claims-check, propagate)
+# has a script backing its check that a human or a future automated
+# caller — the design intent being that every check here is a script CI
+# could invoke — can run independently and get a real answer from; this
+# one didn't, until now — it was jq logic embedded in ship/SKILL.md's
+# prose, verified only by hand-running matching commands. Same shape as
+# claims-check now: one script, one job, real exit codes.
 #
 # Usage: second-approver-check <task-id> --project <path>
 # Exit: 0 clear to proceed (stdout says whether it's a real second

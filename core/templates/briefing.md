@@ -1,7 +1,7 @@
 <!--
 Written by /ship. ≤1 page, hard — the human reads this once, at merge.
-This is the mental-alignment artifact (build prompt §1, failure mode 5,
-named first by the engineer): if reading this doesn't leave the engineer
+This is the mental-alignment artifact (failure mode 5, named first by
+the engineer): if reading this doesn't leave the engineer
 knowing what their product now does and why, it failed at its one job.
 Don't pad it to look thorough; cut anything without a reason to be here.
 
@@ -18,7 +18,10 @@ defect here, same as burying its point three sentences down.
 etc.) is kept anyway, and kept stable across tasks, on purpose: it costs
 nothing today and it's what makes this file `grep`-able the day something
 (`/costs`, most likely) starts reading briefings in aggregate instead of
-one at a time. Don't rename a label casually.
+one at a time. Don't rename a label casually. (This stability guarantee
+only covers briefings written after a given convention shipped — nothing
+retroactively updates an already-shipped project's older briefings to a
+later heading shape; see `docs/tradeoffs.md`'s "Known limits.")
 
 **The two floors — never compressed below these, regardless of how tight
 the one-page budget gets:**

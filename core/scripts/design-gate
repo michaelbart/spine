@@ -7,7 +7,7 @@
 # Checks, all must pass:
 #   1. work/M0/milestone.md exists and its Capability targets table has a
 #      filled-in (non-empty) status for test, smoke-seed, smoke-run,
-#      smoke-golden — the walking-skeleton floor named in the build prompt.
+#      smoke-golden — the walking-skeleton floor.
 #   2. Every one of the 13 core/ADAPTER-CONTRACT.md capabilities has a
 #      status (implemented|unavailable|not-applicable) in
 #      .spine/capabilities.json — "missing" fails this check the same as
