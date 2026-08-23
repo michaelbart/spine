@@ -5,7 +5,7 @@
 # `producer_paths` — and therefore which consumer repos enter this task's
 # blast radius ("Cross-repo blast radius"). Also classifies
 # each touched contract's spec change as additive/breaking (core/rules/
-# contracts.md) and flags registry staleness (open question §5.3).
+# contracts.md) and flags registry staleness.
 #
 # Never blocks by itself (informational, like core/scripts/conformance) —
 # `/verify`'s aggregation step is what turns a `breaking` classification
@@ -131,10 +131,9 @@ for ((c = 0; c < contract_count; c++)); do
   # treat a stale contract as touched regardless of what producer_touched
   # says, so its consumers still enter blast radius and the staleness
   # itself is surfaced loudly rather than only warned about in a run that
-  # happened to also touch the spec directly. This is this script's answer
-  # to open question §5.3 ("the registry needs its own invalidation story
-  # — design it, it is not optional"): degrade to conservative-gate-anyway,
-  # never to silent-skip.
+  # happened to also touch the spec directly. The registry needs its own
+  # invalidation story, so this script's answer is to degrade to
+  # conservative-gate-anyway, never to silent-skip.
   touched=false
   [[ "$spec_touched" == "true" || "$producer_touched" == "true" || "$registry_stale" == "true" ]] && touched=true
 

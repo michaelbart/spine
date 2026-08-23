@@ -87,18 +87,32 @@ _wsr_collapse() {
   local input="$1" seg out=() IFS='/' last
   local -a segs
   read -ra segs <<<"$input"
-  for seg in "${segs[@]}"; do
-    case "$seg" in
-      ''|'.') continue ;;
-      '..')
-        if [[ ${#out[@]} -gt 0 ]]; then
-          last="${out[$((${#out[@]}-1))]}"
-          [[ "$last" != '..' ]] && unset 'out[$((${#out[@]}-1))]'
-        fi
-        ;;
-      *) out+=("$seg") ;;
-    esac
-  done
+  # Same bash-3.2 "unbound variable under set -u on a legitimately empty
+  # array" gotcha this function already guards below for "${out[@]}" —
+  # found here too, on "${segs[@]}", by a fuzz harness feeding raw
+  # unrestricted strings directly to this function (core-selftest's
+  # "fuzz:" section). `read -ra segs <<<""` (input is the literal empty
+  # string) leaves segs with zero elements, and bash 3.2 throws on
+  # dereferencing that under nounset — every real caller in this codebase
+  # is traced to never pass "" here (workspace_route/hooks all guard
+  # file_path/task_id non-empty before this point), so this is not known
+  # to be reachable through any hook today, but the function's own
+  # contract ("never crashes, always returns at least /") shouldn't
+  # depend on every future caller rediscovering that precondition by hand.
+  if [[ ${#segs[@]} -gt 0 ]]; then
+    for seg in "${segs[@]}"; do
+      case "$seg" in
+        ''|'.') continue ;;
+        '..')
+          if [[ ${#out[@]} -gt 0 ]]; then
+            last="${out[$((${#out[@]}-1))]}"
+            [[ "$last" != '..' ]] && unset 'out[$((${#out[@]}-1))]'
+          fi
+          ;;
+        *) out+=("$seg") ;;
+      esac
+    done
+  fi
   local result="" p
   # Bash 3.2 throws "unbound variable" under `set -u` when expanding
   # "${out[@]}" on a *legitimately empty* array (no empty-array exemption

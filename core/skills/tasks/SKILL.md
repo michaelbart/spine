@@ -33,8 +33,8 @@ approval) so a degraded read is the right failure mode here, not a halt.
 
 Open = has a `work/<task-id>/state` file whose content is not `done`
 (closed tasks vastly outnumber open ones in any real project's history —
-open question 5: this is what keeps the scan sub-second regardless of how
-many closed tasks accumulate, since it's one `cat` per task folder, not a
+this is what keeps the scan sub-second regardless of how many closed
+tasks accumulate, since it's one `cat` per task folder, not a
 git-history walk):
 
 ```

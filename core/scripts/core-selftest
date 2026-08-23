@@ -35,6 +35,13 @@
 #     them), a `../` traversal, a planted symlink into a protected path,
 #     and dep-gate asking on a Bash write to a `#manifest` path (previously
 #     checked only for Edit/Write).
+#   - fuzz coverage for _workspace-route's path functions (_wsr_collapse,
+#     _wsr_realpath, workspace_route, _wsr_glob_eq): thousands of randomly
+#     generated path strings (fixed seed, reproducible) checked against
+#     invariants — never-empty/idempotent/no-dot-segments for collapse,
+#     always-terminates for realpath, always-absolute-or-empty ownership
+#     root for workspace_route, NFC/NFD symmetry for glob_eq — each run
+#     bounded so a reintroduced runaway fails loudly instead of hanging.
 #
 # Usage: core-selftest
 # Exit 0 iff every case passes.
@@ -726,6 +733,276 @@ if command -v python3 >/dev/null 2>&1; then
 else
   echo "hooks: SKIP NFC/NFD case — python3 not on PATH"
 fi
+
+# ---------------------------------------------------------------------------
+# fuzz: property-based coverage for _workspace-route's path functions
+# ---------------------------------------------------------------------------
+# Round 5. Four rounds of hand-picked adversarial scenarios found six
+# distinct hooks bypass mechanisms (../, symlink, alias mismatch, dep-gate's
+# missing Bash branch, a bash-3.2 empty-array crash, NFC/NFD) — one new
+# mechanism almost every round, including a genuine bug inside the shared
+# normalizer itself (round 4) that three prior rounds of hand-testing never
+# tried. Rather than add another hand-picked scenario, this generates a
+# large corpus of randomized path strings (varying segment count, ./..
+# density, leading/trailing/doubled slashes, empty segments, non-ASCII in
+# both NFC and NFD form, absolute vs. relative) and asserts invariants that
+# must hold regardless of input shape, independent of any specific bug
+# anyone has thought to check for.
+#
+# python3 generates the corpus (already an accepted core-selftest/_wsr_nfc
+# dependency, same graceful-fallback posture: a smaller bash-only corpus if
+# python3 isn't on PATH, never a hard failure). The seed is fixed
+# (20260823) deliberately, not truly randomized per run — this is wired in
+# as a permanent regression case, and a fixed corpus that fails
+# reproducibly is more valuable here than a different one every run that
+# can't be re-run to confirm a fix. The corpus includes explicit copies of
+# every prior round's own trigger shape (a root-cancelling ../ chain, a
+# relative "project"-shaped string, a bare empty string, all-slash strings)
+# alongside genuine random generation, so a regression of any prior finding
+# is caught by this section even before the random half runs at all.
+#
+# Every fuzz section runs under a bounded background job (same
+# fork+poll+kill pattern as hook_run_bounded, since neither timeout nor
+# gtimeout exists on this host) so a reintroduced runaway hangs the section
+# for at most its bound, not the whole suite indefinitely — the section
+# then fails loudly ("hung past Ns") instead of the run just never
+# finishing. Bounds are sized generously (5-10x a clean run's observed
+# time on this host) so ordinary machine slowness doesn't false-positive.
+#
+# Unlike the rest of this "hooks:" section (which execs phase-gate/
+# path-escalate/dep-gate as real subprocesses via hook_run/hook_run_bounded),
+# fuzzing calls _workspace-route's own functions directly in-process — the
+# whole point is exercising _wsr_collapse/_wsr_realpath/_wsr_glob_eq/
+# workspace_route themselves, not a hook wrapper around them — so this file
+# needs its own `source`, never implicitly inherited from anywhere else.
+source "$SCRIPT_DIR/../hooks/_workspace-route"
+declare -F workspace_route >/dev/null || { echo "core-selftest: _workspace-route did not load — cannot run the fuzz section" >&2; exit 1; }
+
+_wsr_fuzz_gen_paths() {
+  # _wsr_fuzz_gen_paths <n> -> n path strings on stdout, one per line.
+  local n="$1"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$n" <<'PYEOF'
+import random, sys
+random.seed(20260823)
+n = int(sys.argv[1])
+segs_pool = ["a", "bb", "ccc", "d.e", "x-y", "z_1", "..", ".", "",
+             "café", "日本語", "🎉", "emoji😀name", "a..b", "...",
+             "  spaced  ", "a b", "-", "~"]
+def rand_path():
+    depth = random.randint(0, 10)
+    parts = [random.choice(segs_pool) for _ in range(depth)]
+    lead = random.choice(["", "/", "//", "///"])
+    trail = random.choice(["", "/", "//"])
+    return (lead + "/".join(parts) + trail).replace("\n", " ")
+edge_cases = [
+    "", "/", "..", "../..", ".", "./.", "/./../", "//////",
+    "///a///b///", "/" + "../"*30 + "etc/passwd", "../"*30 + "etc/passwd",
+    "a/" + "../"*5, "/a/b/../../../../..", "proj", "proj/work/T1",
+]
+out = list(edge_cases)
+for _ in range(max(0, n - len(edge_cases))):
+    out.append(rand_path())
+for p in out:
+    print(p)
+PYEOF
+  else
+    local i j depth parts pool=("a" "bb" ".." "." "" "x-y" "z_1")
+    printf '%s\n' "" "/" ".." "../.." "." "proj" "proj/work/T1"
+    for ((i = 0; i < n; i++)); do
+      depth=$((RANDOM % 6)); parts=""
+      for ((j = 0; j < depth; j++)); do
+        parts+="/${pool[$((RANDOM % ${#pool[@]}))]}"
+      done
+      [[ $((RANDOM % 2)) -eq 0 ]] && printf '%s\n' "$parts" || printf '%s\n' "${parts#/}"
+    done
+  fi
+}
+
+fuzz_run_bounded() {
+  # fuzz_run_bounded <label> <bound-seconds> <body-fn> — runs <body-fn> in a
+  # backgrounded subshell (so a hang can be killed rather than blocking the
+  # suite), captures its stdout, and reports one aggregated pass/fail via
+  # the suite's own fail()/pass(). <body-fn> must print exactly one
+  # "FUZZSUMMARY: pass=<n> fail=<n>" line, plus one "FUZZDETAIL: <msg>" line
+  # per failing case (subshell state doesn't propagate to the parent, so
+  # aggregation happens here by parsing that output, not by touching
+  # $overall/$fail_count from inside the background job).
+  local label="$1" bound="$2" fn="$3" outfile pid waited=0
+  outfile="$(mktemp "$tmp_root/fuzzout.XXXXXX")"
+  # The subshell's own exit status must always be 0, deliberately — same
+  # trick hook_run_bounded already uses, for the same reason: if <body-fn>
+  # itself crashes (set -e killing it mid-loop on a reintroduced bug —
+  # exactly the negative-control scenario this section exists to catch),
+  # a bare `( "$fn" ... ) &` would propagate that non-zero status through
+  # `wait "$pid"` below and kill this *entire suite* under its own set -e,
+  # with no FAIL line and no indication which section crashed or why —
+  # confirmed by direct negative control (reverting the _wsr_collapse fix
+  # this section exists to guard) before this echo-wrap was added: exit
+  # 1, zero output, no diagnostic. The echo-wrapped exit code is written
+  # but intentionally unused below — a crash is instead detected the same
+  # way a clean "fail=N>0" run is, via the missing/malformed FUZZSUMMARY
+  # line, which is a strictly more informative signal than a bare exit code.
+  ( "$fn" >"$outfile" 2>&1; echo "$?" >"$outfile.code" ) &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [[ $waited -lt $bound ]]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null || true
+    fail "fuzz: $label hung past ${bound}s — treating as a runaway, not a slow-but-correct pass"
+    return
+  fi
+  wait "$pid" 2>/dev/null || true
+  local summary details
+  # `|| true` on both: grep exits 1 on zero matches (pipefail then propagates
+  # that through `| head`/`| tail`), and under this script's own set -e that
+  # would silently kill the suite on the *good* outcome (zero FUZZDETAIL
+  # lines, i.e. every case passed) — the exact bug class round 3's
+  # ledger-field-audit fix already named once (a zero-match grep dying
+  # under set -e), reproduced here while building this round's own fuzz
+  # harness and caught by actually running it, not by review.
+  summary="$(grep '^FUZZSUMMARY:' "$outfile" | tail -1)" || true
+  details="$(grep '^FUZZDETAIL:' "$outfile" | head -10)" || true
+  if [[ -z "$summary" ]]; then
+    fail "fuzz: $label produced no summary line (crashed? see $outfile)"
+    return
+  fi
+  if [[ "$summary" == *"fail=0"* ]]; then
+    pass "fuzz: $label — ${summary#FUZZSUMMARY: }"
+  else
+    fail "fuzz: $label — ${summary#FUZZSUMMARY: }"$'\n'"$details"
+  fi
+}
+
+_wsr_fuzz_collapse_body() {
+  # Invariants (never dependent on knowing any specific bug in advance):
+  #   1. never returns empty (always at least "/")
+  #   2. idempotent: collapse(collapse(x)) == collapse(x)
+  #   3. output never contains a "." or ".." path segment
+  local n=0 fails=0 input result result2 part bad_seg
+  local -a parts
+  while IFS= read -r input; do
+    n=$((n + 1))
+    result="$(_wsr_collapse "$input" 2>&1)"
+    if [[ -z "$result" ]]; then
+      fails=$((fails + 1))
+      echo "FUZZDETAIL: _wsr_collapse('$input') returned empty (want at least '/')"
+      continue
+    fi
+    result2="$(_wsr_collapse "$result" 2>&1)"
+    if [[ "$result2" != "$result" ]]; then
+      fails=$((fails + 1))
+      echo "FUZZDETAIL: _wsr_collapse not idempotent: collapse('$input')='$result' but collapse(that)='$result2'"
+      continue
+    fi
+    bad_seg=0
+    IFS='/' read -ra parts <<<"$result"
+    for part in "${parts[@]:-}"; do
+      [[ "$part" == '.' || "$part" == '..' ]] && bad_seg=1
+    done
+    if [[ "$bad_seg" -eq 1 ]]; then
+      fails=$((fails + 1))
+      echo "FUZZDETAIL: _wsr_collapse('$input') = '$result' still contains a . or .. segment"
+    fi
+  done < <(_wsr_fuzz_gen_paths 3000)
+  echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
+}
+
+_wsr_fuzz_realpath_body() {
+  # Invariant: never hangs (bounded by the caller) and always terminates
+  # with *some* string — this is the function whose unbounded recursion
+  # produced round 4's multi-thousand-process runaway, so "terminates at
+  # all, within the bounded wrapper" is itself the load-bearing check here,
+  # not any particular return value (there's no single "correct" realpath
+  # for an arbitrary, mostly-nonexistent fuzzed string).
+  local n=0 fails=0 input result
+  while IFS= read -r input; do
+    n=$((n + 1))
+    result="$(_wsr_realpath "$input" 2>&1)"
+    if [[ -z "$result" ]]; then
+      fails=$((fails + 1))
+      echo "FUZZDETAIL: _wsr_realpath('$input') returned empty"
+    fi
+  done < <(_wsr_fuzz_gen_paths 800)
+  echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
+}
+
+_wsr_fuzz_route_body() {
+  # Invariant: WSR_OWNER_ROOT is always either the empty string or an
+  # absolute path — never anything else, regardless of how malformed
+  # $file_path is (including deliberately relative/empty $project values,
+  # which must fail closed per workspace_route's own precondition check
+  # rather than ever producing a non-absolute WSR_OWNER_ROOT).
+  local real_proj n=0 fails=0 fp proj_choice proj
+  real_proj="$(mktemp -d "$tmp_root/wsrfuzzproj.XXXXXX")"
+  mkdir -p "$real_proj/.spine" "$real_proj/work/T1"
+  while IFS= read -r fp; do
+    n=$((n + 1))
+    proj_choice=$((n % 3))
+    case "$proj_choice" in
+      0) proj="$real_proj" ;;
+      1) proj="relative-proj-$n" ;;
+      2) proj="" ;;
+    esac
+    # `|| true`: workspace_route deliberately returns 1 (fail-closed) for
+    # the relative/empty $proj cases this loop intentionally generates —
+    # under this script's set -e a bare non-zero return here would abort
+    # the whole fuzz body on the very first such case instead of letting
+    # every case run; the invariant under test is WSR_OWNER_ROOT's shape
+    # regardless of workspace_route's own return code.
+    workspace_route "$proj" "$fp" >/dev/null 2>&1 || true
+    if [[ -n "$WSR_OWNER_ROOT" ]]; then
+      case "$WSR_OWNER_ROOT" in
+        /*) : ;;
+        *)
+          fails=$((fails + 1))
+          echo "FUZZDETAIL: workspace_route(project='$proj', file_path='$fp') left WSR_OWNER_ROOT='$WSR_OWNER_ROOT' non-absolute"
+          ;;
+      esac
+    fi
+  done < <(_wsr_fuzz_gen_paths 800)
+  echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
+}
+
+_wsr_fuzz_globeq_body() {
+  # Invariant: _wsr_glob_eq's result must not depend on which of the two
+  # sides (rel, glob) happens to be in NFC vs. NFD form — all four
+  # combinations of a name compared against itself must agree. Smaller
+  # corpus than the others (each case pays two real python3 subprocess
+  # calls to build the NFC/NFD forms), but breadth here is about covering
+  # a variety of real accented/CJK/emoji shapes, not path-structure
+  # combinatorics. Skipped entirely if python3 isn't on PATH, matching
+  # _wsr_nfc's own fallback (byte comparison only, disclosed limit).
+  local n=0 fails=0 base nfc nfd r1 r2 r3 r4
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "FUZZSUMMARY: pass=0 fail=0 (of 0 cases) — SKIPPED, no python3 on PATH"
+    return
+  fi
+  while IFS= read -r base; do
+    [[ -n "$base" ]] || continue
+    n=$((n + 1))
+    nfc="$(python3 -c "import unicodedata,sys; sys.stdout.write(unicodedata.normalize('NFC', sys.argv[1]))" "$base")"
+    nfd="$(python3 -c "import unicodedata,sys; sys.stdout.write(unicodedata.normalize('NFD', sys.argv[1]))" "$base")"
+    r1=0; r2=0; r3=0; r4=0
+    _wsr_glob_eq "$nfc" "$nfc" && r1=1
+    _wsr_glob_eq "$nfc" "$nfd" && r2=1
+    _wsr_glob_eq "$nfd" "$nfc" && r3=1
+    _wsr_glob_eq "$nfd" "$nfd" && r4=1
+    if [[ "$r1" -ne 1 || "$r2" -ne 1 || "$r3" -ne 1 || "$r4" -ne 1 ]]; then
+      fails=$((fails + 1))
+      echo "FUZZDETAIL: _wsr_glob_eq asymmetric for '$base': nfc/nfc=$r1 nfc/nfd=$r2 nfd/nfc=$r3 nfd/nfd=$r4 (all should be 1)"
+    fi
+  done < <(printf '%s\n' "café" "naïve" "Zürich" "日本語ファイル" "emoji😀name" "ÀÉÎÕÜ" "áb́c" "xéy" "plain" "has space é" "Café's file" "İstanbul" "north's café" "🏳️‍🌈flag" "über" "façade" "señor" "coöperate" "résumé" "naïve café")
+  echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
+}
+
+fuzz_run_bounded "_wsr_collapse: never-empty, idempotent, no ./.. segments (3000 generated cases)" 60 _wsr_fuzz_collapse_body
+fuzz_run_bounded "_wsr_realpath: always terminates with a non-empty result (800 generated cases)" 90 _wsr_fuzz_realpath_body
+fuzz_run_bounded "workspace_route: WSR_OWNER_ROOT always empty-or-absolute (800 generated cases)" 90 _wsr_fuzz_route_body
+fuzz_run_bounded "_wsr_glob_eq: NFC/NFD-symmetric (20 real accented/CJK/emoji names)" 60 _wsr_fuzz_globeq_body
 
 # ---------------------------------------------------------------------------
 # ledger: harvest's message.id dedup + additive-sum behavior

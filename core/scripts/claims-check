@@ -77,8 +77,9 @@ self_claims="$project/work/$self_id/claims.json"
 [[ -f "$self_claims" ]] || { echo "claims-check: $self_claims not found" >&2; exit 2; }
 
 # Registry-reading operations pull first — narrows, does not close, the
-# race named in open question 7; /ship's own
-# ship-time re-grounding is the documented backstop for what's left.
+# race between two engineers reading/writing the shared registry
+# concurrently; /ship's own ship-time re-grounding is the documented
+# backstop for what's left.
 if [[ "$do_pull" -eq 1 ]] && git -C "$project" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "$project" pull --rebase --quiet 2>/dev/null || \
     echo "claims-check: warning — could not pull the shared mainline, checking against last-known state" >&2

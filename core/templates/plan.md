@@ -51,10 +51,10 @@ left empty) for a single-repo one:
   commit (its `work/<task-id>/` artifacts, and any unqualified predicted-
   touch path like a contract spec) wherever it belongs in the sequence —
   omit `workspace` only if `## Predicted touch` has no unqualified entry.
-  Producer before consumer for an additive contract change (open question
-  §5.4: declared here, validated by `/ship` against `workspace.json`'s
-  registry direction — the plan is the human review surface, not something
-  `/ship` derives silently). Validation failing here halts the ship, it
+  Producer before consumer for an additive contract change (declared here,
+  validated by `/ship` against `workspace.json`'s registry direction — the
+  plan is the human review surface, not something `/ship` derives
+  silently). Validation failing here halts the ship, it
   does not silently reorder.
 - `## Contract change` — required only when this task's diff touches a
   declared contract (`core/scripts/contract-touch` would report it

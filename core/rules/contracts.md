@@ -66,7 +66,7 @@ flags a contract whose `producer_paths` glob currently matches zero files
 in the producer repo, when the registry's own `producer_paths_match_count`
 recorded a nonzero count at registration — a strong signal the producer
 refactored those paths away without updating the registry entry, which
-means blast-radius detection for this contract may now be silently wrong
-(open question §5.3). Update the registry entry's `producer_paths` (and
+means blast-radius detection for this contract may now be silently wrong.
+Update the registry entry's `producer_paths` (and
 its match count) as part of whatever task caused the drift; don't let a
 stale registry entry ride along unexamined just because nothing failed.

@@ -194,8 +194,7 @@ All adapters run with CWD set to the project root (the directory containing
 | A comparison base for anything diffed against history (`dep-diff`, and any adapter that needs one) | Environment variable `SPINE_BASE_REF`, default `HEAD`. Never a positional argument — keeps the positional slot reserved for the output path. |
 
 No capability takes more than one positional argument. This is the single
-convention every adapter and `floor` itself must obey; it resolves build-
-prompt open question §5.7.
+convention every adapter and `floor` itself must obey.
 
 ### 3.1 `lint`/`typecheck` rescoping (Phase E) and the `--full` escape hatch
 
@@ -655,7 +654,7 @@ multi-repo plans) so the finding is unambiguous across repos.
 checks non-emptiness, exactly as it already does for a single-repo
 `file_line`.
 
-## 6. Task-ID and commit trailer convention (resolves open question §5.1)
+## 6. Task-ID and commit trailer convention
 
 Task IDs are `<YYYYMMDD>-<kebab-slug>`, e.g. `20260807-shared-unit-types`.
 The work folder is `work/<task-id>/`. Every commit produced by `/ship` for

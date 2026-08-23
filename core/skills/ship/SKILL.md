@@ -183,8 +183,8 @@ just not allowed to walk past a gate they haven't cleared.
 
 **Multi-repo (Extension B): a third check.** If `plan.md` has a `##
 Ship order` section, validate it against `workspace.json`'s contract
-registry direction (open question §5.4 — declared in the plan, validated
-here, never silently derived): for every contract `work/<task-id>/
+registry direction (declared in the plan, validated here, never silently
+derived): for every contract `work/<task-id>/
 artifacts/contract-touch.json` reports touched with `spec_change ==
 "additive"`, if both the producer and at least one consumer appear in
 `## Ship order`, the producer's position must come at or before every

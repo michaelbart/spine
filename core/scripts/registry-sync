@@ -26,8 +26,8 @@
 # bookkeeping) from accidentally committing an engineer's in-progress,
 # unreviewed code changes sitting elsewhere in the same working tree.
 #
-# Open question 6 (concurrent writes to the shared mainline): pull
-# --rebase, retry once. Real stakes are low (this stages one task's own
+# Concurrent writes to the shared mainline: pull --rebase, retry once.
+# Real stakes are low (this stages one task's own
 # folder; a genuine conflict inside a single task's own state — e.g.
 # propagate flagging a task the instant its owner advances phase — is a
 # real git conflict git itself will refuse to auto-resolve past one
