@@ -29,9 +29,8 @@ sources, each read the same way every time:
    opening clause as the why. If two extracted tokens from the same record
    are suffix-related (e.g. `slug.test.ts` and `src/lib/slug.test.ts`),
    keep only the longer, more path-qualified one — a fixed tiebreaker, not
-   a judgment call, and it's a real case: it fires on this patch's own
-   demonstration record (see the Phase B handoff's trace audit). **v1
-   heuristic, not a parser — pre-loaded
+   a judgment call, and it's a real case: it has fired on real overlapping
+   file citations before. **v1 heuristic, not a parser — pre-loaded
    ratchet trigger**: the first time this heuristic demonstrably misses a
    real file a deviation cites, the fix is a structured `- Files:` line
    added to `core/templates/deviations.md` itself, not a smarter regex

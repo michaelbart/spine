@@ -15,7 +15,7 @@
 # Portability: no associative arrays, no `mapfile` — this machine's default
 # `/bin/bash` is 3.2.57 (macOS), which has neither (bash <4 limitation
 # already hit and fixed the same way in core/scripts/check-stale and
-# bookmarks' own callers/lint adapters, per ext-phase-C-handoff.md §2).
+# bookmarks' own callers/lint adapters).
 # Repo/contract lookups shell out to jq directly instead of caching into a
 # bash associative array.
 #
