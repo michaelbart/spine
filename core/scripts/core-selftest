@@ -50,6 +50,18 @@
 #     aggregation, and registry-staleness detection (a stale registry
 #     alone, with nothing else touched, still marks a contract touched) —
 #     plus its two precondition failures (missing/malformed workspace.json).
+#   - claims-check's asymmetric write/write vs write/read vs read/read
+#     collision matrix (only the first two ever block), done-task
+#     exclusion, and --diff mode's DECLARED/UNDECLARED tagging.
+#   - check-stale's grounding-file drift, quarantine-banner writing (once,
+#     not duplicated on re-run), the own-task-folder exemption, and
+#     grounding-decisions status/content drift — including the specific
+#     disclosed fix that a decision already `superseded` at citation time
+#     is never drift, however many times this re-runs.
+#   - registry-sync's commit-scope discipline (stages only work/<task-id>/,
+#     never an unrelated dirty file elsewhere in the tree) and the push /
+#     pull-rebase-retry sequence against a real local remote, including a
+#     genuine concurrent-push scenario with no real conflict.
 #
 # Usage: core-selftest
 # Exit 0 iff every case passes.
@@ -1386,9 +1398,501 @@ else
   fail "contract-touch: negative control did NOT fail as expected — the breaking-classification case may be vacuous"
 fi
 
-if [[ $overall -eq 0 ]]; then
-  echo "core-selftest: PASS"
+# ---------------------------------------------------------------------------
+# claims-check: the write/write vs write/read vs read/read asymmetric
+# collision matrix, done-task exclusion, and --diff DECLARED/UNDECLARED
+# tagging
+# ---------------------------------------------------------------------------
+# Second batch of round-5's scripts-coverage backlog closure (see the
+# second-approver-check/contract-touch section above for why these two
+# were picked next: both run on every real task's ship-time re-grounding
+# sequence, so a silent regression here would matter on every real ship).
+
+CLAIMS_CHECK="$SCRIPT_DIR/claims-check"
+
+cc_task() {
+  # cc_task <proj> <task-id> <state> <owner> <claims-json-body>
+  local proj="$1" tid="$2" state="$3" owner="$4" body="$5"
+  mkdir -p "$proj/work/$tid"
+  printf '%s' "$state" >"$proj/work/$tid/state"
+  printf '%s' "$owner" >"$proj/work/$tid/owner"
+  printf '%s' "$body" >"$proj/work/$tid/claims.json"
+}
+
+cc_run() {
+  # cc_run <proj> <self-id> [extra-args...] -> "<exit>|<output>"
+  local proj="$1" self="$2"; shift 2
+  local out code=0
+  out="$("$CLAIMS_CHECK" "$self" --project "$proj" --no-pull "$@" 2>&1)" || code=$?
+  printf '%s|%s' "$code" "$out"
+}
+
+# Case A: write/write — both tasks predict touching the same path -> BLOCK.
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+cc_task "$proj" ME open alice '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+cc_task "$proj" OTHER open bob '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+r="$(cc_run "$proj" ME)"
+if [[ "${r%%|*}" == "1" && "${r#*|}" == *"write/write with OTHER"* ]]; then
+  pass "claims-check: write/write collision blocks"
 else
-  echo "core-selftest: FAIL — see above"
+  fail "claims-check: write/write collision -> expected exit=1 'write/write with OTHER', got $r"
 fi
-exit $overall
+
+# Case B: write/read — self predicts writing a path the other task's
+# research grounds on -> BLOCK (either direction is a real collision, not
+# just the one this task initiates).
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+cc_task "$proj" ME open alice '{"predicted_touch":["src/b.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+cc_task "$proj" OTHER open bob '{"predicted_touch":[],"grounding_files":["src/b.ts"],"grounding_decisions":[],"contracts":[]}'
+r="$(cc_run "$proj" ME)"
+if [[ "${r%%|*}" == "1" && "${r#*|}" == *"write/read with OTHER"* ]]; then
+  pass "claims-check: write/read collision blocks (self writes what other reads)"
+else
+  fail "claims-check: write/read collision -> expected exit=1 'write/read with OTHER', got $r"
+fi
+
+# Case C: read/read — both merely ground on the same file, neither writes
+# it -> WARN only, never blocks. This is the specific asymmetry the
+# script's own header calls "the whole reason this is usable in a real
+# codebase" — blocking on shared reads would make it unusable.
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+cc_task "$proj" ME open alice '{"predicted_touch":[],"grounding_files":["src/c.ts"],"grounding_decisions":[],"contracts":[]}'
+cc_task "$proj" OTHER open bob '{"predicted_touch":[],"grounding_files":["src/c.ts"],"grounding_decisions":[],"contracts":[]}'
+r="$(cc_run "$proj" ME)"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"read/read with OTHER"* && "${r#*|}" == *"clear"* ]]; then
+  pass "claims-check: read/read overlap warns but does not block"
+else
+  fail "claims-check: read/read overlap -> expected exit=0 with a read/read warning and still 'clear', got $r"
+fi
+
+# Case D: a task in "done" state is excluded from the comparison entirely
+# — a real collision against closed work must not block.
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+cc_task "$proj" ME open alice '{"predicted_touch":["src/d.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+cc_task "$proj" OTHER done bob '{"predicted_touch":["src/d.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+r="$(cc_run "$proj" ME)"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"clear"* ]]; then
+  pass "claims-check: a done task's claims are excluded from the collision check"
+else
+  fail "claims-check: done-task exclusion -> expected exit=0 'clear' (OTHER is done), got $r"
+fi
+
+# Case E: no overlap anywhere -> clear, exit 0.
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+cc_task "$proj" ME open alice '{"predicted_touch":["src/e1.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+cc_task "$proj" OTHER open bob '{"predicted_touch":["src/e2.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+r="$(cc_run "$proj" ME)"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"clear"* ]]; then
+  pass "claims-check: control — no overlap at all -> clear"
+else
+  fail "claims-check: control -> expected exit=0 'clear', got $r"
+fi
+
+# Case F: missing self claims.json -> exit 2 (can't evaluate).
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+mkdir -p "$proj/work/ME"
+r="$(cc_run "$proj" ME)"
+if [[ "${r%%|*}" == "2" ]]; then
+  pass "claims-check: missing self claims.json -> exit 2"
+else
+  fail "claims-check: missing self claims.json -> expected exit 2, got $r"
+fi
+
+# Case G: --diff mode. self's real (uncommitted) diff touches a path never
+# in its own declared predicted_touch — the "narrow-claims defeat" the
+# --diff mode exists to catch — colliding with another open task's own
+# predicted_touch -> BLOCK, tagged [UNDECLARED]. A second path IS in the
+# declared set and also collides -> tagged [DECLARED].
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+git init -q "$proj"
+git -C "$proj" config user.email "core-selftest@example.com"
+git -C "$proj" config user.name "core-selftest"
+mkdir -p "$proj/src"
+echo "seed" >"$proj/src/declared.ts"
+echo "seed" >"$proj/src/undeclared.ts"
+git -C "$proj" add -A
+git -C "$proj" commit -q -m seed
+cc_task "$proj" ME open alice '{"predicted_touch":["src/declared.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+cc_task "$proj" OTHER open bob '{"predicted_touch":["src/declared.ts","src/undeclared.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+echo "changed" >>"$proj/src/declared.ts"
+echo "changed" >>"$proj/src/undeclared.ts"
+r="$(cc_run "$proj" ME --diff HEAD)"
+if [[ "${r%%|*}" == "1" && "${r#*|}" == *"[UNDECLARED"* && "${r#*|}" == *"[DECLARED]"* ]]; then
+  pass "claims-check --diff: tags a real-diff collision outside declared claims UNDECLARED, and one inside declared claims DECLARED"
+else
+  fail "claims-check --diff: expected exit=1 with both [UNDECLARED and [DECLARED] present, got $r"
+fi
+
+# Negative control: temporarily disable the write/write blocking append
+# (the specific asymmetry Case A/C above exist to guard — the script's own
+# header calls it "the whole reason this is usable in a real codebase")
+# and confirm Case A actually fails without it.
+cc_negctrl_backup="$(mktemp "$tmp_root/cc-negctrl.XXXXXX")"
+cp "$CLAIMS_CHECK" "$cc_negctrl_backup"
+sed -i.bak "s/blocking+=(\"write\/write with/warnings+=(\"write\/write with/" "$CLAIMS_CHECK"
+rm -f "$CLAIMS_CHECK.bak"
+proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
+cc_task "$proj" ME open alice '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+cc_task "$proj" OTHER open bob '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
+negctrl_result="$(cc_run "$proj" ME)"
+cp "$cc_negctrl_backup" "$CLAIMS_CHECK"
+if [[ "${negctrl_result%%|*}" != "1" ]]; then
+  pass "claims-check: negative control confirms the write/write blocking case above is meaningful (fails without the real check)"
+else
+  fail "claims-check: negative control did NOT fail as expected — the write/write blocking case may be vacuous"
+fi
+
+# ---------------------------------------------------------------------------
+# check-stale: grounding-file drift, quarantine banner, own-task-folder
+# exemption, and grounding-decisions status/content drift (including the
+# specific disclosed fix: a decision already superseded at citation time is
+# NOT drift, even though it reads "superseded" on both sides forever)
+# ---------------------------------------------------------------------------
+
+CHECK_STALE="$SCRIPT_DIR/check-stale"
+DECISION_HASH="$SCRIPT_DIR/decision-hash"
+
+new_check_stale_fixture() {
+  # -> "<proj>|<sha-of-initial-commit>". Initial commit has:
+  #   src/grounded.ts               — a plain grounding file
+  #   docs/decisions/D-1-adopted.md — Status: adopted
+  #   docs/decisions/D-2-superseded.md — Status: superseded (from the start)
+  local proj sha
+  proj="$(mktemp -d "$tmp_root/csproj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/src" "$proj/docs/decisions" "$proj/work/T1"
+  echo "seed" >"$proj/src/grounded.ts"
+  cat >"$proj/docs/decisions/D-1-adopted.md" <<'EOF'
+# D-1: adopted decision
+
+- Status: adopted
+
+## Context
+Original context.
+
+## Decision
+Original decision.
+EOF
+  cat >"$proj/docs/decisions/D-2-superseded.md" <<'EOF'
+# D-2: already-superseded decision
+
+- Status: superseded
+
+## Context
+This was already superseded before any research cited it.
+
+## Decision
+Use D-3 instead.
+EOF
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  sha="$(git -C "$proj" rev-parse HEAD)"
+  printf '%s|%s' "$proj" "$sha"
+}
+
+cs_write_research() {
+  # cs_write_research <path> <sha> <files-yaml-block> [<decisions-yaml-block>]
+  local path="$1" sha="$2" files_block="$3" dec_block="${4:-}"
+  {
+    echo "<!-- spine:research"
+    echo "sha: $sha"
+    echo "files:"
+    printf '%s\n' "$files_block"
+    if [[ -n "$dec_block" ]]; then
+      echo "grounding-decisions:"
+      printf '%s\n' "$dec_block"
+    fi
+    echo "-->"
+    echo ""
+    echo "# Research"
+    echo "Body text, unrelated to the header."
+  } >"$path"
+}
+
+# Case A: control — nothing drifted -> ok, exit 0.
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"; cs_sha="${cf#*|}"
+doc="$cs_proj/work/T1/research.md"
+cs_write_research "$doc" "$cs_sha" "  - src/grounded.ts"
+code=0
+out="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code=$?
+if [[ "$code" == "0" && "$out" == *"ok:"* ]]; then
+  pass "check-stale: control — nothing drifted -> ok"
+else
+  fail "check-stale: control -> expected exit=0 'ok:', got exit=$code: $out"
+fi
+
+# Case B: the cited grounding file changed since the cited sha -> STALE,
+# and a quarantine banner is written into the document in place.
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"; cs_sha="${cf#*|}"
+doc="$cs_proj/work/T1/research.md"
+cs_write_research "$doc" "$cs_sha" "  - src/grounded.ts"
+echo "changed after research was written" >>"$cs_proj/src/grounded.ts"
+code=0
+out="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code=$?
+if [[ "$code" == "1" && "$out" == *"STALE"* ]] && grep -q '^> \*\*STALE\*\*' "$doc"; then
+  pass "check-stale: a changed grounding file -> STALE, quarantine banner written into the doc"
+else
+  fail "check-stale: changed grounding file -> expected exit=1 STALE with a banner written, got exit=$code: $out (banner present: $(grep -c '^> \*\*STALE\*\*' "$doc" 2>/dev/null))"
+fi
+
+# Case C: re-running check-stale on an already-quarantined doc does not
+# duplicate the banner.
+code2=0
+out2="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code2=$?
+banner_count="$(grep -c '^> \*\*STALE\*\*' "$doc" 2>/dev/null)"
+if [[ "$code2" == "1" && "$out2" == *"already present"* && "$banner_count" == "1" ]]; then
+  pass "check-stale: re-running on an already-quarantined doc does not duplicate the banner"
+else
+  fail "check-stale: re-run on quarantined doc -> expected exit=1 'already present' with exactly 1 banner, got exit=$code2 banner_count=$banner_count: $out2"
+fi
+
+# Case D: own-task-folder exemption — a grounding file under the citing
+# doc's own task folder (work/T1/) is skipped even though it changed after
+# the cited sha; bookkeeping state under a task's own folder is expected
+# to change over its lifetime by design.
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"; cs_sha="${cf#*|}"
+doc="$cs_proj/work/T1/research.md"
+echo "original notes" >"$cs_proj/work/T1/notes.md"
+cs_write_research "$doc" "$cs_sha" "  - work/T1/notes.md"
+echo "notes updated after research, expected lifecycle churn" >>"$cs_proj/work/T1/notes.md"
+code=0
+out="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code=$?
+if [[ "$code" == "0" && "$out" == *"ok:"* ]]; then
+  pass "check-stale: own-task-folder exemption — a changed file under the citing task's own folder is not drift"
+else
+  fail "check-stale: own-task-folder exemption -> expected exit=0 'ok:' despite the change, got exit=$code: $out"
+fi
+
+# Case E: a cited decision's status changed since citation (adopted ->
+# implemented, live working-tree edit, uncommitted) -> STALE.
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"; cs_sha="${cf#*|}"
+doc="$cs_proj/work/T1/research.md"
+d1_hash="$("$DECISION_HASH" "$cs_proj/docs/decisions/D-1-adopted.md")"
+cs_write_research "$doc" "$cs_sha" "  - src/grounded.ts" "  - D-1@$d1_hash"
+sed -i.bak 's/- Status: adopted/- Status: implemented/' "$cs_proj/docs/decisions/D-1-adopted.md"
+rm -f "$cs_proj/docs/decisions/D-1-adopted.md.bak"
+code=0
+out="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code=$?
+if [[ "$code" == "1" && "$out" == *"status changed since citation"* ]]; then
+  pass "check-stale: a cited decision's status changing since citation -> STALE"
+else
+  fail "check-stale: decision status drift -> expected exit=1 'status changed since citation', got exit=$code: $out"
+fi
+
+# Case F: the disclosed fix this script's header specifically documents —
+# a decision already 'superseded' AT THE CITED SHA (not merely superseded
+# now) produces ZERO drift, no matter how many times this re-runs, because
+# both readings ('status at cited sha' and 'status now') are identically
+# 'superseded'. check-stale's ORIGINAL (buggy) design compared current
+# status against the literal string 'superseded' and so permanently,
+# unfixably quarantined any research correctly citing supersession
+# history — this case is the permanent regression guard for that fix.
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"; cs_sha="${cf#*|}"
+doc="$cs_proj/work/T1/research.md"
+d2_hash="$("$DECISION_HASH" "$cs_proj/docs/decisions/D-2-superseded.md")"
+cs_write_research "$doc" "$cs_sha" "  - src/grounded.ts" "  - D-2@$d2_hash"
+code=0
+out="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code=$?
+if [[ "$code" == "0" && "$out" == *"ok:"* ]]; then
+  pass "check-stale: a decision already superseded at citation time is NOT drift (the disclosed original-design fix)"
+else
+  fail "check-stale: already-superseded-at-citation -> expected exit=0 'ok:' (no drift), got exit=$code: $out"
+fi
+
+# Case G: missing spine:research header -> exit 2.
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"
+doc="$cs_proj/work/T1/research.md"
+echo "# Research with no header at all" >"$doc"
+code=0
+out="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code=$?
+if [[ "$code" == "2" ]]; then
+  pass "check-stale: missing spine:research header -> exit 2"
+else
+  fail "check-stale: missing header -> expected exit 2, got exit=$code: $out"
+fi
+
+# Negative control: temporarily disable the status-at-cited-sha-vs-now
+# comparison (force it to instead compare current status against the
+# literal string 'superseded', the script's own documented ORIGINAL bug)
+# and confirm Case F above actually fails under that reverted behavior —
+# proof this regression guard is meaningful, not vacuous.
+cs_negctrl_backup="$(mktemp "$tmp_root/cs-negctrl.XXXXXX")"
+cp "$CHECK_STALE" "$cs_negctrl_backup"
+sed -i.bak 's/elif \[\[ "\$status_at_citation" != "\$status" \]\]; then/elif [[ "$status" == "superseded" ]]; then/' "$CHECK_STALE"
+rm -f "$CHECK_STALE.bak"
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"; cs_sha="${cf#*|}"
+doc="$cs_proj/work/T1/research.md"
+d2_hash="$("$DECISION_HASH" "$cs_proj/docs/decisions/D-2-superseded.md")"
+cs_write_research "$doc" "$cs_sha" "  - src/grounded.ts" "  - D-2@$d2_hash"
+negctrl_code=0
+negctrl_out="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || negctrl_code=$?
+cp "$cs_negctrl_backup" "$CHECK_STALE"
+if [[ "$negctrl_code" != "0" ]]; then
+  pass "check-stale: negative control confirms the already-superseded-at-citation case above is meaningful (fails under the original literal-'superseded' comparison)"
+else
+  fail "check-stale: negative control did NOT fail as expected — the already-superseded case may be vacuous"
+fi
+
+# ---------------------------------------------------------------------------
+# registry-sync: commit-scope discipline (work/<task-id>/ only, never the
+# rest of the tree) and the push / pull-rebase-retry sequence against a
+# real local remote
+# ---------------------------------------------------------------------------
+
+REGISTRY_SYNC="$SCRIPT_DIR/registry-sync"
+
+new_registry_sync_fixture() {
+  # -> "<proj>" — git-initialized project, one commit, work/T1/ present.
+  local proj
+  proj="$(mktemp -d "$tmp_root/rsproj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/work/T1" "$proj/src"
+  echo "seed" >"$proj/src/app.js"
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  printf '%s' "$proj"
+}
+
+rs_run() {
+  # rs_run <proj> <task-id> -> "<exit>|<output>"
+  local proj="$1" tid="$2" out code=0
+  out="$("$REGISTRY_SYNC" "$tid" --project "$proj" 2>&1)" || code=$?
+  printf '%s|%s' "$code" "$out"
+}
+
+# Case A: no changes under work/T1/ -> nothing to commit, exit 0.
+rs_proj="$(new_registry_sync_fixture)"
+r="$(rs_run "$rs_proj" T1)"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"nothing to commit"* ]]; then
+  pass "registry-sync: no changes -> nothing to commit"
+else
+  fail "registry-sync: no changes -> expected exit=0 'nothing to commit', got $r"
+fi
+
+# Case B: a real change under work/T1/ -> committed, no remote configured
+# -> exit 0 "committed locally only".
+rs_proj="$(new_registry_sync_fixture)"
+echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
+r="$(rs_run "$rs_proj" T1)"
+committed_file="$(git -C "$rs_proj" show --name-only --pretty=format: HEAD 2>/dev/null | awk 'NF')"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"committed T1"* && "${r#*|}" == *"locally only"* && "$committed_file" == "work/T1/claims.json" ]]; then
+  pass "registry-sync: a real change is committed, no remote -> 'locally only'"
+else
+  fail "registry-sync: real change, no remote -> expected exit=0 'committed T1'/'locally only' with work/T1/claims.json in the commit, got $r (committed: $committed_file)"
+fi
+
+# Case C: scope discipline — an unrelated dirty file elsewhere in the same
+# working tree must stay uncommitted/unstaged after registry-sync runs.
+# This is the specific property the script's own header calls out: during
+# implement, this is the only thing that keeps a registry sync from
+# accidentally committing an engineer's in-progress, unreviewed code.
+rs_proj="$(new_registry_sync_fixture)"
+echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
+echo "unrelated in-progress edit" >>"$rs_proj/src/app.js"
+r="$(rs_run "$rs_proj" T1)"
+app_js_status="$(git -C "$rs_proj" status --porcelain -- src/app.js)"
+if [[ "${r%%|*}" == "0" && -n "$app_js_status" && "$app_js_status" == " M src/app.js" ]]; then
+  pass "registry-sync: scope discipline — an unrelated dirty file elsewhere in the tree stays uncommitted"
+else
+  fail "registry-sync: scope discipline -> expected src/app.js still uncommitted (' M src/app.js'), got status='$app_js_status' ($r)"
+fi
+
+# Case D: task-id folder doesn't exist -> exit 2.
+rs_proj="$(new_registry_sync_fixture)"
+r="$(rs_run "$rs_proj" NOSUCHTASK)"
+if [[ "${r%%|*}" == "2" ]]; then
+  pass "registry-sync: missing task folder -> exit 2"
+else
+  fail "registry-sync: missing task folder -> expected exit 2, got $r"
+fi
+
+# Case E: project isn't a git repo -> exit 2.
+rs_nongit="$(mktemp -d "$tmp_root/rsnongit.XXXXXX")"
+mkdir -p "$rs_nongit/work/T1"
+r="$(rs_run "$rs_nongit" T1)"
+if [[ "${r%%|*}" == "2" ]]; then
+  pass "registry-sync: project is not a git repo -> exit 2"
+else
+  fail "registry-sync: not a git repo -> expected exit 2, got $r"
+fi
+
+# Case F: a real local remote (bare repo), nothing else has changed it ->
+# push succeeds cleanly, exit 0 "pushed".
+rs_bare="$(mktemp -d "$tmp_root/rsbare.XXXXXX")"
+git init -q --bare "$rs_bare"
+rs_proj="$(new_registry_sync_fixture)"
+rs_branch="$(git -C "$rs_proj" rev-parse --abbrev-ref HEAD)"
+git -C "$rs_proj" remote add origin "$rs_bare"
+git -C "$rs_proj" push -q -u origin "$rs_branch"
+echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
+r="$(rs_run "$rs_proj" T1)"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"pushed T1 to origin/$rs_branch"* ]]; then
+  pass "registry-sync: a real local remote, no conflict -> pushed"
+else
+  fail "registry-sync: real remote, no conflict -> expected exit=0 'pushed T1 to origin/$rs_branch', got $r"
+fi
+
+# Case G: the shared mainline moved (a second engineer pushed an unrelated
+# commit to origin) before this sync's own push — the initial push is
+# rejected, registry-sync pulls --rebase and retries once, and (since the
+# two commits touch different files, no real conflict) the retry succeeds.
+rs_bare2="$(mktemp -d "$tmp_root/rsbare2.XXXXXX")"
+git init -q --bare "$rs_bare2"
+rs_proj="$(new_registry_sync_fixture)"
+rs_branch="$(git -C "$rs_proj" rev-parse --abbrev-ref HEAD)"
+git -C "$rs_proj" remote add origin "$rs_bare2"
+git -C "$rs_proj" push -q -u origin "$rs_branch"
+# A second, independent clone pushes an unrelated commit to the same
+# origin/branch first, simulating a colleague's registry-sync landing
+# concurrently.
+rs_clone2="$(mktemp -d "$tmp_root/rsclone2.XXXXXX")"
+git clone -q "$rs_bare2" "$rs_clone2"
+git -C "$rs_clone2" config user.email "core-selftest@example.com"
+git -C "$rs_clone2" config user.name "core-selftest"
+mkdir -p "$rs_clone2/work/T2"
+echo '{"owner":"bob"}' >"$rs_clone2/work/T2/claims.json"
+git -C "$rs_clone2" add -A
+git -C "$rs_clone2" commit -q -m "spine: registry sync — T2"
+git -C "$rs_clone2" push -q origin "$rs_branch"
+# Now $rs_proj is behind origin. Its own work/T1/ change should still sync
+# cleanly via the pull-rebase-retry path.
+echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
+r="$(rs_run "$rs_proj" T1)"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"rejected"* && "${r#*|}" == *"pushed T1 to origin/$rs_branch after rebase"* ]]; then
+  pass "registry-sync: shared mainline moved concurrently -> pull-rebase retry succeeds (no real conflict)"
+else
+  fail "registry-sync: concurrent push, no real conflict -> expected a rejected-then-pushed-after-rebase sequence, got $r"
+fi
+# Confirm both engineers' work actually landed on origin after the retry.
+origin_files="$(git -C "$rs_proj" ls-tree -r --name-only origin/"$rs_branch" 2>/dev/null | sort)"
+if [[ "$origin_files" == *"work/T1/claims.json"* && "$origin_files" == *"work/T2/claims.json"* ]]; then
+  pass "registry-sync: after the rebase retry, both this task's and the concurrent task's registry entries are present on origin"
+else
+  fail "registry-sync: expected both work/T1/claims.json and work/T2/claims.json on origin after rebase, got: $origin_files"
+fi
+
+# Negative control: temporarily disable the commit scope (stage the whole
+# tree, -A, instead of only work/<task-id>/) and confirm Case C above
+# actually fails without the real scope discipline — the property the
+# script's own header calls the load-bearing reason this script exists in
+# this exact shape.
+rs_negctrl_backup="$(mktemp "$tmp_root/rs-negctrl.XXXXXX")"
+cp "$REGISTRY_SYNC" "$rs_negctrl_backup"
+sed -i.bak 's/git -C "\$project" add -- "work\/\$task_id\/"/git -C "$project" add -A/' "$REGISTRY_SYNC"
+rm -f "$REGISTRY_SYNC.bak"
+rs_proj="$(new_registry_sync_fixture)"
+echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
+echo "unrelated in-progress edit" >>"$rs_proj/src/app.js"
+negctrl_result="$(rs_run "$rs_proj" T1)"
+negctrl_app_js_status="$(git -C "$rs_proj" status --porcelain -- src/app.js)"
+cp "$rs_negctrl_backup" "$REGISTRY_SYNC"
+if [[ -z "$negctrl_app_js_status" ]]; then
+  pass "registry-sync: negative control confirms the scope-discipline case above is meaningful (the unrelated file gets swept in without the real -- work/\$task_id/ scoping)"
+else
+  fail "registry-sync: negative control did NOT reproduce the expected over-broad-commit failure — the scope-discipline case may be vacuous (status: '$negctrl_app_js_status')"
+fi
+
