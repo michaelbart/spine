@@ -1641,7 +1641,7 @@ fi
 # duplicate the banner.
 code2=0
 out2="$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1)" || code2=$?
-banner_count="$(grep -c '^> \*\*STALE\*\*' "$doc" 2>/dev/null)"
+banner_count="$(grep -c '^> \*\*STALE\*\*' "$doc" 2>/dev/null || true)"
 if [[ "$code2" == "1" && "$out2" == *"already present"* && "$banner_count" == "1" ]]; then
   pass "check-stale: re-running on an already-quarantined doc does not duplicate the banner"
 else
@@ -1894,5 +1894,590 @@ if [[ -z "$negctrl_app_js_status" ]]; then
   pass "registry-sync: negative control confirms the scope-discipline case above is meaningful (the unrelated file gets swept in without the real -- work/\$task_id/ scoping)"
 else
   fail "registry-sync: negative control did NOT reproduce the expected over-broad-commit failure — the scope-discipline case may be vacuous (status: '$negctrl_app_js_status')"
+fi
+
+# ---------------------------------------------------------------------------
+# decision-hash: excludes the Status line, deterministic, reacts to real
+# content changes
+# ---------------------------------------------------------------------------
+# Fourth (final) batch of the round-5 scripts-coverage backlog: the
+# remaining scripts, none individually as high-stakes as the ship-time
+# gates above, but each still a real, load-bearing piece.
+
+DECISION_HASH="$SCRIPT_DIR/decision-hash"
+
+dh_proj="$(mktemp -d "$tmp_root/dhproj.XXXXXX")"
+cat >"$dh_proj/d1.md" <<'EOF'
+# D-1: test
+
+- Status: adopted
+
+## Context
+Some context.
+EOF
+h1="$("$DECISION_HASH" "$dh_proj/d1.md")"
+sed 's/- Status: adopted/- Status: implemented/' "$dh_proj/d1.md" >"$dh_proj/d1-status-changed.md"
+h2="$("$DECISION_HASH" "$dh_proj/d1-status-changed.md")"
+if [[ -n "$h1" && "$h1" == "$h2" ]]; then
+  pass "decision-hash: identical content with a different Status line hashes the same"
+else
+  fail "decision-hash: expected the same hash across a status-only change, got h1=$h1 h2=$h2"
+fi
+
+sed 's/Some context\./Different context now./' "$dh_proj/d1.md" >"$dh_proj/d1-content-changed.md"
+h3="$("$DECISION_HASH" "$dh_proj/d1-content-changed.md")"
+if [[ -n "$h3" && "$h3" != "$h1" ]]; then
+  pass "decision-hash: a real content change (not Status) changes the hash"
+else
+  fail "decision-hash: expected a different hash after a real content change, got h1=$h1 h3=$h3"
+fi
+
+dh_code=0
+"$DECISION_HASH" "$dh_proj/nope.md" >/dev/null 2>&1 || dh_code=$?
+if [[ "$dh_code" == "2" ]]; then
+  pass "decision-hash: missing file -> exit 2"
+else
+  fail "decision-hash: missing file -> expected exit 2, got $dh_code"
+fi
+
+# ---------------------------------------------------------------------------
+# profile-check: unrepresentable-floor-off, bounded/enumerated fields
+# ---------------------------------------------------------------------------
+
+PROFILE_CHECK="$SCRIPT_DIR/profile-check"
+
+pc_run() {
+  local proj="$1" out code=0
+  out="$("$PROFILE_CHECK" --project "$proj" 2>&1)" || code=$?
+  printf '%s|%s' "$code" "$out"
+}
+
+pc_proj="$(mktemp -d "$tmp_root/pcproj.XXXXXX")"
+r="$(pc_run "$pc_proj")"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"built-in defaults apply"* ]]; then
+  pass "profile-check: no profile.json -> built-in defaults apply"
+else
+  fail "profile-check: no profile.json -> expected exit=0 defaults, got $r"
+fi
+
+pc_proj="$(mktemp -d "$tmp_root/pcproj.XXXXXX")"
+mkdir -p "$pc_proj/.spine"
+echo '{"profile":"standard","class1_adversaries":2,"autonomy_ceiling":"guided"}' >"$pc_proj/.spine/profile.json"
+r="$(pc_run "$pc_proj")"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"ok"* ]]; then
+  pass "profile-check: a valid profile -> ok"
+else
+  fail "profile-check: valid profile -> expected exit=0 ok, got $r"
+fi
+
+pc_proj="$(mktemp -d "$tmp_root/pcproj.XXXXXX")"
+mkdir -p "$pc_proj/.spine"
+echo '{"floor":false}' >"$pc_proj/.spine/profile.json"
+r="$(pc_run "$pc_proj")"
+if [[ "${r%%|*}" == "1" && "${r#*|}" == *"unknown key"* ]]; then
+  pass "profile-check: an unknown key (e.g. an attempt to smuggle floor:false) -> invalid"
+else
+  fail "profile-check: unknown key -> expected exit=1 'unknown key', got $r"
+fi
+
+pc_proj="$(mktemp -d "$tmp_root/pcproj.XXXXXX")"
+mkdir -p "$pc_proj/.spine"
+echo '{"class1_adversaries":0}' >"$pc_proj/.spine/profile.json"
+r="$(pc_run "$pc_proj")"
+if [[ "${r%%|*}" == "1" && "${r#*|}" == *"class1_adversaries must be 1 or 2"* ]]; then
+  pass "profile-check: class1_adversaries:0 (would disable the falsifier entirely) -> invalid"
+else
+  fail "profile-check: class1_adversaries=0 -> expected exit=1, got $r"
+fi
+
+pc_proj="$(mktemp -d "$tmp_root/pcproj.XXXXXX")"
+mkdir -p "$pc_proj/.spine"
+echo 'not json' >"$pc_proj/.spine/profile.json"
+r="$(pc_run "$pc_proj")"
+if [[ "${r%%|*}" == "1" && "${r#*|}" == *"not valid JSON"* ]]; then
+  pass "profile-check: malformed JSON -> invalid"
+else
+  fail "profile-check: malformed JSON -> expected exit=1, got $r"
+fi
+
+# ---------------------------------------------------------------------------
+# q: quiet command wrapper — one line on success, full diagnostics + the
+# wrapped command's own exit code on failure
+# ---------------------------------------------------------------------------
+
+Q="$SCRIPT_DIR/q"
+
+q_code=0
+q_out="$("$Q" echo hello 2>&1)" || q_code=$?
+if [[ "$q_code" == "0" && "$q_out" == "ok: echo hello" ]]; then
+  pass "q: a succeeding command -> one-line ok summary"
+else
+  fail "q: succeeding command -> expected exit=0 'ok: echo hello', got exit=$q_code: $q_out"
+fi
+
+q_code=0
+q_out="$("$Q" bash -c 'echo diagnostic-output; exit 7' 2>&1)" || q_code=$?
+if [[ "$q_code" == "7" && "$q_out" == *"diagnostic-output"* && "$q_out" == *"exited 7"* ]]; then
+  pass "q: a failing command -> its own exit code, full diagnostics printed"
+else
+  fail "q: failing command -> expected exit=7 with diagnostics, got exit=$q_code: $q_out"
+fi
+
+q_code=0
+"$Q" >/dev/null 2>&1 || q_code=$?
+if [[ "$q_code" == "2" ]]; then
+  pass "q: no command given -> exit 2"
+else
+  fail "q: no args -> expected exit 2, got $q_code"
+fi
+
+# ---------------------------------------------------------------------------
+# ui-touch: conditional ui-render dispatch based on real diff content
+# ---------------------------------------------------------------------------
+
+UI_TOUCH="$SCRIPT_DIR/ui-touch"
+
+new_ui_touch_fixture() {
+  local proj
+  proj="$(mktemp -d "$tmp_root/utproj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/src/components" "$proj/src/lib" "$proj/.spine"
+  echo "seed" >"$proj/src/lib/util.ts"
+  echo 'src/components/*.tsx' >"$proj/.spine/ui-paths.conf"
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  printf '%s' "$proj"
+}
+
+ut_proj="$(new_ui_touch_fixture)"
+echo "export const X = 1" >"$ut_proj/src/components/Widget.tsx"
+out="$(cd "$ut_proj" && "$UI_TOUCH" 2>&1)"
+if [[ "$out" == *"ui_touched=true"* ]]; then
+  pass "ui-touch: a new file matching ui-paths.conf -> ui_touched=true"
+else
+  fail "ui-touch: matching file -> expected ui_touched=true, got: $out"
+fi
+
+ut_proj="$(new_ui_touch_fixture)"
+echo "export const Y = 2" >"$ut_proj/src/lib/other.ts"
+out="$(cd "$ut_proj" && "$UI_TOUCH" 2>&1)"
+if [[ "$out" == *"ui_touched=false"* ]]; then
+  pass "ui-touch: a changed non-UI file -> ui_touched=false"
+else
+  fail "ui-touch: non-matching file -> expected ui_touched=false, got: $out"
+fi
+
+ut_proj="$(mktemp -d "$tmp_root/utproj.XXXXXX")"
+git init -q "$ut_proj"
+git -C "$ut_proj" config user.email "core-selftest@example.com"
+git -C "$ut_proj" config user.name "core-selftest"
+echo seed >"$ut_proj/a.txt"
+git -C "$ut_proj" add -A
+git -C "$ut_proj" commit -q -m seed
+out="$(cd "$ut_proj" && "$UI_TOUCH" 2>&1)"
+if [[ "$out" == *'"ui_touched":false'* && "$out" == *"no .spine/ui-paths.conf"* ]]; then
+  pass "ui-touch: no ui-paths.conf -> ui_touched=false, treated as no UI declared"
+else
+  fail "ui-touch: no conf -> expected ui_touched=false, got: $out"
+fi
+
+# ---------------------------------------------------------------------------
+# verdict-filter: schema validation + evidence resolution (decision-kind
+# gets a stronger, second-pass check than file_line/command)
+# ---------------------------------------------------------------------------
+
+VERDICT_FILTER="$SCRIPT_DIR/verdict-filter"
+
+vf_proj="$(mktemp -d "$tmp_root/vfproj.XXXXXX")"
+mkdir -p "$vf_proj/docs/decisions"
+cat >"$vf_proj/docs/decisions/D-5-example.md" <<'EOF'
+# D-5: example
+
+- Status: adopted
+
+## Context
+The relevant quoted span lives right here for verification.
+EOF
+
+vf_input="$tmp_root/vf-input.json"
+cat >"$vf_input" <<'EOF'
+{
+  "agent": "falsifier",
+  "task_id": "T1",
+  "attacked": ["src/a.ts"],
+  "verdicts": [
+    {"claim":"a real file_line finding","severity":"high","evidence":{"kind":"file_line","file":"src/a.ts","line":10}},
+    {"claim":"malformed - no evidence","severity":"low","evidence":{"kind":"file_line","file":"","line":null}},
+    {"claim":"a real decision citation","severity":"medium","evidence":{"kind":"decision","decision_id":"D-5","quote":"The relevant quoted span lives right here"}},
+    {"claim":"a fabricated decision citation","severity":"medium","evidence":{"kind":"decision","decision_id":"D-5","quote":"this text does not appear anywhere in the record"}}
+  ]
+}
+EOF
+vf_out="$tmp_root/vf-out.json"
+vf_code=0
+"$VERDICT_FILTER" "$vf_input" --out "$vf_out" --project "$vf_proj" >/dev/null 2>&1 || vf_code=$?
+kept_claims="$(jq -r '.verdicts[].claim' "$vf_out" 2>/dev/null | sort)"
+expected_claims="$(printf '%s\n' "a real decision citation" "a real file_line finding" | sort)"
+if [[ "$vf_code" == "0" && "$kept_claims" == "$expected_claims" ]]; then
+  pass "verdict-filter: keeps well-formed evidence, drops malformed shape and an unresolvable decision quote"
+else
+  fail "verdict-filter: expected exactly the two real verdicts kept, got kept='$kept_claims' code=$vf_code"
+fi
+
+vf_input2="$tmp_root/vf-input2.json"
+echo '{"agent":"falsifier","task_id":"T1","attacked":[],"verdicts":[]}' >"$vf_input2"
+vf_code2=0
+"$VERDICT_FILTER" "$vf_input2" --project "$vf_proj" >/dev/null 2>&1 || vf_code2=$?
+if [[ "$vf_code2" == "2" ]]; then
+  pass "verdict-filter: empty attacked list -> exit 2"
+else
+  fail "verdict-filter: empty attacked -> expected exit 2, got $vf_code2"
+fi
+
+vf_input3="$tmp_root/vf-input3.json"
+echo '{"task_id":"T1","attacked":["a"],"verdicts":[]}' >"$vf_input3"
+vf_code3=0
+"$VERDICT_FILTER" "$vf_input3" --project "$vf_proj" >/dev/null 2>&1 || vf_code3=$?
+if [[ "$vf_code3" == "2" ]]; then
+  pass "verdict-filter: missing agent field -> exit 2"
+else
+  fail "verdict-filter: missing agent -> expected exit 2, got $vf_code3"
+fi
+
+# ---------------------------------------------------------------------------
+# next-milestone-task: TBD/BLOCKED/WAITING/NONE resolution, numeric
+# milestone ordering
+# ---------------------------------------------------------------------------
+
+NEXT_MILESTONE_TASK="$SCRIPT_DIR/next-milestone-task"
+
+nmt_task() {
+  # nmt_task <proj> <task-id> <state>
+  mkdir -p "$1/work/$2"
+  printf '%s' "$3" >"$1/work/$2/state"
+}
+
+nmt_ms() {
+  # nmt_ms <proj> <ms-id> <member-tasks-lines...>
+  local proj="$1" ms="$2"; shift 2
+  mkdir -p "$proj/work/$ms"
+  {
+    echo "# Milestone $ms"
+    echo
+    echo "## Member tasks"
+    printf '%s\n' "$@"
+  } >"$proj/work/$ms/milestone.md"
+}
+
+proj="$(mktemp -d "$tmp_root/nmtproj.XXXXXX")"
+nmt_ms "$proj" M0 "1. \`TBD\` — build the widget"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" 2>&1)"
+if [[ "$out" == "TBD M0 build the widget" ]]; then
+  pass "next-milestone-task: first entry TBD -> proposes it directly"
+else
+  fail "next-milestone-task: expected 'TBD M0 build the widget', got: $out"
+fi
+
+proj="$(mktemp -d "$tmp_root/nmtproj.XXXXXX")"
+nmt_task "$proj" T1 research
+nmt_ms "$proj" M0 "1. \`T1\` — first task" "2. \`TBD\` — second task"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" 2>&1)"
+if [[ "$out" == "BLOCKED M0 T1" ]]; then
+  pass "next-milestone-task: predecessor not done -> BLOCKED on it"
+else
+  fail "next-milestone-task: expected 'BLOCKED M0 T1', got: $out"
+fi
+
+proj="$(mktemp -d "$tmp_root/nmtproj.XXXXXX")"
+nmt_task "$proj" T1 done
+nmt_ms "$proj" M0 "1. \`T1\` — first task" "2. \`TBD\` — second task"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" 2>&1)"
+if [[ "$out" == "TBD M0 second task" ]]; then
+  pass "next-milestone-task: a done predecessor unblocks the next TBD"
+else
+  fail "next-milestone-task: expected 'TBD M0 second task', got: $out"
+fi
+
+proj="$(mktemp -d "$tmp_root/nmtproj.XXXXXX")"
+nmt_task "$proj" T1 implement
+nmt_ms "$proj" M0 "1. \`T1\` — only task"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" 2>&1)"
+if [[ "$out" == "WAITING M0" ]]; then
+  pass "next-milestone-task: every member has a real id but none done -> WAITING"
+else
+  fail "next-milestone-task: expected 'WAITING M0', got: $out"
+fi
+
+proj="$(mktemp -d "$tmp_root/nmtproj.XXXXXX")"
+mkdir -p "$proj/work"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" 2>&1)"
+if [[ "$out" == "NONE" ]]; then
+  pass "next-milestone-task: no milestones -> NONE"
+else
+  fail "next-milestone-task: expected 'NONE', got: $out"
+fi
+
+# M0 complete, M1 not -> scans forward correctly (also exercises numeric,
+# not lexical, milestone ordering once a third digit is involved elsewhere).
+proj="$(mktemp -d "$tmp_root/nmtproj.XXXXXX")"
+nmt_task "$proj" T1 done
+nmt_ms "$proj" M0 "1. \`T1\` — only task"
+nmt_task "$proj" T2 research
+nmt_ms "$proj" M1 "1. \`T2\` — only task"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" 2>&1)"
+if [[ "$out" == "WAITING M1" ]]; then
+  pass "next-milestone-task: a complete lower-numbered milestone is skipped in favor of the next incomplete one"
+else
+  fail "next-milestone-task: expected 'WAITING M1' (M0 complete, skipped), got: $out"
+fi
+
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" --milestone M0 2>&1)"
+if [[ "$out" == "NONE" ]]; then
+  pass "next-milestone-task: --milestone targeting an already-complete milestone directly -> NONE, never falls through to scan others"
+else
+  fail "next-milestone-task: --milestone M0 (complete) -> expected NONE, got: $out"
+fi
+
+out="$("$NEXT_MILESTONE_TASK" --project "$proj" --milestone M1 2>&1)"
+if [[ "$out" == "WAITING M1" ]]; then
+  pass "next-milestone-task: --milestone targeting a specific incomplete milestone directly"
+else
+  fail "next-milestone-task: --milestone M1 -> expected WAITING M1, got: $out"
+fi
+
+nmt_code=0
+"$NEXT_MILESTONE_TASK" --project "$proj" --milestone M99 >/dev/null 2>&1 || nmt_code=$?
+if [[ "$nmt_code" == "2" ]]; then
+  pass "next-milestone-task: --milestone naming a nonexistent milestone -> exit 2"
+else
+  fail "next-milestone-task: nonexistent --milestone -> expected exit 2, got $nmt_code"
+fi
+
+# ---------------------------------------------------------------------------
+# design-gate: the four /design stopping-rule checks
+# ---------------------------------------------------------------------------
+
+DESIGN_GATE="$SCRIPT_DIR/design-gate"
+
+new_design_gate_fixture() {
+  # -> "<proj>" — passes all four checks cleanly.
+  local proj n cat
+  proj="$(mktemp -d "$tmp_root/dgproj.XXXXXX")"
+  mkdir -p "$proj/work/M0" "$proj/.spine" "$proj/docs/decisions"
+  cat >"$proj/work/M0/milestone.md" <<'EOF'
+# Milestone 0
+
+## Capability targets
+
+| Capability | Status |
+|---|---|
+| test | planned: unit tests via vitest |
+| smoke-seed | planned: seed script |
+| smoke-run | planned: playwright smoke |
+| smoke-golden | planned: golden snapshot compare |
+EOF
+  cat >"$proj/.spine/capabilities.json" <<'EOF'
+{
+  "typecheck":{"status":"implemented"}, "lint":{"status":"implemented"},
+  "test":{"status":"implemented"}, "test-changed":{"status":"not-applicable"},
+  "secret-scan":{"status":"implemented"}, "dep-diff":{"status":"implemented"},
+  "clone-scan":{"status":"not-applicable"}, "callers":{"status":"not-applicable"},
+  "mutate":{"status":"not-applicable"}, "smoke-seed":{"status":"implemented"},
+  "smoke-run":{"status":"implemented"}, "smoke-golden":{"status":"implemented"},
+  "migrate-rehearse":{"status":"not-applicable"}
+}
+EOF
+  n=1
+  for cat in state-management persistence module-boundaries error-handling auth-model repo-topology; do
+    cat >"$proj/docs/decisions/D-$n-$cat.md" <<EOF
+# D-$n: $cat decision
+
+- Id: D-$n
+- Category: $cat
+- Status: adopted
+- Scope: workspace
+
+## Context
+Context for $cat.
+
+## Decision
+Decision for $cat.
+EOF
+    n=$((n + 1))
+  done
+  printf '%s' "$proj"
+}
+
+dg_proj="$(new_design_gate_fixture)"
+dg_code=0
+dg_out="$("$DESIGN_GATE" --project "$dg_proj" 2>&1)" || dg_code=$?
+if [[ "$dg_code" == "0" && "$dg_out" == *"PASS"* ]]; then
+  pass "design-gate: control — a fixture satisfying all four checks -> PASS"
+else
+  fail "design-gate: control -> expected exit=0 PASS, got exit=$dg_code: $dg_out"
+fi
+
+dg_proj="$(new_design_gate_fixture)"
+rm -f "$dg_proj/work/M0/milestone.md"
+dg_code=0
+dg_out="$("$DESIGN_GATE" --project "$dg_proj" 2>&1)" || dg_code=$?
+if [[ "$dg_code" == "1" && "$dg_out" == *"milestone 0"* ]]; then
+  pass "design-gate: no work/M0/milestone.md -> FAIL"
+else
+  fail "design-gate: missing M0 -> expected exit=1, got exit=$dg_code: $dg_out"
+fi
+
+dg_proj="$(new_design_gate_fixture)"
+jq 'del(.["smoke-run"])' "$dg_proj/.spine/capabilities.json" >"$dg_proj/.spine/capabilities.json.tmp" && mv "$dg_proj/.spine/capabilities.json.tmp" "$dg_proj/.spine/capabilities.json"
+dg_code=0
+dg_out="$("$DESIGN_GATE" --project "$dg_proj" 2>&1)" || dg_code=$?
+if [[ "$dg_code" == "1" && "$dg_out" == *"smoke-run"* ]]; then
+  pass "design-gate: a capability with no planned status -> FAIL"
+else
+  fail "design-gate: missing capability status -> expected exit=1, got exit=$dg_code: $dg_out"
+fi
+
+dg_proj="$(new_design_gate_fixture)"
+rm -f "$dg_proj/docs/decisions/D-1-state-management.md"
+dg_code=0
+dg_out="$("$DESIGN_GATE" --project "$dg_proj" 2>&1)" || dg_code=$?
+if [[ "$dg_code" == "1" && "$dg_out" == *"state-management"* ]]; then
+  pass "design-gate: an uncovered foundational category -> FAIL"
+else
+  fail "design-gate: uncovered category -> expected exit=1, got exit=$dg_code: $dg_out"
+fi
+cat >"$dg_proj/docs/decisions/DEFERRED.md" <<'EOF'
+# Deferred decisions
+
+## Deferred: state management
+
+- Category: state-management
+- Trigger: once a second data source is added
+EOF
+dg_code=0
+dg_out="$("$DESIGN_GATE" --project "$dg_proj" 2>&1)" || dg_code=$?
+if [[ "$dg_code" == "0" && "$dg_out" == *"PASS"* ]]; then
+  pass "design-gate: a DEFERRED.md entry with a trigger covers a category as well as an adopted decision"
+else
+  fail "design-gate: DEFERRED coverage -> expected exit=0 PASS, got exit=$dg_code: $dg_out"
+fi
+
+dg_proj="$(new_design_gate_fixture)"
+dg_code=0
+dg_out="$("$DESIGN_GATE" --project "$dg_proj" --cap 3 2>&1)" || dg_code=$?
+if [[ "$dg_code" == "1" && "$dg_out" == *"exceeding the cap of 3"* ]]; then
+  pass "design-gate: adopted-decision count exceeding a tighter --cap -> FAIL"
+else
+  fail "design-gate: cap exceeded -> expected exit=1, got exit=$dg_code: $dg_out"
+fi
+
+# ---------------------------------------------------------------------------
+# decision-index: regenerated INDEX.md, numeric id ordering, --check
+# staleness detection
+# ---------------------------------------------------------------------------
+
+DECISION_INDEX="$SCRIPT_DIR/decision-index"
+
+new_decision_index_fixture() {
+  local proj
+  proj="$(mktemp -d "$tmp_root/diproj.XXXXXX")"
+  git init -q "$proj"
+  git -C "$proj" config user.email "core-selftest@example.com"
+  git -C "$proj" config user.name "core-selftest"
+  mkdir -p "$proj/docs/decisions"
+  cat >"$proj/docs/decisions/D-1-first.md" <<'EOF'
+# D-1: first decision
+
+- Id: D-1
+- Category: state-management
+- Status: adopted
+- Scope: workspace
+- Supersedes:
+- Superseded-by:
+
+## Context
+First.
+EOF
+  cat >"$proj/docs/decisions/D-9-ninth.md" <<'EOF'
+# D-9: ninth decision
+
+- Id: D-9
+- Category: persistence
+- Status: adopted
+- Scope: workspace
+- Supersedes:
+- Superseded-by:
+
+## Context
+Ninth.
+EOF
+  cat >"$proj/docs/decisions/D-10-tenth.md" <<'EOF'
+# D-10: tenth decision
+
+- Id: D-10
+- Category: auth-model
+- Status: adopted
+- Scope: workspace
+- Supersedes:
+- Superseded-by:
+
+## Context
+Tenth.
+EOF
+  git -C "$proj" add -A
+  git -C "$proj" commit -q -m seed
+  printf '%s' "$proj"
+}
+
+di_proj="$(new_decision_index_fixture)"
+di_code=0
+"$DECISION_INDEX" --project "$di_proj" >/dev/null 2>&1 || di_code=$?
+idx="$di_proj/docs/decisions/INDEX.md"
+row9_line="$( (grep -n '| D-9 |' "$idx" || true) | cut -d: -f1)"
+row10_line="$( (grep -n '| D-10 |' "$idx" || true) | cut -d: -f1)"
+if [[ "$di_code" == "0" && -f "$idx" && -n "$row9_line" && -n "$row10_line" && "$row9_line" -lt "$row10_line" ]]; then
+  pass "decision-index: writes INDEX.md, sorted numerically (D-9 before D-10, not lexically)"
+else
+  fail "decision-index: expected INDEX.md with D-9 before D-10 numerically, got code=$di_code row9=$row9_line row10=$row10_line"
+fi
+
+di_code=0
+di_out="$("$DECISION_INDEX" --project "$di_proj" --check 2>&1)" || di_code=$?
+if [[ "$di_code" == "0" && "$di_out" == *"ok"* ]]; then
+  pass "decision-index --check: a current INDEX.md -> ok"
+else
+  fail "decision-index --check: expected exit=0 ok, got exit=$di_code: $di_out"
+fi
+
+cat >"$di_proj/docs/decisions/D-20-twentieth.md" <<'EOF'
+# D-20: twentieth decision
+
+- Id: D-20
+- Category: repo-topology
+- Status: adopted
+- Scope: workspace
+
+## Context
+Twentieth.
+EOF
+idx_before="$(cat "$idx")"
+di_code=0
+di_out="$("$DECISION_INDEX" --project "$di_proj" --check 2>&1)" || di_code=$?
+idx_after="$(cat "$idx")"
+if [[ "$di_code" == "1" && "$di_out" == *"STALE"* && "$idx_before" == "$idx_after" ]]; then
+  pass "decision-index --check: a decision added without regenerating -> STALE, exit 1, writes nothing to disk"
+else
+  fail "decision-index --check: expected exit=1 STALE with no write, got code=$di_code changed=$([[ "$idx_before" != "$idx_after" ]] && echo yes || echo no)"
+fi
+
+di_empty_proj="$(mktemp -d "$tmp_root/diempty.XXXXXX")"
+di_code=0
+di_out="$("$DECISION_INDEX" --project "$di_empty_proj" 2>&1)" || di_code=$?
+if [[ "$di_code" == "0" && "$di_out" == *"nothing to do"* ]]; then
+  pass "decision-index: no docs/decisions/ anywhere -> nothing to do, exit 0"
+else
+  fail "decision-index: no decisions dir -> expected exit=0 'nothing to do', got exit=$di_code: $di_out"
 fi
 
