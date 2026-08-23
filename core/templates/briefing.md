@@ -43,8 +43,11 @@ the reason it was worth doing. Full step-by-step detail already lives in
 `plan.md`; this is the headline, not the changelog. Written for the
 engineer who wasn't in this task.>
 
-**What surprised us:** <Deviations in human terms, one line per
-`deviations.md` record — what the plan assumed, what was actually true,
+**What surprised us:** <Deviations in human terms — one separate markdown
+bullet per `deviations.md` record, never a single paragraph with
+parenthetical numbers even when terse (real briefings have drifted into
+that shape under length pressure, which buries later deviations well below
+this section's first line): what the plan assumed, what was actually true,
 how it was resolved. "Nothing — the plan held." if none. Never manufactured,
 never hidden.>
 

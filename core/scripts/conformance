@@ -1,8 +1,8 @@
 #!/bin/bash
 # conformance — scores a plan's predicted-touch list against the actual
-# diff. Informational only: never blocks merge, flags the plan (build
-# prompt §2.5 Layer 4). A trend of low scores means research or planning is
-# failing, not that this run is invalid.
+# diff. Informational only: never blocks merge, only flags the plan. A
+# trend of low scores means research or planning is failing, not that this
+# run is invalid.
 #
 # plan.md must contain a section:
 #

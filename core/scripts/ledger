@@ -283,7 +283,10 @@ case "$cmd" in
           avg_deviation_count: (map(.deviation_count // 0) | (if length>0 then add/length else 0 end)),
           avg_conformance_score: ([.[] | select(.conformance_score != null) | .conformance_score] as $s | if ($s|length)>0 then ($s|add/length) else null end),
           second_approver_count: (map(select(.second_approver != null)) | length),
-          pr_description_count: (map(select(.pr_description != null)) | length)
+          pr_description_count: (map(select(.pr_description != null)) | length),
+          over_cap_plan_count: (map(select((.plan_line_count|type)=="number" and .plan_line_count>200)) | length),
+          over_cap_briefing_count: (map(select((((.briefing_line_count|type)=="number") and .briefing_line_count>60) or (((.briefing_word_count|type)=="number") and .briefing_word_count>600))) | length),
+          over_cap_pr_description_count: (map(select((((.pr_description_line_count|type)=="number") and .pr_description_line_count>60) or (((.pr_description_word_count|type)=="number") and .pr_description_word_count>600))) | length)
         }))
       ' "${files[@]}"
     else
@@ -303,7 +306,10 @@ case "$cmd" in
           claims_conflicts_total: ($entries | map(.claims_conflicts // 0) | add // 0),
           avg_conformance_score: ([$entries[] | select(.conformance_score != null) | .conformance_score] as $s | if ($s|length)>0 then ($s|add/length) else null end),
           second_approver_count: ($entries | map(select(.second_approver != null)) | length),
-          pr_description_count: ($entries | map(select(.pr_description != null)) | length)
+          pr_description_count: ($entries | map(select(.pr_description != null)) | length),
+          over_cap_plan_count: ($entries | map(select((.plan_line_count|type)=="number" and .plan_line_count>200)) | length),
+          over_cap_briefing_count: ($entries | map(select((((.briefing_line_count|type)=="number") and .briefing_line_count>60) or (((.briefing_word_count|type)=="number") and .briefing_word_count>600))) | length),
+          over_cap_pr_description_count: ($entries | map(select((((.pr_description_line_count|type)=="number") and .pr_description_line_count>60) or (((.pr_description_word_count|type)=="number") and .pr_description_word_count>600))) | length)
         }
       ' "${files[@]}"
     fi

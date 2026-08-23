@@ -47,9 +47,13 @@ Report `task_count`, `fresh_tokens`, `cache_read_tokens`, `total_tokens`,
 `tooling_gap_count`, `hand_tracked_task_count`, `avg_conformance_score`
 (plan-vs-actual F1, null if no task recorded one yet),
 `second_approver_count` (Class 2 ships with a real or override second
-approver), and `pr_description_count` (ships that produced a
+approver), `pr_description_count` (ships that produced a
 `pr-description.md` — compare against `task_count` to notice ships that
-skipped it) from its JSON.
+skipped it), and `over_cap_plan_count`/`over_cap_briefing_count`/
+`over_cap_pr_description_count` (tasks whose recorded plan.md/briefing.md/
+pr-description.md length tripped that document's own over-cap signal —
+compare against `task_count` to notice a pattern of oversized artifacts,
+not just a one-off) from its JSON.
 
 **Lead with `fresh_tokens`, not `total_tokens`, when you talk about
 cost.** `fresh_tokens` (input + output + cache writes) is genuinely

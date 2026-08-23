@@ -116,18 +116,22 @@ Conceded by design, not bugs waiting to be fixed:
   deviations actually logged to `deviations.md`; nothing forces one to get
   logged. That's a norm the skill instructions ask for, not something a
   hook enforces.
-- **Phase-transition ledger marks run on an honor system too.** Marking
-  `verify` (which harvests `implement`'s token window, `task/SKILL.md`
-  §6) is a documented step in `task/SKILL.md` §5, not something a hook
-  enforces — a session that moves on without it leaves that phase's cost
-  looking unrecorded even when real, expensive work (a falsifier/security
-  round) happened under it. In a sample of real installed-project tasks,
-  roughly two-thirds were missing this mark. `render-task` surfaces
-  recorded subagent cost against the umbrella phase even when it was never
-  itself marked, so the spend isn't hidden from a human reading the
-  report — but the per-phase timestamp/duration breakdown stays only as
-  reliable as the session that ran it, and nothing currently forces the
-  mark to happen.
+- **The `implement` phase's token harvest runs on an honor system, even
+  though the mark that's supposed to trigger it mostly doesn't.**
+  `task/SKILL.md` §5/§6 bundles "mark `verify`" and "harvest `implement`'s
+  token window into it" into one documented step; neither half is
+  enforced by a hook. As of round 4, real installed-project data shows the
+  two halves have diverged: the *mark* itself (`verify.marked_at`) is now
+  present in ~95% of real tasks, but the *harvest*
+  (`implement.tokens`) is still missing in roughly two-thirds — sessions
+  reliably call `ledger mark <task-id> verify`, they just don't reliably
+  also make the paired `ledger harvest` call. `render-task` surfaces
+  recorded subagent cost against the umbrella phase when the mark itself
+  is missing, and flags a phase's cost as "(not recorded)" when its own
+  mark is present but its harvest evidently wasn't, so the spend isn't
+  silently presented as zero — but the per-phase cost breakdown stays only
+  as reliable as the session that ran it, and nothing currently forces the
+  harvest to happen.
 - **A ledger field can still go dead between audits.** `core/scripts/
   ledger-field-audit` heuristically checks that every `ledger set
   <task-id> <field>` documented in a skill has at least one reader-shaped
@@ -148,11 +152,24 @@ Conceded by design, not bugs waiting to be fixed:
   confidently resolved — but a mutation shape outside that list (a custom
   wrapper, a file write buried inside another interpreter's own call) is
   invisible to them.
-- **The floor trusts its own adapters between recalibrations.** Adapter
-  conformance is validated when an adapter is written or a project
-  recalibrates — nothing re-validates it on every task. An adapter
-  hand-edited to always pass wouldn't be caught until the next
-  recalibration.
+- **The floor trusts its own adapters between recalibrations — and
+  `adapter-conformance` can't catch a fake-but-passing self-test even at
+  recalibration time.** Adapter conformance is validated when an adapter
+  is written or a project recalibrates — nothing re-validates it on every
+  task, so an adapter hand-edited to always pass wouldn't be caught until
+  the next recalibration. But `adapter-conformance` is also, by
+  construction, a black-box exit-code/output-shape checker: it confirms
+  `--self-test pass`/`fail` behave (right exit code, one-line output) but
+  never inspects whether a self-test fixture actually proves what
+  `core/ADAPTER-CONTRACT.md` §4 requires — a changed-file-set capability's
+  scoping fixture genuinely including an out-of-scope violator, or a
+  self-test exercising the adapter's real invocation path rather than a
+  simplified stand-in. §4 cites a real incident of exactly this (a
+  `callers` adapter whose self-test grepped a bare symbol name while the
+  real adapter greps a full repo-relative path — a shape neither fixture
+  ever exercised, so it stayed "conformant" indefinitely). A human
+  reviewing a hand-written adapter is the only real backstop for those two
+  rules; nothing mechanical currently checks them.
 - **A per-task floor only sees the current diff.** Lint and type checks are
   scoped to changed files so a task never fails for debt it didn't write —
   the tradeoff is that pre-existing debt in untouched files stays invisible

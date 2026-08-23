@@ -463,10 +463,23 @@ for phase in "${TIMELINE_PHASES[@]}"; do
       e_ts="$(to_epoch "$ts")"; e_prev="$(to_epoch "$prev_ts")"
       [[ -n "$e_ts" && -n "$e_prev" ]] && dur="$(fmt_duration $((e_ts - e_prev)))"
     fi
-    printf '<a href="#%s" title="%s"><span class="phase">%s</span><span class="ts">%s</span>%s<span class="cost">%s tok</span></a>\n' \
+    # A phase whose own `marked_at` IS present (so it's not the "not
+    # reached" branch above) can still have zero recorded cost — not
+    # because it genuinely cost nothing, but because its own `ledger
+    # harvest` call was never made even though the mark itself was (a real,
+    # confirmed gap: the mark and the harvest are two separate calls
+    # task/SKILL.md bundles into "the same instruction," and sessions
+    # reliably do the former without reliably also doing the latter). Real
+    # elapsed duration since the previous phase (dur, computed above) is
+    # the signal a genuinely-free phase wouldn't have — flag it instead of
+    # presenting a bare "0 tok" as fact, which reads as "this phase cost
+    # nothing" rather than "this phase's cost was never recorded."
+    cost_label="$(fmt_tokens "$cost") tok"
+    [[ "$cost" == "0" && -n "$dur" ]] && cost_label="$cost_label (not recorded)"
+    printf '<a href="#%s" title="%s"><span class="phase">%s</span><span class="ts">%s</span>%s<span class="cost">%s</span></a>\n' \
       "$phase" "$(html_escape <<<"$ts")" "$phase" "$(html_escape <<<"$(fmt_ts "$ts")")" \
       "$( [[ -n "$dur" ]] && printf '<span class="dur">took %s</span>' "$(html_escape <<<"$dur")" )" \
-      "$(fmt_tokens "$cost")"
+      "$(html_escape <<<"$cost_label")"
     prev_ts="$ts"
   fi
 done
@@ -678,7 +691,41 @@ if [[ "$ledger_present" -eq 1 ]]; then
   plan_lines="$(jq -r '.plan_line_count // empty' "$ledger_file")"
   briefing_lines="$(jq -r '.briefing_line_count // empty' "$ledger_file")"
   briefing_words="$(jq -r '.briefing_word_count // empty' "$ledger_file")"
+  pr_desc_lines="$(jq -r '.pr_description_line_count // empty' "$ledger_file")"
+  pr_desc_words="$(jq -r '.pr_description_word_count // empty' "$ledger_file")"
   items=""
+
+  # paragraph_length_item <label> <lines> <words> — shared by briefing.md
+  # and pr-description.md, which share the same one-unwrapped-paragraph-
+  # per-label template format and the same ~600-word real over-cap signal
+  # (a line count alone under-detects an over-length file in this format,
+  # unlike plan.md's wrapped-bullet style). Guards on EITHER field being
+  # present, not just <lines> — the two are written by two separate
+  # `ledger set` calls in the same ship/SKILL.md step, not atomically, so a
+  # hand-edited ledger or an interrupted session can leave one present
+  # without the other; nesting the whole block (word-count check included)
+  # under <lines> alone meant a file missing only its line count silently
+  # lost its over-cap flag too, even with a real, over-cap word count
+  # sitting right there — confirmed by direct repro against a real
+  # 805-word briefing.
+  paragraph_length_item() {
+    local label="$1" lines="$2" words="$3" over="" length_label
+    [[ -z "$lines" && -z "$words" ]] && return 0
+    [[ "$lines" =~ ^[0-9]+$ && "$lines" -gt 60 ]] && over=" — over the ~1-page cap"
+    if [[ -n "$words" && "$words" =~ ^[0-9]+$ && "$words" -gt 600 && -z "$over" ]]; then
+      if [[ -n "$lines" ]]; then
+        over=" — over the ~1-page cap ($(html_escape <<<"$words") words)"
+      else
+        over=" — over the ~1-page cap"
+      fi
+    fi
+    if [[ -n "$lines" ]]; then
+      length_label="$(html_escape <<<"$lines") lines"
+    else
+      length_label="$(html_escape <<<"$words") words"
+    fi
+    items+="<li><strong>$label length:</strong> $length_label$over</li>"$'\n'
+  }
   # Both counts are meant to be written via `ledger set <task-id>
   # plan_line_count <n>` with a clean `wc -l` integer. An earlier version
   # of task/SKILL.md and ship/SKILL.md didn't specify `wc -l <file`
@@ -697,18 +744,8 @@ if [[ "$ledger_present" -eq 1 ]]; then
     [[ "$plan_lines" =~ ^[0-9]+$ && "$plan_lines" -gt 200 ]] && over=" — over the 200-line cap"
     items+="<li><strong>plan.md length:</strong> $(html_escape <<<"$plan_lines") lines$over</li>"$'\n'
   fi
-  if [[ -n "$briefing_lines" ]]; then
-    over=""
-    [[ "$briefing_lines" =~ ^[0-9]+$ && "$briefing_lines" -gt 60 ]] && over=" — over the ~1-page cap"
-    # briefing.md is one unwrapped paragraph per label, so a line count
-    # alone under-detects an over-length briefing (unlike plan.md's
-    # wrapped-bullet style, where line count tracks page length) — the
-    # word count is the signal that actually catches it.
-    if [[ -n "$briefing_words" && "$briefing_words" =~ ^[0-9]+$ && "$briefing_words" -gt 600 && -z "$over" ]]; then
-      over=" — over the ~1-page cap ($(html_escape <<<"$briefing_words") words)"
-    fi
-    items+="<li><strong>briefing.md length:</strong> $(html_escape <<<"$briefing_lines") lines$over</li>"$'\n'
-  fi
+  paragraph_length_item "briefing.md" "$briefing_lines" "$briefing_words"
+  paragraph_length_item "pr-description.md" "$pr_desc_lines" "$pr_desc_words"
   [[ -n "$conformance_score" ]] && items+="<li><strong>Conformance (plan vs. actual, F1):</strong> $(html_escape <<<"$conformance_score")</li>"$'\n'
   [[ -n "$second_approver" ]] && items+="<li><strong>Second approver (Class 2):</strong> $(html_escape <<<"$second_approver")</li>"$'\n'
   [[ -n "$rg_check_stale" ]] && items+="<li><strong>Ship-time re-grounding — check-stale:</strong> $(html_escape <<<"$rg_check_stale")</li>"$'\n'

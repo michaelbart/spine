@@ -137,9 +137,10 @@ If every union (and N) is empty: "The diff landed exactly where the
 approved plan predicted; no deviations, findings, or drift. Spot-check at
 will." — which is itself information, not an excuse to skip review.>
 
-**What surprised us:** <Deviations in human terms, from deviations.md, one
-line per record — what the plan assumed, what was actually true, how it
-was resolved. "Nothing — the plan held." if none.>
+**What surprised us:** <Deviations in human terms, from deviations.md — one
+separate markdown bullet per record, never a single paragraph with
+parenthetical numbers even when terse: what the plan assumed, what was
+actually true, how it was resolved. "Nothing — the plan held." if none.>
 
 <!-- Omit "Overrides & bypasses" entirely when none occurred — never leave
      it present-but-empty. FLOOR RULE: never folded into a single

@@ -65,7 +65,7 @@ check_target() {
   # single-repo projects always resolve to $project itself).
   local file_path="$1" rel matched_glob="" is_migration=0 line tag glob conf display
 
-  workspace_route "$project" "$file_path"
+  workspace_route "$project" "$file_path" || return 1
   [[ -n "$WSR_OWNER_ROOT" ]] || return 0
   conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
   [[ -f "$conf" ]] || return 0
@@ -83,7 +83,7 @@ check_target() {
     glob="${line%%#*}"
     glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
     [[ -z "$glob" ]] && continue
-    if [[ "$rel" == $glob ]]; then
+    if _wsr_glob_eq "$rel" "$glob"; then
       matched_glob="$glob"
       [[ "$tag" == "migration" ]] && is_migration=1
       break

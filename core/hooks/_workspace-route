@@ -7,13 +7,12 @@
 # the project itself (plain single-repo project, or a workspace-native path
 # like workspace.json/contracts/**), or — only when $project/workspace.json
 # exists — the specific member repo the target's absolute path falls under,
-# per workspace.json's repos[] list. This is the mechanical form of build
-# prompt §2's "hooks load once, from the workspace, and route by path,"
-# verified against primitive §0.1: a hook loaded at the workspace root is
-# the only one that ever fires for an edit inside an added member-repo
-# directory, so routing happens *inside* that one hook, not by installing a
-# second copy of it in the member repo (which, per §0.1(b), would never
-# fire at all).
+# per workspace.json's repos[] list. This is the mechanical form of the
+# rule that hooks load once, from the workspace, and route by path: a hook
+# loaded at the workspace root is the only one that ever fires for an edit
+# inside an added member-repo directory, so routing happens *inside* that
+# one hook, not by installing a second copy of it in the member repo
+# (which would never fire at all).
 #
 # Usage:
 #   workspace_route "$project" "$file_path"
@@ -101,7 +100,20 @@ _wsr_collapse() {
     esac
   done
   local result="" p
-  for p in "${out[@]}"; do result+="/$p"; done
+  # Bash 3.2 throws "unbound variable" under `set -u` when expanding
+  # "${out[@]}" on a *legitimately empty* array (no empty-array exemption
+  # until 4.4+) — confirmed by direct repro: a path that collapses all the
+  # way to root (e.g. a `../` chain that cancels a whole absolute prefix,
+  # or a relative $project silently mis-rooted to "/proj" by the
+  # unconditional leading "/" below) hit this, the surrounding $(...) swallowed
+  # the error and returned "", and the caller (_wsr_realpath's ancestor
+  # walk) then recursed on that same non-progressing "" input forever —
+  # each level a real subshell fork, confirmed as a genuine multi-thousand-
+  # process runaway, not just a hypothetical crash. Guard the dereference
+  # instead of ever letting it fire.
+  if [[ ${#out[@]} -gt 0 ]]; then
+    for p in "${out[@]}"; do result+="/$p"; done
+  fi
   printf '%s' "${result:-/}"
 }
 
@@ -156,6 +168,50 @@ _wsr_realpath() {
   printf '%s' "$resolved_dir/$base"
 }
 
+# _wsr_nfc <string> — Unicode-NFC-normalizes $1, or returns it unchanged if
+# it's pure ASCII (the overwhelming common case — zero-cost fast path, no
+# subprocess spawned) or if no normalizer is available. macOS APFS/HFS+ is
+# normalization-insensitive: an NFC- and an NFD-encoded (byte-distinct) form
+# of the same accented filename address the identical real file, but a bare
+# bash glob comparison (`[[ "$rel" == $glob ]]`) is a byte comparison and
+# _wsr_realpath's physical resolution (cd -P/pwd -P, readlink) preserves
+# whichever byte form the caller supplied rather than canonicalizing it —
+# confirmed by direct repro: a protected-paths.conf glob written in NFC form
+# matched a file_path given in NFC form but silently missed the identical
+# real file addressed via its NFD form. Bash 3.2 has no normalization
+# primitive of its own, so this shells out to python3 (already how this
+# machine's real environment is provisioned — confirmed present; no new
+# core dependency is declared, since the ASCII fast path above means a
+# python3-less system only loses coverage for the narrow non-ASCII case,
+# never regresses the byte-identical-comparison behavior that predates this
+# fix).
+_wsr_nfc() {
+  local s="$1"
+  case "$s" in
+    *[![:ascii:]]*) ;;
+    *) printf '%s' "$s"; return 0 ;;
+  esac
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys,unicodedata; sys.stdout.write(unicodedata.normalize("NFC", sys.stdin.read()))' <<<"$s" 2>/dev/null && return 0
+  fi
+  printf '%s' "$s"
+}
+
+# _wsr_glob_eq <rel> <glob> — true if <rel> matches the shell glob <glob>,
+# trying a plain byte comparison first (fast path, and the only path a pure-
+# ASCII $rel/$glob pair ever takes) and, only if that misses, retrying with
+# both sides Unicode-NFC-normalized (_wsr_nfc) — closes the NFC/NFD bypass
+# above without changing the result for any pair that already matched or
+# already correctly didn't.
+_wsr_glob_eq() {
+  local rel="$1" glob="$2"
+  [[ "$rel" == $glob ]] && return 0
+  local rel_nfc glob_nfc
+  rel_nfc="$(_wsr_nfc "$rel")"
+  glob_nfc="$(_wsr_nfc "$glob")"
+  [[ "$rel_nfc" == $glob_nfc ]]
+}
+
 # _wsr_owns <lexical-path> <resolved-path> <root> — true if <lexical-path>
 # lexically falls under <root>, or (fallback — closes a real bypass: an
 # absolute file_path reaching the project through a different real
@@ -176,6 +232,23 @@ _wsr_owns() {
 
 workspace_route() {
   local project="$1" file_path="$2" project_res abs_path abs_path_res ws_conf best_root="" best_name="" i n repo_path repo_name
+
+  # $project (CLAUDE_PROJECT_DIR, or a caller's $(pwd) fallback) must be
+  # absolute. A relative value has no principled resolution here — this
+  # runs in a hook subprocess whose cwd isn't reliably "the project" — and
+  # every downstream comparison in this function assumes an absolute root
+  # (a relative one gets silently mis-rooted to "/$project" by the leading
+  # "/" _wsr_collapse always prepends, which previously produced a
+  # confidently-wrong ownership decision rather than a refusal). Fail
+  # closed instead of guessing.
+  case "$project" in
+    /*) ;;
+    *)
+      echo "_workspace-route: project root '$project' is not absolute — failing closed, cannot evaluate this write safely" >&2
+      WSR_OWNER_ROOT=""; WSR_OWNER_NAME="(unknown)"; WSR_REL="$file_path"
+      return 1
+      ;;
+  esac
 
   # project_res: the project root's own canonical location — resolves a
   # root-level alias (e.g. macOS's /tmp -> /private/tmp, or any project

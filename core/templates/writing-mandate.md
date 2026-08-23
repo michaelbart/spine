@@ -1,8 +1,9 @@
 <!--
-Referenced by /task's plan-writing step (core/skills/task/SKILL.md §3) and
-/ship's briefing-writing step (core/skills/ship/SKILL.md §4) — edit here
-when this needs to change, not in either skill; one place, referenced
-twice, never duplicated prose.
+Referenced by /task's plan-writing step (core/skills/task/SKILL.md §3),
+/ship's briefing-writing step (core/skills/ship/SKILL.md §4),
+core/templates/plan.md, and core/templates/pr-description.md — edit here
+when this needs to change, not in any of them; one place, referenced
+everywhere else, never duplicated prose.
 -->
 
 # Writing mandate — plan.md and briefing.md prose

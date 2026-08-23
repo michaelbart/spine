@@ -586,6 +586,17 @@ whole section on a single-repo task, or a multi-repo task whose
 ship that skipped this step is visible against `task_count` rather than
 silently absorbed.
 
+**Same over-cap tracking as §4's briefing, same reason**: this template
+shares briefing.md's one-unwrapped-paragraph-per-label format (its own
+header comment says so), and in practice runs *longer*, not shorter — its
+reader has less context than briefing's, and its extra sections
+(`Review this at the plan level`, `Where to look`) add real length. `wc -l
+< pr-description.md` and `wc -w < pr-description.md` (redirect stdin, same
+reason as §4), record both (`ledger set <task-id>
+pr_description_line_count <n>` and `ledger set <task-id>
+pr_description_word_count <n>`), same ~600-word real "over cap" signal.
+Over cap means trim before shipping, not ship anyway.
+
 ## 5. Ledger and commit
 
 `ledger mark <task-id> ship` — per the rule in `core/skills/task/SKILL.md`

@@ -72,7 +72,7 @@ check_target() {
   # locations like a user's own notes directory outside any project tree.
   local file_path="$1" abs_path display
 
-  workspace_route "$project" "$file_path"
+  workspace_route "$project" "$file_path" || return 1
   [[ -n "$WSR_OWNER_ROOT" ]] || return 0
 
   # Recomputed and resolved the same way workspace_route resolves its own

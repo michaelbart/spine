@@ -558,6 +558,16 @@ not match any real relative or aliased import stayed "conformant"
 indefinitely). Build the fixture, then invoke the same code path normal
 mode uses against it — never a second implementation of the check.
 
+**Both of the above are authoring requirements, not mechanically-checked
+guarantees.** `adapter-conformance` validates `--self-test pass`/`fail`'s
+exit code and one-line-output shape; it does not inspect whether a
+scoping fixture genuinely includes an out-of-scope violator, or whether a
+self-test branch calls through the adapter's real invocation path rather
+than a parallel check — the `callers` incident above is exactly a case
+that satisfied every check `adapter-conformance` runs while violating this
+one. A human reviewing a hand-written adapter is the real backstop for
+these two rules (see `docs/tradeoffs.md`'s Known limits).
+
 Design note this implies: an adapter must be able to construct at least one
 concrete pass case and one concrete fail case for its own capability, fully
 self-contained. Where a capability's tool has nothing meaningful to

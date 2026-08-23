@@ -1055,6 +1055,14 @@ else
   # own wiring too — missed the first time these two were added elsewhere.
   avg_conf="$(jq -r '.avg_conformance_score' <<<"$ledger_aggregate_json")"
   second_approver_count="$(jq -r '.second_approver_count // 0' <<<"$ledger_aggregate_json")"
+  # over_cap_plan_count/over_cap_briefing_count/over_cap_pr_description_count:
+  # same "added to ledger aggregate, needs this dashboard's own wiring too"
+  # pattern as avg_conf/second_approver_count above — recorded per-task by
+  # /task and /ship but had no reader anywhere outside a single task's own
+  # /task-report until this (spine audit finding, round 4).
+  over_cap_plan="$(jq -r '.over_cap_plan_count // 0' <<<"$ledger_aggregate_json")"
+  over_cap_briefing="$(jq -r '.over_cap_briefing_count // 0' <<<"$ledger_aggregate_json")"
+  over_cap_pr_desc="$(jq -r '.over_cap_pr_description_count // 0' <<<"$ledger_aggregate_json")"
   fmt_dev="$(awk -v n="$avg_dev" 'BEGIN{printf "%.2f", n}')"
   ratio="$(sed -n 's/^untracked-commit ratio: \([0-9.]*\).*/\1/p' <<<"$untracked_line")"
   echo '<div class="stat-grid">'
@@ -1069,6 +1077,9 @@ else
     printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">avg conformance score</div></div>\n' "$fmt_conf"
   fi
   printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">second-approver reviews</div></div>\n' "$second_approver_count"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">over-cap plans</div></div>\n' "$over_cap_plan"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">over-cap briefings</div></div>\n' "$over_cap_briefing"
+  printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">over-cap PR descriptions</div></div>\n' "$over_cap_pr_desc"
   [[ -n "$ratio" ]] && printf '<div class="stat"><div class="stat-val">%s</div><div class="stat-label">untracked-commit ratio</div></div>\n' "$ratio"
   echo '</div>'
 

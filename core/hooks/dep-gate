@@ -61,7 +61,7 @@ check_manifest_target() {
   # protected-paths.conf #manifest tag (workspace_route resolves which root
   # that is; single-repo projects always resolve to $project itself).
   local file_path="$1" rel display conf line glob
-  workspace_route "$project" "$file_path"
+  workspace_route "$project" "$file_path" || ask "Project root could not be safely resolved — forced to a human decision since a dependency manifest can't be ruled out."
   [[ -n "$WSR_OWNER_ROOT" ]] || return 0
   conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
   [[ -f "$conf" ]] || return 0
@@ -74,7 +74,7 @@ check_manifest_target() {
     glob="${line%%#*}"
     glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
     [[ -z "$glob" ]] && continue
-    if [[ "$rel" == $glob ]]; then
+    if _wsr_glob_eq "$rel" "$glob"; then
       ask "Editing dependency manifest '$display' — package changes always require a human decision (supply-chain and accretion control)."
     fi
   done < "$conf"

@@ -595,6 +595,68 @@ hook_check() {
   esac
 }
 
+hook_run_bounded() {
+  # hook_run_bounded <timeout-seconds> <hook-bin> <CLAUDE_PROJECT_DIR-value>
+  # <json> -> "<exit>|<elapsed-seconds>|<output>", where exit is the literal
+  # string "timeout" if the process was still running after
+  # <timeout-seconds>. No `timeout`/`gtimeout` binary is assumed present
+  # (neither is on this machine) — a portable background-job + poll + kill
+  # instead. Exists specifically for the round-4 empty-array/runaway-
+  # recursion regression case: without a bound, a reintroduced version of
+  # that bug would eventually self-terminate via the host's own process
+  # limits (a real, but non-deterministic and environment-dependent, exit
+  # path) rather than reliably fail this suite — <elapsed-seconds> lets
+  # hook_check_fast assert real speed, not just "some non-zero exit
+  # eventually happened," since a resource-exhaustion crash can itself
+  # produce a non-zero exit that would otherwise be indistinguishable from
+  # a correct, fast, intentional deny.
+  local bound="$1" bin="$2" proj="$3" json="$4" outfile pid waited=0 code out
+  outfile="$(mktemp "$tmp_root/hookbounded.XXXXXX")"
+  ( CLAUDE_PROJECT_DIR="$proj" "$bin" <<<"$json" >"$outfile" 2>&1
+    echo "$?" >"$outfile.code" ) &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [[ $waited -lt $bound ]]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    printf 'timeout|%s|still running after %ss' "$bound" "$bound"
+    return
+  fi
+  wait "$pid" 2>/dev/null
+  code="$(cat "$outfile.code" 2>/dev/null)"; code="${code:-1}"
+  out="$(cat "$outfile" 2>/dev/null)"
+  printf '%s|%s|%s' "$code" "$waited" "$out"
+}
+
+hook_check_fast() {
+  # hook_check_fast <desc> <result-from-hook_run_bounded> <expect:deny|allow>
+  # <max-seconds> — like hook_check, but additionally fails if the process
+  # took anywhere near <max-seconds> (including the literal "timeout"
+  # outcome): a fork-bomb regression can crash out with a real, otherwise-
+  # plausible-looking non-zero exit once the host's own process/fork limits
+  # kick in, which is a *symptom* of the runaway, not a legitimate fast
+  # deny — confirmed directly: a reverted pre-fix build of this codepath
+  # produced exactly that shape (a real deny-looking exit, reached only
+  # after several seconds and thousands of forked subprocesses).
+  local desc="$1" result="$2" expect="$3" max="$4"
+  local code="${result%%|*}" rest="${result#*|}" elapsed="${rest%%|*}" out="${rest#*|}"
+  if [[ "$code" == "timeout" ]]; then
+    fail "hooks: $desc (hung past ${max}s — runaway, not a fast decision)"
+    return
+  fi
+  if [[ "$elapsed" -ge "$max" ]]; then
+    fail "hooks: $desc (took ${elapsed}s, expected well under ${max}s — likely the same runaway resolving via host resource limits rather than a real fast decision; got exit=$code: $out)"
+    return
+  fi
+  case "$expect" in
+    deny) [[ "$code" != "0" ]] && pass "hooks: $desc" || fail "hooks: $desc (expected deny, got exit=$code: $out)" ;;
+    allow) [[ "$code" == "0" && "$out" != *permissionDecision* ]] && pass "hooks: $desc" || fail "hooks: $desc (expected allow, got exit=$code: $out)" ;;
+  esac
+}
+
 hf="$(new_hook_fixture)"
 hook_real="${hf%%|*}"
 hook_alias="${hf#*|}"
@@ -633,6 +695,151 @@ ln -sf "$hook_real/src/auth/secret.txt" "$hook_real/src/other/innocuous.txt"
 hook_check "path-escalate denies a planted symlink into a protected path" \
   "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"src/other/innocuous.txt"}}')" deny
 rm -f "$hook_real/src/other/innocuous.txt"
+
+# Round 4: a relative CLAUDE_PROJECT_DIR, or a ../ chain deep enough to
+# cancel a whole absolute project prefix to nothing, drove _wsr_collapse's
+# empty-array dereference into a silently-swallowed crash whose caller
+# (_wsr_realpath) then recursed forever on the resulting "" — a genuine
+# multi-thousand-subprocess runaway that still resolved to fail-open.
+# Bounded so a regression here fails fast instead of just running long.
+hook_check_fast "path-escalate fails closed on a relative CLAUDE_PROJECT_DIR, fast (not a runaway that only eventually deny-shaped-crashes)" \
+  "$(hook_run_bounded 20 "$PATH_ESCALATE" "hookproj-relative" '{"tool_name":"Write","tool_input":{"file_path":"src/auth/secret.txt"}}')" deny 5
+
+hook_check_fast "path-escalate resolves a root-cancelling ../ chain fast, without a runaway (control: genuinely outside project, so allow is correct)" \
+  "$(hook_run_bounded 20 "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"../../../../../../../../../../../../../../../../../../../../src/auth/secret.txt"}}')" allow 5
+
+# Round 4: an NFC- and an NFD-encoded (byte-distinct) form of the same
+# accented path name the identical real file on a normalization-insensitive
+# filesystem (APFS/HFS+), but a bare bash glob comparison is byte-level —
+# a protected-paths.conf glob written in one form silently missed a
+# file_path given in the other. Skipped if python3 (the only normalizer
+# _wsr_nfc uses) isn't on PATH, matching that helper's own fallback.
+if command -v python3 >/dev/null 2>&1; then
+  nfc_dir="$(python3 -c "print('café')")"
+  nfd_dir="$(python3 -c "import unicodedata; print(unicodedata.normalize('NFD', 'café'))")"
+  mkdir -p "$hook_real/src/other/$nfc_dir"
+  echo secret >"$hook_real/src/other/$nfc_dir/x.txt"
+  printf 'src/other/%s/**\n' "$nfc_dir" >>"$hook_real/.spine/protected-paths.conf"
+  nfd_file_path="src/other/${nfd_dir}/x.txt"
+  hook_check "path-escalate denies the NFD byte-form of a glob registered in NFC form (same real file)" \
+    "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$nfd_file_path"'"}}')" deny
+else
+  echo "hooks: SKIP NFC/NFD case — python3 not on PATH"
+fi
+
+# ---------------------------------------------------------------------------
+# ledger: harvest's message.id dedup + additive-sum behavior
+# ---------------------------------------------------------------------------
+# `ledger harvest` sums a transcript's token usage into a ledger phase. Two
+# real properties, neither previously covered by any permanent test:
+# (a) one real API call (one message.id) logs as several transcript lines
+# (a thinking block, a tool_use block, etc.), each carrying an identical
+# copy of that call's own usage — confirmed against a real Claude Code
+# session transcript, where an undeduped sum would double- (or more-)count
+# every multi-block turn; unique_by(.message.id) exists to prevent this.
+# (b) harvesting the same phase key twice (verify's real fix-and-reverify
+# flow, a re-dispatched adversary round) must ADD to the existing tokens,
+# not overwrite them — a real installed project's ledger.json once worked
+# around a plain-overwrite bug by inventing a second "-round2" key instead.
+
+LEDGER="$SCRIPT_DIR/ledger"
+
+ledger_test_fixture() {
+  local proj task_dir
+  proj="$(mktemp -d "$tmp_root/ledgerproj.XXXXXX")"
+  mkdir -p "$proj/work/LT1"
+  "$LEDGER" init LT1 --project "$proj" >/dev/null
+  printf '%s' "$proj"
+}
+
+lproj="$(ledger_test_fixture)"
+
+# message.id "m1" appears twice (thinking + tool_use blocks of the same
+# real call) with identical usage; "m2" is a genuinely distinct call.
+# Correct dedup sums exactly once per unique message.id: input 100+30=130,
+# output 50+15=65.
+transcript="$tmp_root/ledger-transcript.jsonl"
+cat >"$transcript" <<'JSONL'
+{"type":"assistant","timestamp":"2026-08-22T10:00:00Z","message":{"id":"m1","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"assistant","timestamp":"2026-08-22T10:00:01Z","message":{"id":"m1","usage":{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+{"type":"assistant","timestamp":"2026-08-22T10:00:02Z","message":{"id":"m2","usage":{"input_tokens":30,"output_tokens":15,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+JSONL
+
+"$LEDGER" harvest LT1 implement --transcript "$transcript" --from 2026-08-22T09:59:00Z --to 2026-08-22T10:01:00Z --project "$lproj" >/dev/null
+
+got_input="$(jq -r '.phases.implement.tokens.input' "$lproj/work/LT1/ledger.json")"
+got_output="$(jq -r '.phases.implement.tokens.output' "$lproj/work/LT1/ledger.json")"
+if [[ "$got_input" == "130" && "$got_output" == "65" ]]; then
+  pass "ledger: harvest dedups repeated message.id blocks from the same real call before summing"
+else
+  fail "ledger: harvest dedup (expected input=130 output=65, got input=$got_input output=$got_output)"
+fi
+
+# Second harvest of the SAME phase key (re-dispatched round) must ADD, not
+# overwrite: a second transcript with one new message.id, input 10.
+transcript2="$tmp_root/ledger-transcript2.jsonl"
+cat >"$transcript2" <<'JSONL'
+{"type":"assistant","timestamp":"2026-08-22T11:00:00Z","message":{"id":"m3","usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+JSONL
+"$LEDGER" harvest LT1 implement --transcript "$transcript2" --from 2026-08-22T10:59:00Z --to 2026-08-22T11:01:00Z --project "$lproj" >/dev/null
+got_input2="$(jq -r '.phases.implement.tokens.input' "$lproj/work/LT1/ledger.json")"
+if [[ "$got_input2" == "140" ]]; then
+  pass "ledger: harvest sums additively into an already-harvested phase key, not overwrite"
+else
+  fail "ledger: harvest additive-sum (expected input=140 after second harvest, got $got_input2)"
+fi
+
+# ---------------------------------------------------------------------------
+# render-task: two round-4 fixes to the per-task HTML report, previously
+# uncovered by any permanent test (round 3's own report flagged this as a
+# gap across ledger/render-task/render-dashboard; this closes it for the
+# two bugs actually fixed this round, not the whole surface).
+# ---------------------------------------------------------------------------
+
+RENDER_TASK="$SCRIPT_DIR/render-task"
+
+render_task_fixture() {
+  # render_task_fixture <ledger-json-body> -> "<project>|<report-html>"
+  local body="$1" proj report
+  proj="$(mktemp -d "$tmp_root/rtproj.XXXXXX")"
+  mkdir -p "$proj/work/RT1"
+  printf '%s' "$body" >"$proj/work/RT1/ledger.json"
+  report="$tmp_root/rtreport-$$-$RANDOM.html"
+  "$RENDER_TASK" --task RT1 --project "$proj" --out "$report" >/dev/null 2>&1
+  printf '%s|%s' "$proj" "$report"
+}
+
+# A phase whose own `marked_at` is present but whose harvest never
+# happened (a real, confirmed shape: the mark and the harvest are two
+# separate calls, and sessions reliably make the former without reliably
+# also making the latter) must not render as a bare "0 tok" — that reads
+# as "this phase genuinely cost nothing," not "this phase's cost was never
+# recorded." Real elapsed duration since the previous phase is the signal.
+rt1="$(render_task_fixture '{
+  "phases": {
+    "research": {"marked_at": "2026-08-21T18:00:00Z", "tokens": {"input": 1000, "output": 500, "cache_create": 0, "cache_read": 0}},
+    "implement": {"marked_at": "2026-08-21T19:30:00Z", "tokens": {"input": 0, "output": 0, "cache_create": 0, "cache_read": 0}}
+  }
+}')"
+rt1_html="${rt1#*|}"
+if grep -q '0 tok (not recorded)' "$rt1_html" 2>/dev/null; then
+  pass "render-task: a marked-but-unharvested phase with real elapsed duration shows a (not recorded) caveat, not a bare 0 tok"
+else
+  fail "render-task: expected '0 tok (not recorded)' caveat for the unharvested implement phase, not found in $rt1_html"
+fi
+
+# briefing_word_count and briefing_line_count are written by two separate
+# `ledger set` calls in the same ship/SKILL.md step, not atomically — a
+# briefing missing only its line count must not silently lose its
+# over-cap flag along with it (round-4 bug: the whole block was nested
+# under the line-count field alone).
+rt2="$(render_task_fixture '{"phases": {}, "briefing_word_count": 805}')"
+rt2_html="${rt2#*|}"
+if grep -q 'briefing.md length' "$rt2_html" 2>/dev/null && grep -q 'over the ~1-page cap' "$rt2_html" 2>/dev/null; then
+  pass "render-task: an over-cap briefing word count still renders when the line count field is absent"
+else
+  fail "render-task: expected a briefing.md over-cap line despite missing briefing_line_count, not found in $rt2_html"
+fi
 
 if [[ $overall -eq 0 ]]; then
   echo "core-selftest: PASS"
