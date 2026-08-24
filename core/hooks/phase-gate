@@ -7,10 +7,12 @@
 # those two phases.
 #
 # Bash is included in the matcher (Phase E fix) because a shell redirect,
-# in-place editor, tee, cp/mv/install, truncate, or dd invoked via Bash
-# mutates files exactly like Edit/Write would, and the pre-fix Edit|Write-
-# only matcher let any of those bypass this gate entirely — see
-# core/hooks/_bash-write-targets and docs/tradeoffs.md's self-red-team.
+# in-place editor, tee, cp/mv/install, truncate, dd, or a deletion (rm,
+# unlink, git rm, git checkout -- <path>, git restore <path>) invoked via
+# Bash mutates files exactly like Edit/Write would, and the pre-fix
+# Edit|Write-only matcher let any of those bypass this gate entirely — see
+# core/hooks/_bash-write-targets and docs/tradeoffs.md's "Known limits"
+# ("The write-blocking hooks don't see every way to write a file").
 #
 # Project state consulted:
 #   .spine/current-task        — single line, the active task-id (or absent)

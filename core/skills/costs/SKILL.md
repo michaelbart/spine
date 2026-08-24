@@ -1,12 +1,19 @@
 ---
 name: costs
-description: Report cost instrumentation — untracked-commit ratio first, then per-task ledger aggregates.
+description: Report cost instrumentation — untracked-commit ratio first, then per-task ledger aggregates. Fast, numeric, in-chat — no browser, no HTML. For the same numbers in a visual, browsable dashboard alongside timeline/decisions/milestones, use /visualize instead.
 disable-model-invocation: true
 argument-hint: [--since <git-date>]
 ---
 
-You are running `/costs`. Parse an optional `--since <git-date>` from
-`$ARGUMENTS` (default: no lower bound — full history).
+You are running `/costs` — the fast, numeric, no-browser answer to "what
+is this costing." `/visualize` reports these exact same underlying
+numbers (`core/scripts/ledger`'s `aggregate`/`scan-untracked-ratio`), plus
+a Gantt timeline, decisions, capabilities, and milestones, as a browsable
+HTML page — reach for that instead when the audience wants to explore
+visually rather than read a chat summary; reach for this one when someone
+just wants the numbers, right now, without opening a file. Parse an
+optional `--since <git-date>` from `$ARGUMENTS` (default: no lower bound —
+full history).
 
 **Surface the untracked-commit ratio first, never buried** — this is the
 deliberate close for the blind spot Class 0 tasks leave:

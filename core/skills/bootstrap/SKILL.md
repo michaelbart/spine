@@ -238,14 +238,23 @@ to run.
 
 **If the engineer has a product spec, design handoff, or build plan** (a
 document describing what the product does and the intended build sequence),
-tell them two things: (1) save it as `docs/product-spec.md` — tasks will
-read it during research and implementation will be better for it; (2)
-extract the build sequence into `docs/vision.md` as a short milestone list
-— one line per milestone, e.g. "M0 — walking skeleton", "M1 — feature X",
-"M2 — feature Y." `/spine` reads `docs/vision.md` at idle to surface what's
-next after each milestone ships, and `/roadmap` (when run) uses it as the
-primary input for planning remaining milestones. Neither file has a
-required format — they are human-owned reference documents, not
-machine-generated. If the engineer has no such documents yet, they can
-always add them later; skip this note entirely for Jira-driven work where
-the ticket queue is the plan.
+tell them to save it as `docs/product-spec.md` — not to hand-extract a
+milestone list from it themselves. Two real mechanisms exist to turn it
+into decisions and milestones the *right* way, and `/design` (the next
+real setup command after this one) auto-detects `docs/product-spec.md` and
+offers to use it: (1) `/design` reads it alongside the charter so the six
+foundational categories are actually grounded in what the document says,
+not guessed at afterward; (2) once decisions exist, if the remaining shape
+is still genuinely foggy, `/wayfinder` charts it into a map of decision
+tickets and writes `docs/vision.md`'s milestone list once that map clears
+— `/roadmap` sequences it from there the same way it would a hand-written
+one. **Do not extract `docs/vision.md` yourself at this point** — no
+decisions exist yet, so there's nothing to ground a milestone breakdown
+in; a milestone list assembled before `/design` has run is exactly the
+failure mode `/wayfinder` exists to prevent (a large document read once,
+cold, and committed to in one pass, with no chance for the six
+architecture categories or a decision map to catch what a milestone-first
+read misses). If the engineer has no such document yet, they can always
+add `docs/product-spec.md` later — `/design` checks for it every run, not
+just the first. Skip this note entirely for Jira-driven work where the
+ticket queue is the plan.

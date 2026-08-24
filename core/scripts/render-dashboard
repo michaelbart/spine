@@ -204,6 +204,14 @@ gloss_for_commit() {
       echo "Architecture map stamped with a starting commit — the baseline future staleness checks compare against." ;;
     "spine: design stage"*)
       echo "Design session complete — foundational decisions adopted, first milestone scoped, before any feature code existed." ;;
+    "spine: prototype "*)
+      echo "A disposable prototype settled a visual/behavioral question — no plan, no floor, nothing shippable by construction." ;;
+    "spine: wayfinder "*"opened"*)
+      echo "A wayfinder map was charted — a large, foggy effort broken into decision tickets to resolve one session at a time." ;;
+    "spine: wayfinder "*"cleared"*)
+      echo "A wayfinder map cleared — every decision ticket resolved into real docs/vision.md entries and/or decision records." ;;
+    "spine: wayfinder "*"resolved"*)
+      echo "A wayfinder decision ticket was resolved — one step closer to a clear map." ;;
     "task: open "*)
       echo "New task opened — work begins." ;;
     "task: begin research"|"task: research complete"*|"task: research header corrected"*)

@@ -654,6 +654,46 @@ multi-repo plans) so the finding is unambiguous across repos.
 checks non-emptiness, exactly as it already does for a single-repo
 `file_line`.
 
+### 5.1 Shared adversary discipline (falsifier, security)
+
+The behavioral discipline below governs both adversary agents identically
+— `core/agents/falsifier.md` and `core/agents/security.md` each carry only
+a short pointer to this subsection (themed to "scenario"/"attack" as their
+own vocabulary needs) rather than their own copy of this prose. This is
+the canonical text; if the two agent files ever again show near-identical
+paragraphs instead of a pointer here, that's the exact duplication-drift
+this subsection exists to prevent — collapse it back to one copy, here.
+
+**Reporting discipline.** Every verdict needs evidence §5 above will
+accept: a `file:line` pair, or a command plus its actual captured output —
+not a description of what a command would probably show. A claim without
+one of those two evidence shapes gets dropped by `verdict-filter` before
+anyone reads it, so don't bother filing it; strengthen it or drop it
+yourself.
+
+**Verify each piece of evidence once.** Read the source, note the exact
+line/quote, and move on — do not re-run overlapping greps/seds against a
+span you've already confirmed matches, and never re-check the same quote
+twice looking for more confidence. If a quote won't match cleanly on the
+first check, shorten it to a shorter unambiguous span rather than
+iterating on the same one. The JSON reply is the deliverable;
+re-verification that can't change your answer only delays it.
+
+**Be efficient.** Reach a conclusion and act on it rather than extensively
+deliberating before each step — construct the case, check it, write the
+verdict, move to the next one. Prolonged internal reasoning before acting
+is not a substitute for more ground covered; when in doubt, spend the time
+on one more attack rather than re-weighing one you've already decided.
+
+**Reply shape**: your entire reply must be exactly one JSON object,
+nothing before or after it — the caller writes your reply verbatim to a
+file and runs it through `verdict-filter`. The example JSON block earlier
+in §5 is the exact shape both agents match; the only fields either agent
+file needs to state itself are `"agent"` (the literal string `"falsifier"`
+or `"security"`) and what belongs in `attacked` (each agent's own mandate
+determines that list's real content — see each file's own text). `verdicts`
+may be empty; `attacked` may never be.
+
 ## 6. Task-ID and commit trailer convention
 
 Task IDs are `<YYYYMMDD>-<kebab-slug>`, e.g. `20260807-shared-unit-types`.

@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Gate, commit, and brief a task that's passed verification. Invoked by /task at the ship phase, or directly as `/ship --bypass <reason>` for a genuine emergency.
+description: Gate, commit, and brief a task that's passed verification — re-grounds against what changed underfoot since research, runs the merge gate, distills/updates decisions, does milestone bookkeeping (flagged-finding triage, done-definition check, known-gap resolution), writes the delta briefing and PR description, and (multi-repo) drives a resumable staged commit across repos. Invoked by /task at the ship phase, or directly as `/ship --bypass <reason>` for a genuine emergency.
 disable-model-invocation: true
 argument-hint: <task-id> [--bypass <reason>]
 ---
@@ -12,6 +12,26 @@ templates at `${CLAUDE_SKILL_DIR}/../../templates/<name>`. Hand
 do **not** lexically collapse it to `.claude/`; `.claude/skills/ship` is a
 symlink into the spine core checkout, and collapsing the text yields a
 nonexistent `.claude/scripts/...` path.
+
+**This skill does six distinct jobs, in order — not one "gate and commit"
+step.** A single-repo, non-milestone, guided task still passes through all
+six; the ones that only apply conditionally say so inline. Use this as a
+map, not a summary — each job's own section is where the real detail
+lives:
+
+1. **§0 Ship-time re-grounding** — did anything this task's plan grounded
+   on change underfoot since research/plan was written.
+2. **§1 The merge gate** — the deterministic floor, zero open
+   `deviations.md` entries, unless `--bypass`.
+3. **§2 Decisions** — distill or update `docs/decisions/` records from
+   what this task actually taught.
+4. **§3 Milestone bookkeeping** (only if this task belongs to one) —
+   flagged-finding triage (§3a), the done-definition check on the final
+   member task (§3b), known-gap resolution (§3c).
+5. **§4/§4a Briefing and PR description** — the one-page human-facing
+   summary, and (if `open-pr` applies) the PR body.
+6. **§5/§6 Ledger, commit, and close-out** — including, multi-repo, a
+   resumable staged commit sequence across repos.
 
 ## 0. Ship-time re-grounding (Extension C §2.4)
 

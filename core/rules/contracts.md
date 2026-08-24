@@ -56,10 +56,10 @@ addition-shaped break — a newly *required* field is, line-for-line, a pure
 addition to the spec, indistinguishable from a newly *optional* one by this
 diff-only heuristic. Whether a new field is required or optional is
 stack-specific spec semantics this stack-blind check does not parse. This
-is a named, accepted gap (see `docs/tradeoffs.md`'s self-red-team) — a
-required-field addition must still be caught by the human review the plan
-approval and `/verify`'s adversary review already provide, not by this
-script.
+is a named, accepted gap (see `docs/tradeoffs.md`'s "Cross-repo work"
+section) — a required-field addition must still be caught by the human
+review the plan approval and `/verify`'s adversary review already provide,
+not by this script.
 
 **Registry staleness is a warning, not a gate.** `contract-touch` also
 flags a contract whose `producer_paths` glob currently matches zero files

@@ -22,6 +22,22 @@ any code exists) is closer to a milestone-sized review than a single task —
 expect 20–40 minutes reading through several category decisions and two
 adversary reports, more if a decision is genuinely contested.
 
+**`/prototype` is cheap by design.** No plan, no floor, no adversary
+review — the cost is whatever it takes to build the throwaway artifact
+itself, plus a few minutes writing down what it settled. If a "prototype"
+session is regularly running longer than that, it has quietly become
+implementation work and belongs in a real `/task` instead.
+
+**`/wayfinder` spreads its cost across many sessions, not one.** A single
+ticket resolution (the unit of work `/wayfinder` completes per session) is
+usually on the order of a `/design` category — a few minutes to tens of
+minutes depending on whether it's a `grilling` conversation, a delegated
+`research` question, or a full `/prototype` session run in between. The
+real cost worth watching is the map's *total* session count for one
+effort: a map that keeps spawning tickets faster than it resolves them is
+a sign the effort was never one map's worth of scope, not a reason to
+push through anyway.
+
 **Multi-repo and multi-engineer overhead scale differently.** A change
 spanning repos through `/workspace` pays a second floor run per affected
 repo and a contract check in both directions, but review stays flat — one
@@ -32,10 +48,6 @@ cost is a colleague's attention when a plan needs a second approver.
 
 ## Where this is the wrong tool
 
-- **Exploratory spikes and prototypes.** This system assumes research →
-  plan → implement is the right shape for a change. A spike whose entire
-  point is "I don't know what I want yet" fights that — skip `/task` for
-  it, or expect friction.
 - **Tiny repos you hold in your head.** The artifact trail (research.md,
   plan.md, decisions) exists to compensate for context loss across
   sessions and across people. A script you wrote yourself ten minutes ago
@@ -210,6 +222,19 @@ Conceded by design, not bugs waiting to be fixed:
   shape, don't get rewritten when the convention changes. An aggregate
   reader built later needs to tolerate the older shape too, or accept it
   will miss/misparse a project's earliest tasks.
+- **Secrets, credentials, and PII handling have no auto-loaded discipline
+  rule, unlike migrations/contracts/auth.** `core/rules/migrations.md`,
+  `core/rules/contracts.md`, and `core/rules/auth.md` all load automatically
+  when a matching path is read, because each has a reasonably reliable
+  directory-naming convention to scope a `paths:` glob against. Secrets/
+  credentials/PII don't — a credential can be touched from anywhere a
+  request is authenticated, a row is read, or a log line is written, with
+  no comparable naming convention to key off. `secret-scan` (content-based,
+  every floor run) and whatever a project's own calibration added to
+  `.spine/protected-paths.conf` are the two real mechanisms covering this
+  today; a fourth `core/rules/` file was deliberately not written to paper
+  over that gap with an unreliable glob that would look like coverage
+  without actually providing it.
 
 ## Working with other engineers
 
@@ -252,6 +277,16 @@ workspace root and a declared contract registry:
   computed correctly. A correctly-named, incorrectly-computed field passes
   cleanly — only the adversary review, which reads for behavior rather than
   structure, catches that class of bug.
+- **`contract-touch`'s breaking-change classification catches every
+  removal-or-modification-shaped break, never an addition-shaped one.**
+  `core/rules/contracts.md` requires a breaking spec change to decompose
+  into an expand/migrate/contract milestone, mechanically enforced by
+  `contract-touch` reading the spec diff — but a newly *required* field is,
+  line-for-line, a pure addition, indistinguishable from a newly *optional*
+  one by a diff-only heuristic. Whether a field is required or optional is
+  stack-specific spec semantics this stack-blind check doesn't parse; a
+  required-field addition has to be caught by plan approval or adversary
+  review instead, same as any other behavior-shaped gap above.
 - **A staged multi-repo ship has a real, bounded inconsistency window.**
   Between the first repo's commit and the last, an in-between state
   genuinely exists. It's safe only because the declared ship order
@@ -282,12 +317,14 @@ surprise:
 
 | Not built | Where it would attach |
 |---|---|
-| Multi-session or team-of-agents orchestration | `/task`'s single-session model is the whole surface today |
+| Parallel or team-of-agents orchestration | Every real flow — `/task`'s own phases, and `/wayfinder`'s ticket-by-ticket map — is strictly sequential: one active task, one active map, one session at a time. `/wayfinder` (below) narrows this row from where it used to stand — it adds *sequential* multi-session coordination through committed files (the same idiom `/task`'s milestone member-tasks already use, one level earlier), never parallelism. There is still no claim mechanism, no concurrent agents on one unit of work, and no cross-session locking beyond "one pointer file names the active one." |
 | Parallel work streams on one task | Calibration has the field; it's hardcoded off |
 | Cross-model adversary routing | Every agent inherits the session's model; nothing routes a different one in |
 | Scheduled cleanup of pre-existing duplication | Duplication checks only run against a task's own changed files, never sweep existing debt |
-| A product-spec layer | The charter deliberately stays at constraints, not a spec — `docs/vision.md`/a product spec are optional, human-authored, read but never generated |
+| A product-spec layer | The charter deliberately stays at constraints, not a spec — a product spec itself stays optional and human-authored, never generated. `docs/vision.md` is the one exception, and only partly: it's still never invented outright, but `/wayfinder` (added since this row was first written) does write it, one confirmed line at a time, when the milestone shape was genuinely unknown rather than just unwritten — see `core/skills/wayfinder/SKILL.md` §4. |
 | A concurrency or stress-test lane | The smoke-test capability is the insertion point if this gets built |
 | Deterministic detection of undeclared cross-repo coupling | Only the adversary review looks for this today; no mechanical scan does |
 | A workspace-wide cost rollup across member repos' own task histories | Each repo's own `/costs` works; nothing sums across a workspace yet |
 | One repo belonging to more than one workspace | Unsupported — a workspace assumes exclusive ownership of its member repos |
+| Abandoning a task (a terminal state short of `done`) | `work/<task-id>/state` today only ever reaches `done` via `/ship`; nothing lets an engineer close out a task they've decided not to finish. Deceptively not a one-file fix: at least five existing mechanisms treat "not `done`" as "still open" and would each need to learn a new `abandoned` state — `core/skills/tasks/SKILL.md`'s own open-task definition, `core/scripts/next-milestone-task`'s milestone-completeness check, `core/scripts/claims-check`'s live-claims predicate, `render-dashboard`'s timeline, and `.spine/current-task` clearing if the abandoned task is the active one. The real design fork underneath all of that: when a milestone's own member task gets abandoned, does that slot need a brand-new replacement task before the milestone can ever reach done, or does the milestone itself need re-scoping through `/roadmap`? That's a design decision on the order of choosing `/wayfinder`'s ticket types, not a mechanical add — give it its own design pass before touching any of the five files above. |
+| Reverting a shipped task | No mechanism today undoes a task after `/ship` — the only path is a fresh, manually-authored task that happens to reverse the change. Not even the framing is settled yet: is "rollback" a `git revert` of the ship commit(s) (fast, but bypasses research/plan/verify for the undo itself — exactly the kind of unreviewed change spine exists to prevent), or a real compensating task that goes through the normal classify → research → plan → verify → ship discipline (safer, but slower, and still has to decide what happens to anything the original task's `plan.md` cited — a decision's `## Implementing paths`, a milestone's `## Known gaps for future member tasks` entry it resolved, a `docs/decisions/` record distilled from it)? Bigger and less scoped than abandoning a task above; needs its own dedicated design conversation, not a bolt-on. |

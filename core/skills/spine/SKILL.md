@@ -66,12 +66,74 @@ and reported a problem," and "could not run at all":
   bill. Low-stakes and read-only, so continue to the report below — just don't
   claim health you couldn't verify.
 
-## 3. Now report: idle, or a task in progress
+## 3. Handoff staleness (read-only, additive)
 
-If `.spine/current-task` does **not** exist -> idle, show the menu (§3.1). If
-it **does** exist -> a task is in progress, show the status (§3.2).
+A real, recurring miss: a product-spec/design-handoff document gets saved
+at `docs/product-spec.md` and either never gets reconciled through
+`/design --handoff` at all, or gets *changed* (a supplementary delivery,
+a revision) after `/design` already consumed an earlier version of it —
+and nothing notices, because "did the handoff change" was previously
+something only a human remembering to check would catch. This check
+closes that mechanically, the same way the install-health check above
+catches core skew instead of hoping someone notices:
 
-### 3.1 Idle — milestone check, then the menu
+1. If `docs/product-spec.md` doesn't exist, skip this section silently —
+   nothing to check.
+2. If `docs/decisions/D-*.md` don't exist yet either, skip silently too —
+   `/design` hasn't run yet at all, and its own §0 preflight already
+   auto-detects `docs/product-spec.md` and offers it as `--handoff` the
+   moment it does run; nothing for `/spine` to add before then.
+3. Otherwise, decisions exist — `/design` has run at least once. Read
+   `.spine/handoff-consumed-sha` if it exists (line 1 the path it stamped,
+   line 2 the hash). Compute `git hash-object docs/product-spec.md`'s
+   current value.
+   - **No stamp file at all** — decisions exist but this document was
+     never consumed via `--handoff`. Say so plainly: *"`docs/
+     product-spec.md` exists but doesn't look like it's been reconciled
+     through `/design --handoff` — worth checking whether it should be."*
+   - **Stamp exists, path matches, hash differs** — the document changed
+     since `/design` last read it. Say so plainly: *"`docs/product-spec.md`
+     has changed since `/design` last reconciled it — consider `/design
+     --handoff docs/product-spec.md` before planning further work from
+     it."*
+   - **Stamp exists and hash matches** — current as of the last `/design`
+     run; say nothing, same as a clean install-health check.
+   - **Stamp names a different path** — a second, distinct handoff
+     document exists at `docs/product-spec.md` that was never stamped at
+     all under its own name; treat this the same as "no stamp file,"
+     scoped to `docs/product-spec.md` specifically.
+
+Never resolve this yourself — report it and move on, same read-only
+stance as every other check in this skill. If `git hash-object` couldn't
+run at all, say so plainly and skip this check rather than guessing.
+
+## 4. Wayfinder map in progress (read-only, additive)
+
+If `.spine/current-wayfinder` exists, report it before anything else
+below — independent of whether a task is also active, the same way the
+workspace member-repo milestone check (§5.1) is additive to the
+workspace-root callout rather than replacing it:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/wayfinder-frontier --map <map-id> --project <project root>
+```
+
+Report the map id, its `## Destination` one-liner (from `work/wayfinder/
+<map-id>/map.md`), and the frontier script's outcome in plain words —
+"N tickets open, ready to work: T2, T4" for `FRONTIER`, "every ticket
+resolved — run `/wayfinder` to write it into `docs/vision.md`" for
+`CLEARED`, or "stalled — every open ticket has an unresolved blocker, run
+`/wayfinder` to sort it out" for `STALLED`. Never resolve or advance
+anything here — same read-only stance as every other report this skill
+gives. If the script could not run at all, say so plainly and skip this
+callout rather than guessing.
+
+## 5. Now report: idle, or a task in progress
+
+If `.spine/current-task` does **not** exist -> idle, show the menu (§5.1). If
+it **does** exist -> a task is in progress, show the status (§5.2).
+
+### 5.1 Idle — milestone check, then the menu
 
 "Idle" only means no task is *currently open* — it doesn't mean there's
 nothing in flight. Before the generic menu, check whether the project is
@@ -100,8 +162,8 @@ mid-milestone, read-only, exactly like every other check in this skill:
      open it: `` /task <description> --milestone <id> ``.
    - If it's a real task id whose `state` isn't `done`, name that task and its
      phase and point at `/task` (no argument) to resume it, or the
-     phase-appropriate next command per §3.2's transition table.
-5. This is a report, not a gate (§4 applies here too) — it never opens the
+     phase-appropriate next command per §5.2's transition table.
+5. This is a report, not a gate (§5 applies here too) — it never opens the
    task itself, only names the command that would.
 
 #### Member-repo milestone check (workspace only)
@@ -152,14 +214,16 @@ only commands that exist in this install (they're symlinked under
   capabilities, drift) in a browser.
 - **`/tasks`** — list every open task and its phase.
 - **`/costs`** — what spine is costing, drift first.
-- **`/design`**, **`/ratchet`**, **`/remap`** — foundational design, converting
-  a recurring friction into a check, and regenerating the map; mention these
-  only briefly, as "also available."
+- **`/design`**, **`/wayfinder`**, **`/prototype`**, **`/ratchet`**,
+  **`/remap`** — foundational design; charting a large foggy effort into a
+  map of decision tickets; a disposable spike to settle a visual/
+  behavioral question; converting a recurring friction into a check; and
+  regenerating the map; mention these only briefly, as "also available."
 
 Keep it to what a confused engineer needs: the front door and the two or three
 things they'd want next. Don't reproduce the whole README.
 
-### 3.2 In progress — status and the single next action
+### 5.2 In progress — status and the single next action
 
 Read the active task's real state — never from memory, always from disk (some
 of these files may be absent; a missing `deviations.md` just means no
@@ -202,7 +266,7 @@ Resuming is `/task`'s job, not yours — if they want to continue the work, the
 next action you name (or `/task` with no argument, which offers to resume) is
 how, but `/spine` itself never advances anything.
 
-## 4. Never editorialize
+## 6. Never editorialize
 
 Like `/tasks`, this skill reports and stops. It never blocks, never fixes,
 never decides. "No active task — here's how to start," "you're mid-M1, next

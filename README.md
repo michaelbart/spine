@@ -31,6 +31,14 @@ and what here exists to catch each one:
 - The engineer stops knowing what their own product is → three touchpoints
   (classify, approve the plan, read the briefing) keep a human oriented,
   without turning into a rubber stamp.
+- A large, foggy effort gets committed to in one blind pass — a whole
+  roadmap guessed from a document nobody's actually worked through yet →
+  `/wayfinder` charts it as a map of decision tickets instead, resolved
+  one at a time, each with the tool that actually fits it.
+- A spike whose whole point is "I don't know what I want yet" gets forced
+  through research → plan → implement anyway, or done off to the side
+  where nothing tracks it → `/prototype` is a disposable, ungated escape
+  hatch built for exactly that, instead of undocumented friction.
 
 None of this replaces an engaged engineer — it's a floor, not a substitute
 for judgment. See `docs/tradeoffs.md` for where this is the wrong tool and
@@ -118,12 +126,20 @@ true` — you type them, the model doesn't reach for one on its own.
 
 **Set up — run once per project, or when planning what's next**
 
+Roughly top-to-bottom below: install, then design, then figure out what to
+build, then build it. `/wayfinder` and `/prototype` are the two
+conditional steps in that sequence — reach for them only when the plain
+path (`/roadmap` sequencing an already-known list; plain discussion
+settling a category) genuinely isn't enough, never by default.
+
 | Command | Args | What it does |
 |---|---|---|
 | `/bootstrap` | `--project <path>` | Install spine into a new, near-empty project. |
 | `/adopt` | `--project <path>` | Install spine into an existing codebase. Re-run anytime to recalibrate. |
 | `/design` | `[--project <path>] [--handoff <path>]` | Facilitated session turning a charter into foundational decisions and milestone 0. `--handoff` feeds it a product spec (first run) or a later design delivery to reconcile against what's already decided (re-entry). |
+| `/wayfinder` | `[--map <map-id>]` | For an effort too large and foggy for `/design`'s six categories or `/roadmap`'s known list: charts it as a map of decision tickets, resolved one per session, until it clears into real `docs/vision.md` entries and (where warranted) real decisions. |
 | `/roadmap` | `[--after M<n>]` | Sequences the next milestones from `docs/vision.md`, absorbing anything flagged along the way. You confirm the order before anything's written. |
+| `/prototype` | `<question>` | Build a concrete, disposable artifact to settle a visual/behavioral question discussion can't. No class, no plan, no floor, no ship — the declared exception to research → plan → implement, usable any time. |
 | `/workspace` | `--root <path> --repo <name>=<path> ...` | Multi-repo only — sets up a workspace root coordinating several repos through declared contracts. |
 
 **Every task**
@@ -133,7 +149,7 @@ true` — you type them, the model doesn't reach for one on its own.
 | `/intake` | `<ticket-key-or-url>` | Front door for ticketed work — sizes it, proposes a class, routes into a trace or a `/task`. |
 | `/task` | `[description] [--milestone <id>]` | The default way work gets done: classify → research → plan (you approve it) → implement → verify → ship. Run it bare to auto-continue the next queued task in the current milestone. |
 | `/verify` | `<task-id>` | Runs the floor and adversary review, writes `verify.md`. You type this yourself when `/task` asks. |
-| `/ship` | `<task-id> [--bypass <reason>]` | Gates, commits, writes the briefing and PR description. You type this yourself when `/task` asks, or use `--bypass` for a genuine emergency (loud and recorded, never silent). |
+| `/ship` | `<task-id> [--bypass <reason>]` | Six jobs in one command: re-grounds against what changed underfoot, gates, distills decisions, does milestone bookkeeping, writes the briefing and PR description, commits. You type this yourself when `/task` asks, or use `--bypass` for a genuine emergency (loud and recorded, never silent). |
 
 `/task` walks through six steps, in plain terms:
 
@@ -164,12 +180,12 @@ true` — you type them, the model doesn't reach for one on its own.
 |---|---|---|
 | `/spine` | *(none)* | "Where am I, what do I do next." Run this when unsure. |
 | `/tasks` | *(none)* | Lists every open task — owner, class, phase, claims, flags. |
-| `/costs` | `[--since <date>]` | Cost and drift instrumentation, not a leaderboard. |
+| `/costs` | `[--since <date>]` | Fast numeric answer, in chat, no browser — untracked ratio, token/drift instrumentation, not a leaderboard. For the visual version, `/visualize`. |
 | `/ratchet` | `<description>` | Turns a finding that's genuinely recurred twice into a deterministic check. |
 | `/remap` | *(none)* | Regenerates `docs/map.md` from real repo state. |
 | `/update` | `[--bump-pin]` | Syncs an installed project to this checkout after a `git pull`. |
-| `/task-report` | `<task-id>` | Self-contained HTML view of one task's record. |
-| `/visualize` | `[--project <path>]` | Project-wide HTML dashboard — timeline, decisions, milestones, drift. |
+| `/task-report` | `<task-id>` | One task's HTML record, standalone. `/visualize` already generates this for every task as a side effect — use this only for just one, without rendering the whole dashboard. |
+| `/visualize` | `[--project <path>] [--since <date> \| --all]` | Project-wide HTML dashboard — timeline, decisions, milestones, and the same drift numbers `/costs` reports, in one browsable page. |
 
 ## Working with other engineers
 

@@ -353,6 +353,48 @@ falsifier burning budget hand-bootstrapping — surfaced in `verify.md` per the
 "never silently skip a gate" discipline, same as any other degraded
 capability.)
 
+## 3.5. Secret scan on adversary evidence
+
+Adversary verdict evidence can carry real captured command output
+(`core/ADAPTER-CONTRACT.md §5`'s `{"kind":"command","output":"..."}`
+evidence shape) — a debugging command constructed to prove a scenario can
+print an env var, a connection string, or a token, and that output is
+written verbatim into `work/<task-id>/artifacts/<agent>-verdict-raw.json`
+and `<agent>-verdict.json`, both committed as part of the task folder.
+Nothing else catches this: step 1's floor (including `secret-scan`) runs
+*before* the adversaries produce these files, scoped to the diff, and
+never sees them. This step exists because without it, nothing ever
+re-scans after they're written.
+
+For every verdict file step 3 just wrote this pass (raw and filtered, only
+the agents that actually ran or actually re-wrote a file this pass — a
+`REUSED` verdict wrote nothing new and has nothing new to scan here):
+
+```
+printf '%s\n' work/<task-id>/artifacts/<agent>-verdict-raw.json \
+  work/<task-id>/artifacts/<agent>-verdict.json \
+  | .spine/adapters/secret-scan
+```
+
+**Exit 0**: clean, record it as a one-line pass in verify.md's "Adversary
+evidence secret scan" section, continue. **Non-zero**: a real, serious
+finding — quote `secret-scan`'s own diagnostics verbatim in that section,
+and say plainly, in the same place: **redacting the flagged file is not
+enough — a captured secret was, by definition, real at the moment it was
+captured, and only the person who owns that credential can rotate it;
+spine can flag the exposure, it cannot undo it.** This is a `/verify` FAIL
+reason (step 6), distinct from every other one — report it exactly as
+"secret detected in adversary evidence" so `/task`'s FAIL handling routes
+back to implementation the same as any other failure, and the human sees
+the rotation instruction, not a generic fail.
+
+If `secret-scan` is not `implemented` in `.spine/capabilities.json`
+(unusual on any project that ran `/design` — its §2 requires this
+capability `implemented`, never left at a placeholder status), record it
+in verify.md's "Capability gaps" section like any other degraded
+capability rather than blocking — this step degrades the same way every
+other capability-gated check in this file already does.
+
 ## 4. Conformance
 
 Single-repo:
@@ -416,6 +458,10 @@ this document quotes scripts, it doesn't paraphrase them:
   (`core/skills/ship/SKILL.md` §3a) treats an absent field as `not_fixed`
   specifically so a verdict this step forgot to mark never silently reads
   as resolved.
+- **Adversary evidence secret scan** (step 3.5): one line, pass or fail
+  with `secret-scan`'s own diagnostics quoted verbatim on fail, plus the
+  redact-is-not-enough/rotate-the-credential note from step 3.5 — never
+  omit that note on a fail, it's the whole reason this section exists.
 - Capability gaps: every capability in `.spine/capabilities.json` marked
   `unavailable`/`not-applicable` that this class would otherwise have run
   (Class 2 also implies `mutate` and, per the migration lane,
@@ -449,8 +495,10 @@ silently kept an arbitrary one of several scores while discarding the rest) and
 
 Reply to the caller with exactly: `PASS` or `FAIL`, plus the one-line reason
 if FAIL (which capability, which repo's floor, an ungated consumer's failed
-`contract-check`, step 1b's breaking-change gate, or step 1c's `ui-render`
-failure — "adversaries ran, see verify.md" is not a FAIL by itself —
-adversary findings don't fail verify; they inform `/ship` and the
-briefing). `/task` decides what happens next; this skill's job ends at
+`contract-check`, step 1b's breaking-change gate, step 1c's `ui-render`
+failure, or step 3.5's "secret detected in adversary evidence" — "adversaries
+ran, see verify.md" is not a FAIL by itself — adversary *findings* don't
+fail verify, they inform `/ship` and the briefing; a secret in the
+adversary's own *evidence* is a different thing entirely and does fail
+verify). `/task` decides what happens next; this skill's job ends at
 `verify.md` plus that one-line verdict.

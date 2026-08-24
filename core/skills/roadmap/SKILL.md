@@ -31,6 +31,12 @@ confirms the sequence before you write any file. Nothing is written until
 > Paste your build plan or product spec's build-order section here, and
 > I'll write `docs/vision.md` for you. Or create it yourself and re-run
 > `/roadmap`.
+>
+> If you don't actually know the milestone sequence yet — the effort is
+> large and the path is still genuinely foggy, not just unwritten —
+> `/wayfinder` is the better starting point: it charts it as a map of
+> decision tickets and writes `docs/vision.md`'s planned-milestones
+> section once that map clears. Come back here once it has.
 
 If the human pastes content, extract the milestone sequence, write
 `docs/vision.md` (just the milestone list, no other content required —

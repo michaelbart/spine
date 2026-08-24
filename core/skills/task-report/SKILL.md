@@ -1,11 +1,15 @@
 ---
 name: task-report
-description: Generate a self-contained HTML visualization of one task's work/ record — timeline, deviations, adversary activity, floor results. Read-only, never a gate.
+description: Generate a self-contained HTML visualization of one task's work/ record — timeline, deviations, adversary activity, floor results. Read-only, never a gate. /visualize already generates this same file for every task as a side effect of rendering the project dashboard — reach for this command only when you want just one task's report without rendering the whole dashboard.
 disable-model-invocation: true
 argument-hint: <task-id> [--project <path>]
 ---
 
-You are running `/task-report`. `$ARGUMENTS` is `<task-id>` plus an
+You are running `/task-report`. `/visualize` (the project-wide dashboard)
+already generates this exact file for every task missing one, as a side
+effect — this command exists for the narrower case: one task's report,
+freshly regenerated, without touching or rendering the rest of the
+project's dashboard. `$ARGUMENTS` is `<task-id>` plus an
 optional `--project <path>` (default: current working directory). If the
 task id is missing, ask for one before doing anything else.
 

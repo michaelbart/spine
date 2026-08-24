@@ -10,13 +10,15 @@
 # not-class-2 branch applies — this is the Class 0 backstop from §2.2.
 #
 # Bash is included in the matcher (Phase E fix) because a shell redirect,
-# in-place editor, tee, cp/mv/install, truncate, or dd targeting a protected
-# path bypassed this gate entirely under the pre-fix Edit|Write-only
-# matcher — see core/hooks/_bash-write-targets and docs/tradeoffs.md's
-# self-red-team. A Bash write whose target can't be confidently resolved is
-# denied outright (not "no match found") — we cannot prove it doesn't touch
-# a protected path, so this gate does not extend it the benefit of the
-# doubt it would give a plain, resolvable path.
+# in-place editor, tee, cp/mv/install, truncate, dd, or a deletion (rm,
+# unlink, git rm, git checkout -- <path>, git restore <path>) targeting a
+# protected path bypassed this gate entirely under the pre-fix Edit|Write-
+# only matcher — see core/hooks/_bash-write-targets and docs/tradeoffs.md's
+# "Known limits" ("The write-blocking hooks don't see every way to write a
+# file"). A Bash write (or delete) whose target can't be confidently
+# resolved is denied outright (not "no match found") — we cannot prove it
+# doesn't touch a protected path, so this gate does not extend it the
+# benefit of the doubt it would give a plain, resolvable path.
 #
 # Project state consulted:
 #   .spine/protected-paths.conf — one glob per line; `#` starts a comment;

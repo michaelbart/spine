@@ -48,6 +48,19 @@ re-entry mode"** below instead, then converge at §5. (`--handoff` with no
 prior decisions and no charter yet is the one combination that can't
 happen — `/design` still requires `docs/charter.md` above regardless.)
 
+**If `--handoff` was *not* given, check for `docs/product-spec.md` before
+proceeding without one.** `/bootstrap`'s own install note tells engineers
+to save a product spec or design handoff there; if it exists, this session
+almost certainly should be grounded on it. Ask plainly: *"`docs/
+product-spec.md` exists — use it as this session's `--handoff` grounding?"*
+On yes, proceed exactly as `--handoff docs/product-spec.md` would (first
+run or re-entry mode, per the branch above — whichever this actually is).
+On no, proceed without it, but say so explicitly rather than silently
+dropping a real document that was sitting right there — the same
+never-silent standard the rest of this skill holds itself to. Skip this
+check entirely if `docs/product-spec.md` doesn't exist, or if `--handoff`
+was already given (nothing to ask, it's already grounded).
+
 ## 1. Walk the six foundational categories
 
 **(Skip this section through §4 entirely in handoff re-entry mode — see
@@ -71,6 +84,19 @@ it follows from), let the human confirm, revise, or defer it. A category
 doesn't have to produce a decision — deferring it to `docs/decisions/
 DEFERRED.md` (§3) is a legitimate, first-class outcome, not a fallback for
 running out of time.
+
+**If a category's real answer turns on a visual or behavioral question no
+amount of discussion will settle** — not "which architecture," but "what
+does this actually feel like" — say so and suggest `/prototype
+<question>` before deciding it, rather than proposing an answer neither
+of you can really evaluate yet. That's a real, human-typed command, not
+something this session invokes on its own; tell the human to run it, then
+resume `/design` and continue this category once it comes back, citing
+`work/prototypes/<id>/findings.md` in the decision's `## Context` the same
+way a charter line would be cited. This is the exception, not the norm —
+most categories are architectural and settle by the propose/confirm loop
+above; reach for `/prototype` only when that loop genuinely can't produce
+a defensible answer.
 
 For each confirmed category, write `docs/decisions/D-<n>-<kebab-slug>.md`
 from `${CLAUDE_SKILL_DIR}/../../templates/decision.md` (next id: one more
@@ -217,16 +243,29 @@ capability-targets check are calibrated for a first run and don't apply
 to a scoped follow-up. This pass is done when every kept verdict from §6
 has a resolved outcome (revise or recorded override) — nothing more.
 
+**Stamp the handoff as consumed** — write `.spine/handoff-consumed-sha`:
+line 1 the handoff path exactly as passed to `--handoff`, line 2 `git
+hash-object <path>`'s output. This is what lets `/spine` later notice if
+this same document changes again without going through `/design
+--handoff` a second time (`core/skills/spine/SKILL.md`'s own staleness
+check) — overwrite any prior stamp for this same path; a stamp for a
+*different* path (a second, distinct handoff document) is a separate
+concern §0's own product-spec.md check would have already surfaced, not
+something this line silently loses.
+
 **§8, this mode's own ending.** `git add -- docs/decisions/
-docs/design-summary.md` (never `work/M0/`, `.spine/capabilities.json`, or
-`.spine/adapters/` — this mode doesn't touch any of them) plus
-`.spine/hooks/design-registry-diff` if this run created or updated it.
-Commit message: `"spine: design handoff <handoff basename> — <n>
-decisions added, <m> revised"`. Tell the human how many of each, what (if
-anything) got deferred or overridden, and that **`/roadmap`** — not
-`/task --milestone M0` — is the next command: the new `Leaves open:` lines
-are real citable follow-ons now, and `/roadmap`'s existing absorption step
-picks them up without any change on its end.
+docs/design-summary.md .spine/handoff-consumed-sha` (never `work/M0/`,
+`.spine/capabilities.json`, or `.spine/adapters/` — this mode doesn't
+touch any of them) plus `.spine/hooks/design-registry-diff` if this run
+created or updated it. Commit message: `"spine: design handoff <handoff
+basename> — <n> decisions added, <m> revised"`. Tell the human how many
+of each, what (if anything) got deferred or overridden, and the next
+command: if what's left to plan is a known milestone list, **`/roadmap`**;
+if the remaining shape is still genuinely foggy (this handoff opened up
+more than it closed), **`/wayfinder`** first — either way, not `/task
+--milestone M0`. The new `Leaves open:` lines are real citable follow-ons
+now, and both `/roadmap`'s absorption step and a `/wayfinder` map seeded
+from them pick them up without any change on their end.
 
 ## 5. Design review
 
@@ -349,15 +388,26 @@ why this is a triage aid, never a citation target.
 see "Handoff re-entry mode" above. What follows is for a first run,
 `--handoff`-grounded or not.)**
 
+**If this run was `--handoff`-grounded**, stamp it consumed first — same
+mechanism the re-entry mode uses (see its own "Stamp the handoff as
+consumed" note above): write `.spine/handoff-consumed-sha`, line 1 the
+handoff path, line 2 `git hash-object <path>`'s output. Skip this
+entirely if `--handoff` wasn't used this run — there is nothing to stamp.
+
 One commit — same untrailered, setup-shaped precedent `/bootstrap`'s own
 install commit already uses (this is design-stage setup, not a task; there
 is no `Spine-Task:` id to attach yet):
 
 ```
 git add -A -- docs/charter.md docs/design-summary.md docs/decisions/ \
-  work/M0/ work/design/ .spine/capabilities.json .spine/adapters/
+  work/M0/ work/design/ .spine/capabilities.json .spine/adapters/ \
+  .spine/handoff-consumed-sha
 git commit -m "spine: design stage — <n> decisions adopted, milestone 0 defined"
 ```
+
+(`git add -A` already picks up `.spine/handoff-consumed-sha` if it was
+just written; it's named explicitly here only for clarity, same as every
+other path already listed.)
 
 Tell the human: how many decisions were adopted (and the cap they're
 against, from `design-gate`'s own output), what's in `DEFERRED.md` and

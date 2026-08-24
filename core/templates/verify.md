@@ -129,6 +129,18 @@ Attacked: <the `attacked` list, verbatim>
 
 Verdicts kept: `<n>` · dropped: `<n>`
 
+## Adversary evidence secret scan
+
+<!-- core/skills/verify/SKILL.md §3.5. Verbatim from core/scripts
+     secret-scan run against every verdict file (raw + filtered) written
+     this pass — a REUSED verdict wrote nothing new and has nothing new
+     scanned here. Pass: one line. Fail: secret-scan's own diagnostics
+     quoted verbatim, plus the redact-is-not-enough/rotate-the-credential
+     note — never omit that note on a fail. This is a /verify FAIL reason,
+     unlike an ordinary adversary finding above. DEGRADED (not blocking)
+     if secret-scan itself isn't `implemented` — recorded in Capability
+     gaps below instead, same as any other degraded capability. -->
+
 ## Capability gaps
 
 <!-- Every capability marked `unavailable`/`not-applicable` in

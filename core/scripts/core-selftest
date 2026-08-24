@@ -84,7 +84,11 @@
 #     in-flight status via next-milestone-task reuse, multi-line prose
 #     folded onto one line, multi-line HTML comments stripped, a
 #     gap-free milestone contributes nothing, no-milestones and
-#     nonexistent-project exit codes).
+#     nonexistent-project exit codes), and wayfinder-frontier (FRONTIER/
+#     CLEARED/STALLED resolution derived from Status+Blocked-by, never a
+#     stored "blocked" label; a resolved blocker un-stalls its dependent
+#     without anything hand-flipping it; a dangling Blocked-by reference
+#     fails loudly instead of being treated as unblocked).
 #     This closes the round-5 audit's scripts-coverage backlog: every
 #     script in core/scripts/* now has permanent regression coverage.
 #
@@ -778,6 +782,39 @@ if command -v python3 >/dev/null 2>&1; then
 else
   echo "hooks: SKIP NFC/NFD case — python3 not on PATH"
 fi
+
+# Deletion coverage: six audit rounds tested every *write* bypass shape
+# (../, symlink, alias, NFC/NFD, dep-gate's missing Bash branch, a bash-3.2
+# crash) but never a *delete* one — rm/unlink/git-rm/git-checkout--/git-
+# restore previously reached protected paths, manifest files, and
+# out-of-task-dir locations with zero scrutiny. Same fixture as above.
+
+hook_check "path-escalate denies a Bash rm of a protected path" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"rm '"$hook_real"'/src/auth/secret.txt"}}')" deny
+
+hook_check "path-escalate allows a Bash rm of an unrelated path (control)" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"rm '"$hook_real"'/src/other/scratch.txt"}}')" allow
+
+hook_check "dep-gate asks on a Bash rm of a #manifest path" \
+  "$(hook_run "$DEP_GATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"rm '"$hook_real"'/pkg/manifest.json"}}')" ask
+
+hook_check "phase-gate denies a Bash rm outside the task folder during research/plan" \
+  "$(hook_run "$PHASE_GATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"rm '"$hook_real"'/src/other/scratch.txt"}}')" deny
+
+hook_check "path-escalate denies a Bash git rm of a protected path" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"git rm -r --cached '"$hook_real"'/src/auth/secret.txt"}}')" deny
+
+hook_check "path-escalate denies a Bash git checkout -- of a protected path" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"git checkout -- '"$hook_real"'/src/auth/secret.txt"}}')" deny
+
+hook_check "path-escalate allows a bare git checkout <branch> (disclosed non-goal, no -- present)" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"git checkout main"}}')" allow
+
+hook_check "path-escalate denies a Bash git restore of a protected path" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"git restore --staged '"$hook_real"'/src/auth/secret.txt"}}')" deny
+
+hook_check "path-escalate allows a Bash mv whose destination filename merely contains \"rm\" as a substring (not an rm invocation)" \
+  "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"mv '"$hook_real"'/src/other/a.txt '"$hook_real"'/src/other/some-rm-thing.txt"}}')" allow
 
 # ---------------------------------------------------------------------------
 # fuzz: property-based coverage for _workspace-route's path functions
@@ -2870,6 +2907,101 @@ if [[ "$gr_noargs_code" == "2" ]]; then
   pass "gaps-report: nonexistent --project directory -> exit 2"
 else
   fail "gaps-report: nonexistent --project -> expected exit 2, got $gr_noargs_code"
+fi
+
+# ---------------------------------------------------------------------------
+# wayfinder-frontier: FRONTIER/CLEARED/STALLED resolution, derived-not-
+# stored blocked state, dangling-reference detection
+# ---------------------------------------------------------------------------
+
+WAYFINDER_FRONTIER="$SCRIPT_DIR/wayfinder-frontier"
+
+wf_map() {
+  # wf_map <proj> <map-id> <table-row-lines...> — writes a minimal
+  # work/wayfinder/<map-id>/map.md with the given ticket rows already
+  # inside the MACHINE fence, same shape core/templates/wayfinder-map.md
+  # defines.
+  local proj="$1" map="$2"; shift 2
+  mkdir -p "$proj/work/wayfinder/$map"
+  {
+    echo "# Wayfinder map \`$map\`: test fixture"
+    echo
+    echo "## Tickets"
+    echo
+    echo "<!-- MACHINE: wayfinder-tickets -->"
+    echo
+    echo "| Ticket | Type | Status | Blocked-by | Question |"
+    echo "|---|---|---|---|---|"
+    printf '%s\n' "$@"
+    echo
+    echo "<!-- next-ticket-id: 99 -->"
+  } >"$proj/work/wayfinder/$map/map.md"
+}
+
+wf_proj="$(mktemp -d "$tmp_root/wfproj.XXXXXX")"
+wf_map "$wf_proj" W1 \
+  '| T1 | grilling | resolved | none | already done |' \
+  '| T2 | prototype | open | none | ready to go |' \
+  '| T3 | research | open | T2 | blocked on T2 |'
+out="$("$WAYFINDER_FRONTIER" --map W1 --project "$wf_proj" 2>&1)"
+if [[ "$out" == "FRONTIER T2" ]]; then
+  pass "wayfinder-frontier: an unblocked open ticket is the frontier, a blocked one is excluded"
+else
+  fail "wayfinder-frontier: expected 'FRONTIER T2', got: $out"
+fi
+
+wf_proj="$(mktemp -d "$tmp_root/wfproj.XXXXXX")"
+wf_map "$wf_proj" W1 \
+  '| T1 | grilling | resolved | none | already done |' \
+  '| T2 | prototype | resolved | none | ready to go |' \
+  '| T3 | research | open | T2 | blocked on T2 |'
+out="$("$WAYFINDER_FRONTIER" --map W1 --project "$wf_proj" 2>&1)"
+if [[ "$out" == "FRONTIER T3" ]]; then
+  pass "wayfinder-frontier: resolving a blocker un-stalls its dependent with no stored 'blocked' status to flip"
+else
+  fail "wayfinder-frontier: expected 'FRONTIER T3' once T2 resolves, got: $out"
+fi
+
+wf_proj="$(mktemp -d "$tmp_root/wfproj.XXXXXX")"
+wf_map "$wf_proj" W1 \
+  '| T1 | grilling | resolved | none | already done |' \
+  '| T2 | prototype | resolved | none | ready to go |' \
+  '| T3 | research | resolved | T2 | blocked on T2 |'
+out="$("$WAYFINDER_FRONTIER" --map W1 --project "$wf_proj" 2>&1)"
+if [[ "$out" == "CLEARED" ]]; then
+  pass "wayfinder-frontier: every ticket resolved -> CLEARED"
+else
+  fail "wayfinder-frontier: expected 'CLEARED', got: $out"
+fi
+
+wf_proj="$(mktemp -d "$tmp_root/wfproj.XXXXXX")"
+wf_map "$wf_proj" W1 \
+  '| T1 | grilling | open | T2 | cycle a |' \
+  '| T2 | grilling | open | T1 | cycle b |'
+out="$("$WAYFINDER_FRONTIER" --map W1 --project "$wf_proj" 2>&1)"
+if [[ "$out" == "STALLED T1 T2" ]]; then
+  pass "wayfinder-frontier: open tickets that only block each other -> STALLED, never silently worked around"
+else
+  fail "wayfinder-frontier: expected 'STALLED T1 T2', got: $out"
+fi
+
+wf_proj="$(mktemp -d "$tmp_root/wfproj.XXXXXX")"
+wf_map "$wf_proj" W1 \
+  '| T1 | grilling | open | T9 | dangling reference |'
+wf_code=0
+"$WAYFINDER_FRONTIER" --map W1 --project "$wf_proj" >/dev/null 2>&1 || wf_code=$?
+if [[ "$wf_code" == "2" ]]; then
+  pass "wayfinder-frontier: Blocked-by naming a ticket id not in the table -> exit 2, not treated as unblocked"
+else
+  fail "wayfinder-frontier: dangling Blocked-by -> expected exit 2, got $wf_code"
+fi
+
+wf_code=0
+"$WAYFINDER_FRONTIER" --map W1 --project "$tmp_root/does-not-exist-$$" >/dev/null 2>&1 || wf_code=$?
+if [[ "$wf_code" == "2" ]]; then
+  pass "wayfinder-frontier: no map.md at all -> exit 2"
+else
+  fail "wayfinder-frontier: no map.md -> expected exit 2, got $wf_code"
 fi
 
 

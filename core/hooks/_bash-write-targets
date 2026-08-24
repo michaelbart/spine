@@ -5,11 +5,32 @@
 # Extracts candidate file-mutation targets from a Bash `tool_input.command`
 # string, for the same hooks that already gate Edit/Write. This is a gate,
 # not a shell parser: it recognizes common file-mutating shapes (output
-# redirection, in-place editors, tee, cp/mv/install, truncate, dd) via
-# regex/token heuristics, not a real shell grammar. Deliberately conservative
-# in one direction only — a write-shaped command whose target can't be
-# confidently resolved is reported as UNRESOLVED rather than silently
-# dropped, so the caller can fail closed.
+# redirection, in-place editors, tee, cp/mv/install, truncate, dd, and —
+# added after six audit rounds tested every *write* bypass shape but never
+# a *delete* one — rm, unlink, git rm, git checkout -- <path>, and git
+# restore <path>) via regex/token heuristics, not a real shell grammar.
+# Deliberately conservative in one direction only — a write-shaped command
+# whose target can't be confidently resolved is reported as UNRESOLVED
+# rather than silently dropped, so the caller can fail closed.
+#
+# Deletion is not a lesser case of a write: `rm .spine/protected-paths.conf`
+# or `rm -rf work/<task-id>/` previously sailed through phase-gate/
+# path-escalate/dep-gate with zero scrutiny — no deny, no ask — despite
+# being at least as consequential as an unauthorized write (destructive,
+# unrecoverable without git). The fix routes every deletion target through
+# the exact same PATH:/UNRESOLVED: emission every other block here already
+# uses, so it gets the exact same containment/protected-path/manifest
+# checks a write would — no new decision logic in any of the three hooks,
+# only new target extraction here.
+#
+# Deliberately NOT covered by the new deletion detection (disclosed, not
+# an oversight): a bare `git checkout <branch>` (no literal `--`) switches
+# branches and can rewrite arbitrary tracked files project-wide, but isn't
+# a per-path mutation this token-level extractor tries to model; neither is
+# `git reset --hard` or `git clean`. Each is a whole-tree operation, a
+# different class of risk than the per-path targets this file extracts
+# elsewhere, and deserves its own consideration rather than being folded in
+# here as an afterthought.
 #
 # `ln` is included (not just cp/mv/install) because a symlink's own
 # destination path is itself a write target — direct repro showed
@@ -82,7 +103,7 @@ bash_write_targets() {
   # overwhelming majority of Bash calls (git status, flutter test, grep,
   # ls, ...) out of the extraction logic entirely — this is what keeps the
   # widened matcher from becoming a blanket deny.
-  if ! grep -qE '(^|[^0-9&])[0-9]*>{1,2}|\bsed\b.*-i|\bperl\b.*-i|\btee\b|\bln\b|\bcp\b|\bmv\b|\binstall\b|\btruncate\b|\bdd\b[[:space:]].*\bof=' <<<"$command"; then
+  if ! grep -qE '(^|[^0-9&])[0-9]*>{1,2}|\bsed\b.*-i|\bperl\b.*-i|\btee\b|\bln\b|\bcp\b|\bmv\b|\binstall\b|\btruncate\b|\bdd\b[[:space:]].*\bof=|\brm\b|\bunlink\b|\bgit\b.*\b(rm|checkout|restore)\b' <<<"$command"; then
     return 0
   fi
 
@@ -99,6 +120,20 @@ bash_write_targets() {
   local seg
   while IFS= read -r seg || [[ -n "$seg" ]]; do
     [[ -n "${seg// /}" ]] || continue
+
+    # First two whitespace-separated tokens of this segment specifically —
+    # used below to detect rm/unlink/git-rm/git-checkout/git-restore as the
+    # segment's actual *command*, never as a \b-bounded substring match
+    # inside an unrelated filename. \b treats a hyphen as a word boundary
+    # too, which the single-target blocks below (cp/mv/ln/tee/etc.) can
+    # tolerate — they only ever take the *last* non-flag token, and the
+    # command word is essentially never last — but an every-token-is-a-
+    # target block cannot: a `mv a.txt some-rm-thing.txt` segment must
+    # never be treated as an `rm` invocation just because "rm" appears,
+    # hyphen-bounded, inside its destination filename.
+    local _bwt_cmd1 _bwt_cmd2
+    _bwt_cmd1="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//' | awk '{print $1}')"
+    _bwt_cmd2="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//' | awk '{print $2}')"
 
     # --- output redirection: >, >>, N>, N>>, but not N>&M (fd dup) ---
     local redir
@@ -235,6 +270,84 @@ bash_write_targets() {
           _bwt_emit "$ofval"
         fi
       fi
+    fi
+
+    # --- rm/unlink: every non-flag token is its own delete target — no
+    # source/dest split the way cp/mv has, every argument names something
+    # to remove. Requires the segment's literal first token, per _bwt_cmd1
+    # above, not a substring match. ---
+    if [[ "$_bwt_cmd1" == "rm" || "$_bwt_cmd1" == "unlink" ]]; then
+      local seen_cmd=0
+      for w in $seg; do
+        if [[ "$seen_cmd" -eq 0 ]]; then seen_cmd=1; continue; fi
+        [[ "$w" == -* ]] && continue
+        if [[ "$has_cd" -eq 1 && "$w" != /* ]]; then
+          echo "UNRESOLVED:relative $_bwt_cmd1 target '$w' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$w"
+        fi
+      done
+    fi
+
+    # --- git rm: same every-token-is-a-target shape as rm/unlink above.
+    # Requires the segment's literal first two tokens to be "git" then
+    # "rm", per _bwt_cmd1/_bwt_cmd2 above. ---
+    if [[ "$_bwt_cmd1" == "git" && "$_bwt_cmd2" == "rm" ]]; then
+      local seen_git=0 seen_sub=0
+      for w in $seg; do
+        if [[ "$seen_git" -eq 0 ]]; then seen_git=1; continue; fi
+        if [[ "$seen_sub" -eq 0 ]]; then seen_sub=1; continue; fi
+        [[ "$w" == -* ]] && continue
+        if [[ "$has_cd" -eq 1 && "$w" != /* ]]; then
+          echo "UNRESOLVED:relative git rm target '$w' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$w"
+        fi
+      done
+    fi
+
+    # --- git checkout -- <path>...: only the unambiguous file-restore
+    # form (a literal `--` token present) is treated as a write — a bare
+    # `git checkout <branch>` switches branches and is a disclosed,
+    # deliberate non-goal (see this file's own header). Every non-flag
+    # token after `--` is a restore target. ---
+    if [[ "$_bwt_cmd1" == "git" && "$_bwt_cmd2" == "checkout" ]] \
+      && grep -qE '(^|[[:space:]])--([[:space:]]|$)' <<<"$seg"; then
+      local after_dashdash=0
+      for w in $seg; do
+        if [[ "$after_dashdash" -eq 0 ]]; then
+          [[ "$w" == "--" ]] && after_dashdash=1
+          continue
+        fi
+        [[ "$w" == -* ]] && continue
+        if [[ "$has_cd" -eq 1 && "$w" != /* ]]; then
+          echo "UNRESOLVED:relative git checkout -- target '$w' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$w"
+        fi
+      done
+    fi
+
+    # --- git restore <path>...: every non-flag token after "restore" is a
+    # target, including under --staged (index-only — flagged anyway, same
+    # conservative-in-one-direction bias this whole file already states).
+    # A space-separated `--source <ref>` value (rather than `--source=
+    # <ref>`) is a known, disclosed imprecision — that ref name doesn't
+    # start with '-' and gets emitted as a spurious target, same shape as
+    # sed -i's own multi-file gap already disclosed above, not a new class
+    # of risk. ---
+    if [[ "$_bwt_cmd1" == "git" && "$_bwt_cmd2" == "restore" ]]; then
+      local seen_git2=0 seen_sub2=0
+      for w in $seg; do
+        if [[ "$seen_git2" -eq 0 ]]; then seen_git2=1; continue; fi
+        if [[ "$seen_sub2" -eq 0 ]]; then seen_sub2=1; continue; fi
+        [[ "$w" == -* ]] && continue
+        if [[ "$has_cd" -eq 1 && "$w" != /* ]]; then
+          echo "UNRESOLVED:relative git restore target '$w' after a 'cd' earlier in the same command"
+        else
+          _bwt_emit "$w"
+        fi
+      done
     fi
   done <<<"$normalized"
   IFS="$IFS_old"

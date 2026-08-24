@@ -1,0 +1,152 @@
+#!/bin/bash
+# wayfinder-frontier — resolves what /wayfinder should do next against an
+# open map: the set of unblocked open tickets (the "frontier"), or CLEARED
+# if none remain, or STALLED if open tickets remain but every one of them
+# has an unresolved blocker. Exists for the same reason
+# next-milestone-task exists: a map's own completeness/readiness is
+# mechanically derivable from its own table, and hand-scanning it fresh
+# each session (or worse, trusting a cached "status: blocked" label that
+# never gets flipped back when its blocker resolves) is exactly the kind
+# of drift a script should own instead of a prompt.
+#
+# Deliberately, a ticket's own Status field in work/wayfinder/<map-id>/
+# map.md's table only ever reads `open` or `resolved` — never `blocked`.
+# "Blocked" is never stored; it's derived here, every time, from a still-
+# open ticket's Blocked-by column against the current resolved set. This
+# mirrors next-milestone-task's own "no cached pointer to go stale"
+# reasoning (core/scripts/next-milestone-task's header) one level up: a
+# human resolving ticket T1 should never also have to remember to hand-flip
+# every ticket T1 was blocking.
+#
+# Table shape parsed (core/templates/wayfinder-map.md, the
+# `<!-- MACHINE: wayfinder-tickets -->` fence):
+#   | Ticket | Type | Status | Blocked-by | Question |
+#   |---|---|---|---|---|
+#   | T1 | grilling | open | none | <one line> |
+# `Blocked-by` is `none` or a comma-separated list of other Ticket ids in
+# this same table (no cross-map references — a map's tickets only ever
+# block on each other).
+#
+# Output is exactly one line on stdout, space-separated, first token is
+# the outcome (same one-line-first-token-branches contract
+# next-milestone-task uses):
+#   CLEARED                      every ticket in the table is resolved
+#   FRONTIER <id> <id> ...       open, unblocked tickets, in table order —
+#                                 the ones a session could work next
+#   STALLED <id> <id> ...        open tickets remain, but every one has at
+#                                 least one unresolved blocker (a real
+#                                 impasse, possibly a cycle — never
+#                                 silently picked around)
+#
+# Read-only — never writes anything. Exit 0 for any of the three outcomes
+# above; exit 2 for a genuine usage/parse problem (no map.md, no
+# parseable table, or a Blocked-by entry naming a ticket id that isn't in
+# the table at all — a dangling reference is never silently ignored).
+#
+# Usage: wayfinder-frontier --map <map-id> [--project <path>]
+set -uo pipefail
+
+usage() { echo "usage: wayfinder-frontier --map <map-id> [--project <path>]" >&2; exit 2; }
+
+project="$(pwd)"
+map_id=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    --map) map_id="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+[[ -n "$map_id" ]] || usage
+
+map_path="$project/work/wayfinder/$map_id/map.md"
+[[ -f "$map_path" ]] || { echo "wayfinder-frontier: $map_path not found" >&2; exit 2; }
+
+# Parse the fenced table into three parallel arrays. A row is
+# `| <id> | <type> | <status> | <blocked-by> | <question...> |` — only the
+# first four columns are load-bearing here; the question column is free
+# text and may itself contain `|` inside inline code, so it is captured as
+# "everything after the fourth `|`" rather than split further.
+ids=()
+statuses=()
+blocked_by=()
+while IFS= read -r line; do
+  # Strip leading/trailing pipe and whitespace, then split on ` | `.
+  body="${line#|}"; body="${body%|}"
+  IFS='|' read -r c_id c_type c_status c_blocked _rest <<<"$body"
+  c_id="$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$c_id")"
+  c_status="$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$c_status")"
+  c_blocked="$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$c_blocked")"
+  [[ -n "$c_id" && "$c_id" != "Ticket" && "$c_id" != "---" ]] || continue
+  ids+=("$c_id")
+  statuses+=("$c_status")
+  blocked_by+=("$c_blocked")
+done < <(awk '
+  /^<!-- MACHINE: wayfinder-tickets/ { insec=1 }
+  insec && /^\|/ { print }
+  insec && /^<!-- next-ticket-id:/ { insec=0 }
+' "$map_path")
+
+if [[ ${#ids[@]} -eq 0 ]]; then
+  echo "wayfinder-frontier: $map_path has no parseable ticket rows" >&2
+  exit 2
+fi
+
+# Validate every Blocked-by reference resolves to a real ticket id in this
+# same table — a dangling reference is a real authoring error, not
+# something to silently treat as "unblocked."
+id_exists() {
+  local want="$1" x
+  for x in "${ids[@]}"; do [[ "$x" == "$want" ]] && return 0; done
+  return 1
+}
+for i in "${!ids[@]}"; do
+  [[ "${blocked_by[$i]}" == "none" || -z "${blocked_by[$i]}" ]] && continue
+  IFS=',' read -ra deps <<<"${blocked_by[$i]}"
+  for dep in "${deps[@]}"; do
+    dep="$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$dep")"
+    [[ -n "$dep" ]] || continue
+    if ! id_exists "$dep"; then
+      echo "wayfinder-frontier: ${ids[$i]}'s Blocked-by names '$dep', which is not a ticket in $map_path" >&2
+      exit 2
+    fi
+  done
+done
+
+is_resolved() {
+  local want="$1" i
+  for i in "${!ids[@]}"; do
+    [[ "${ids[$i]}" == "$want" ]] && { [[ "${statuses[$i]}" == "resolved" ]] && return 0 || return 1; }
+  done
+  return 1
+}
+
+open_ids=()
+frontier=()
+for i in "${!ids[@]}"; do
+  [[ "${statuses[$i]}" == "resolved" ]] && continue
+  open_ids+=("${ids[$i]}")
+  unblocked=1
+  if [[ "${blocked_by[$i]}" != "none" && -n "${blocked_by[$i]}" ]]; then
+    IFS=',' read -ra deps <<<"${blocked_by[$i]}"
+    for dep in "${deps[@]}"; do
+      dep="$(sed -E 's/^[[:space:]]+|[[:space:]]+$//g' <<<"$dep")"
+      [[ -n "$dep" ]] || continue
+      is_resolved "$dep" || { unblocked=0; break; }
+    done
+  fi
+  [[ $unblocked -eq 1 ]] && frontier+=("${ids[$i]}")
+done
+
+if [[ ${#open_ids[@]} -eq 0 ]]; then
+  echo "CLEARED"
+  exit 0
+fi
+
+if [[ ${#frontier[@]} -eq 0 ]]; then
+  echo "STALLED ${open_ids[*]}"
+  exit 0
+fi
+
+echo "FRONTIER ${frontier[*]}"
+exit 0
