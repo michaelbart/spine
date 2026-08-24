@@ -62,6 +62,10 @@ never hidden.>
   named plainly with their recorded reason, or "none">
 - Tooling gaps: <quoted verbatim from verify.md's own Tooling gaps section
   — never re-derived — or "none">
+- Setup events: <quoted verbatim from verify.md's own Setup events section
+  — never re-derived — or "none". Distinct from "What surprised us" above:
+  this project's own tooling config needing a fix, not a plan-vs-reality
+  mismatch about the product — see verify.md's own header note>
 - Plan accuracy: <conformance in words: "diff landed where the plan said"
   or "drifted: <where> — see verify.md">
 - Approver (Class 2 only): <second-approver identity — omit this bullet

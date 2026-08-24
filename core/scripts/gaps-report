@@ -1,0 +1,154 @@
+#!/bin/bash
+# gaps-report — reads every work/M*/milestone.md's own "## Known gaps for
+# future member tasks" section and prints one flat, project-wide list of
+# every open gap-<n> entry: which milestone it lives in, whether that
+# milestone has already shipped, and its source/prose.
+#
+# Exists because no other view shows this. A gap only ever surfaces one
+# milestone at a time — inside that milestone's own file, or in the
+# one-milestone-back check core/skills/task/SKILL.md's new-milestone stop
+# does when a human creates the next milestone. Neither guarantees a
+# shipped milestone's open gap stays visible: the new-milestone stop only
+# looks at the immediately preceding milestone, and /roadmap (the thing
+# that actually guarantees every gap gets assigned or declined,
+# core/skills/roadmap/SKILL.md §1a/§4) only runs when a human explicitly
+# invokes it — never automatically. A project with a dozen shipped
+# milestones can quietly accumulate real, worthwhile gaps that nobody sees
+# again without opening every milestone.md by hand. This is that view.
+#
+# Read-only, informational only — never a gate, same standing as
+# render-dashboard.
+#
+# Usage: gaps-report [--project <path>]
+# Exit 0 unless --project names a directory that doesn't exist.
+set -uo pipefail
+
+usage() { echo "usage: gaps-report [--project <path>]" >&2; exit 2; }
+
+project="$(pwd)"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+project="$(cd "$project" 2>/dev/null && pwd)" || { echo "gaps-report: no such project directory" >&2; exit 2; }
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+nmt_bin="$SCRIPT_DIR/next-milestone-task"
+
+# Milestone paths, numerically sorted by the digits after "M" — same
+# convention as next-milestone-task, so a lexical M10-before-M2 mistake
+# never creeps back in here independently.
+ms_paths=()
+while IFS= read -r path; do
+  [[ -n "$path" ]] && ms_paths+=("$path")
+done < <(
+  for d in "$project"/work/M*/milestone.md; do
+    [[ -f "$d" ]] || continue
+    n="$(basename "$(dirname "$d")")"
+    n="${n#M}"
+    case "$n" in
+      (''|*[!0-9]*) continue ;;  # not a real M<number> folder — skip
+    esac
+    printf '%s\t%s\n' "$n" "$d"
+  done | sort -n -k1,1 | cut -f2-
+)
+
+if [[ ${#ms_paths[@]} -eq 0 ]]; then
+  echo "gaps-report: no work/M*/milestone.md found under $project"
+  exit 0
+fi
+
+# Strips <!-- ... --> comments, including ones spanning multiple lines
+# (the template's own MACHINE explanation block) — what's left is only
+# real entry text.
+strip_comments() {
+  awk '
+    {
+      line = $0
+      if (incomment) {
+        idx = index(line, "-->")
+        if (idx > 0) { incomment = 0; line = substr(line, idx + 3) }
+        else { next }
+      }
+      out = ""
+      while (1) {
+        s = index(line, "<!--")
+        if (s == 0) { out = out line; break }
+        out = out substr(line, 1, s - 1)
+        rest = substr(line, s + 4)
+        e = index(rest, "-->")
+        if (e == 0) { incomment = 1; line = ""; break }
+        line = substr(rest, e + 3)
+      }
+      print out
+    }
+  '
+}
+
+# stdin: a stripped Known-gaps section body. stdout: one line per entry,
+# id<TAB>source<TAB>prose — the core/templates/milestone.md entry shape:
+#   - id: gap-<n>
+#     source: work/<task-id>/verify.md (<agent>, <severity>)
+#     <prose...>
+extract_entries() {
+  awk '
+    /^- id: gap-[0-9]+/ {
+      if (id != "") print id "\t" source "\t" prose
+      id = $0; sub(/^- id: */, "", id)
+      source = ""; prose = ""
+      next
+    }
+    id != "" && /^  source:/ {
+      source = $0; sub(/^  source: */, "", source)
+      next
+    }
+    id != "" {
+      l = $0
+      sub(/^  */, "", l)
+      if (l != "") { if (prose == "") prose = l; else prose = prose " " l }
+    }
+    END { if (id != "") print id "\t" source "\t" prose }
+  '
+}
+
+total=0
+shipped_total=0
+report=""
+
+for ms_path in "${ms_paths[@]}"; do
+  ms_id="$(basename "$(dirname "$ms_path")")"
+
+  status="in flight"
+  nmt_out="$("$nmt_bin" --project "$project" --milestone "$ms_id" 2>/dev/null)" && {
+    [[ "$nmt_out" == "NONE" ]] && status="shipped"
+  }
+
+  section="$(awk '
+    /^## Known gaps for future member tasks/ { insec=1; next }
+    insec && /^## / { insec=0 }
+    insec { print }
+  ' "$ms_path" | strip_comments)"
+
+  while IFS=$'\t' read -r gap_id source prose; do
+    [[ -n "$gap_id" ]] || continue
+    total=$((total + 1))
+    [[ "$status" == "shipped" ]] && shipped_total=$((shipped_total + 1))
+    report+="$ms_id [$status] $gap_id — $source"$'\n'
+    [[ -n "$prose" ]] && report+="    $prose"$'\n'
+  done < <(extract_entries <<<"$section")
+done
+
+if [[ "$total" -eq 0 ]]; then
+  echo "gaps-report: no open known gaps across ${#ms_paths[@]} milestone(s)."
+  exit 0
+fi
+
+echo "gaps-report: $total open known gap(s) across ${#ms_paths[@]} milestone(s), $shipped_total in already-shipped milestones."
+if [[ "$shipped_total" -gt 0 ]]; then
+  echo "Shipped-milestone gaps have no scheduled reconsideration point until a later milestone's own creation (/task's new-milestone stop, which only looks one milestone back) or a human running /roadmap by hand."
+fi
+echo
+printf '%s' "$report"
+exit 0

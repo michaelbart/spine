@@ -145,3 +145,20 @@ Verdicts kept: `<n>` · dropped: `<n>`
      accumulated `TOOLING GAP:` lines plus anything hit during this
      /verify run. One line per gap: script name, consequence. Write "none"
      only if genuinely empty. -->
+
+## Setup events
+
+<!-- Distinct from both sections above, and from deviations.md: this is
+     about this project's own tooling config (.spine/adapters/*,
+     .spine/capabilities.json, .spine/protected-paths.conf) needing a fix
+     or update for a reason that has no bearing on whether the plan's
+     understanding of the *product* held up — e.g. an adapter script had a
+     latent bug (pulling in a broken build target) unrelated to this
+     task's own diff, or a capability's recorded status was stale and got
+     corrected. core/skills/task/SKILL.md §4 draws the exact line: if it
+     is one, it's never a deviations.md record and never touches the
+     circuit breaker or "What surprised us" — it's tracked here instead,
+     purely so it's visible, not silent. Merged verbatim from
+     work/<task-id>/notes.md's accumulated `SETUP:` lines. One line per
+     event: what was touched, what was wrong, how it was fixed. Write
+     "none" only if genuinely empty. -->

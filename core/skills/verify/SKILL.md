@@ -429,6 +429,14 @@ this document quotes scripts, it doesn't paraphrase them:
   consequence exactly as recorded. Write "none" only if genuinely empty —
   this section exists specifically so it's never silently absent when it
   shouldn't be.
+- **Setup events** (distinct from all three sections above, and from
+  `deviations.md`: this project's own tooling config —
+  `.spine/adapters/*`, `.spine/capabilities.json`,
+  `.spine/protected-paths.conf` — needing a fix for a reason unrelated to
+  whether the plan's understanding of *the product* held up, per
+  `core/skills/task/SKILL.md` §4's boundary test): merge every `SETUP:`
+  line already accumulated in `work/<task-id>/notes.md`, verbatim, one
+  line per event. Write "none" only if genuinely empty.
 
 `ledger set <task-id> conformance_score <f1 from conformance.json>` (multi-repo:
 average the `f1` field across every edited repo's own `conformance-<repo>.json`

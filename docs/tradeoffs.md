@@ -116,6 +116,22 @@ Conceded by design, not bugs waiting to be fixed:
   deviations actually logged to `deviations.md`; nothing forces one to get
   logged. That's a norm the skill instructions ask for, not something a
   hook enforces.
+- **The deviation/setup-event split is a judgment call, not a mechanical
+  test.** `core/skills/task/SKILL.md` §4 asks, per decision hit during
+  implement: did this teach us the plan's understanding of *the product*
+  was wrong (a real deviation — `deviations.md`, counts toward the circuit
+  breaker, appears in the briefing), or only that this project's own
+  tooling config (an adapter, `capabilities.json`, `protected-paths.conf`)
+  was imperfect (a **setup event** — `notes.md`'s `SETUP:` line,
+  `verify.md`'s "Setup events" section, never `deviations.md`, never
+  counted)? Nothing stops a task from misclassifying a real deviation as
+  a setup event to dodge the circuit breaker — same honor-system exposure
+  as the bullet above, just one boundary test wide instead of zero. It's
+  also currently prose-only visibility: `render-task`/`render-dashboard`
+  surface `deviations.md`'s and `TOOLING GAP:`'s structured `ledger.json`
+  fields, but nothing yet gives `SETUP:` lines the same structured field —
+  a setup event is visible in `verify.md`/`briefing.md`, not (yet) in the
+  dashboard or `/costs`.
 - **The `implement` phase's token harvest runs on an honor system, even
   though the mark that's supposed to trigger it mostly doesn't.**
   `task/SKILL.md` §5/§6 bundles "mark `verify`" and "harvest `implement`'s

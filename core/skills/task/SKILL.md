@@ -51,7 +51,13 @@ that already looked complete. Its one-line output branches four ways:
   fall through to asking for a description.
 - **`NONE`** — no milestone exists yet, or every one found is already
   complete. Fall through to asking for a description, saying briefly why
-  auto-continue didn't fire.
+  auto-continue didn't fire. If a milestone did just complete, also run
+  `${CLAUDE_SKILL_DIR}/../../scripts/gaps-report --project <project root>`
+  — if it reports any open entries, mention them in the same breath ("M<n>
+  also has N open known gap(s) — run `/roadmap` to fold them into the next
+  milestone, or `--milestone M<n+1>` to handle it there"); this is the only
+  other point besides new-milestone creation (below) where a human is
+  likely to see them without going looking for them.
 - If the script could not run at all, this is the "could not run" case the
   tooling-gap discipline (header note below) distinguishes from a real
   result — but no task folder exists yet at this point for that discipline's
@@ -99,9 +105,46 @@ follows — **if `workspace.json` exists at the project root**, probe in
 order: (1) `work/<id>/milestone.md` at the workspace root; (2)
 `<member-repo-path>/work/<id>/milestone.md` for each repo in
 `workspace.json`'s `repos` array, in listed order; use the first path that
-exists. If none exists, the milestone is new — create it at the workspace
-root. **If `workspace.json` is absent**, read/create `work/<id>/milestone.md`
-at the project root as always. All reads and bookkeeping writes below
+exists. **If none exists, the milestone is new — before creating it, stop
+and confirm with the human rather than silently creating an unplanned
+milestone.** This is the point `/roadmap`'s own sequencing and gap-absorption
+(`core/skills/roadmap/SKILL.md` §1a/§3) would normally already have run —
+skipping straight to task creation is exactly the path that lets Known Gaps
+entries never get absorbed anywhere. Say plainly: `"<id>` has no
+`milestone.md` yet — `/roadmap` hasn't planned it. Run `/roadmap` first, or
+proceed here and I'll create it directly?"` This is informational, not a
+hard block — same "never a gate" stance `/ship` takes on the identical
+suggestion — the human may legitimately want an ad hoc milestone id. If the
+human says proceed: **also check every already-shipped milestone**, not
+just the immediately preceding one — `${CLAUDE_SKILL_DIR}/../../scripts/
+gaps-report --project <project root>` prints exactly this, one flat list
+across every `work/M*/milestone.md`, flagged shipped vs. in-flight. Checking
+only `M<n-1>` would let a gap deferred at one new-milestone stop silently
+drop out of every future one — the milestone it lives in stops being
+"immediately preceding" the moment a second new milestone gets created
+after it, and nothing else would ever look at it again. For every shipped
+milestone `gaps-report` shows with open entries, read them aloud and ask
+what to do with each: carry it verbatim into `<id>`'s own Known Gaps
+section (same id, `source`, prose — the append-verbatim convention
+`core/skills/roadmap/SKILL.md` §3 uses), fold it into this task's own scope
+instead, explicitly decline it (say so, move on — never silently drop, same
+completeness standard `/roadmap` §4 holds itself to), or defer it — leave
+it exactly where it is and say nothing more now. Deferring is a safe,
+legitimate answer here (unlike declining, it isn't final): the gap stays in
+its original milestone's own Known Gaps section, `gaps-report` will surface
+it again next time, and this same stop will re-ask about it at the *next*
+new-milestone creation too, for as long as it takes. If `gaps-report` could
+not run at all, this is the tooling-gap discipline's "could not run" case —
+say so plainly and fall back to checking `work/M<n-1>/milestone.md` by hand
+rather than skipping the check entirely. Only then create
+`work/<id>/milestone.md` at the workspace root, seeded from
+`core/templates/milestone.md` plus whatever gap entries were carried
+forward (bump `next-gap-id` past the highest carried id). **If
+`work/<id>/milestone.md` already exists, none of this applies** — either
+`/roadmap` already ran and did it, or an earlier task in this same milestone
+already did. **If `workspace.json` is absent**, read/create
+`work/<id>/milestone.md` at the project root as always (the new-milestone
+stop above applies here too). All reads and bookkeeping writes below
 (TBD-replacement, gap edits) happen at the resolved path, never silently
 re-rooted to the workspace root.
 
@@ -570,11 +613,34 @@ during `research`/`plan`.
 
 Work the plan's steps directly (you have full tool access again; `phase-gate`
 no longer applies, `path-escalate`/`dep-gate` still do). For each decision
-you hit, match it against the plan's `## What I'll decide alone vs. stop
-and ask` section — its three lists carry the same fixed tier keywords
-`deviations.md`'s own `- Tier:` field uses (`decide-alone` /
-`record-and-proceed` / `halt`), so the match is literal, not judgment-call
-vocabulary translation:
+you hit, **first ask whether it's a setup event, not a deviation at all**:
+did it teach you the plan's understanding of *the product* was wrong, or
+only that this project's own tooling config (`.spine/adapters/*`,
+`.spine/capabilities.json`, `.spine/protected-paths.conf`) was imperfect —
+a latent adapter bug (e.g. pulling in a broken build target) with no
+bearing on the plan's own reasoning, a stale capability status getting
+corrected, and the like? The first is a real deviation, handled by the
+three tiers below. The second is a **setup event**: fix it, append one
+line to `work/<task-id>/notes.md` (create it, header `# Notes`, if it
+doesn't exist yet) — `SETUP: <what was touched, what was wrong, how it was
+fixed>` — and keep going. **Never a `deviations.md` record** — it doesn't
+count toward the circuit breaker and doesn't appear in the briefing's
+"What surprised us," because it isn't a plan-vs-reality mismatch about the
+product; `core/skills/verify/SKILL.md` step 5 merges these `SETUP:` lines
+into `verify.md`'s own "Setup events" section (mirroring exactly how a
+`TOOLING GAP:` line already flows into that file's "Tooling gaps" section)
+so it's still visible, never silent, just not conflated with a real
+deviation. **A class escalation is never a setup event, even when it
+traces to a plan-time check the escalation itself proves was a miss** — a
+missed blast-radius call is exactly the "the plan's understanding of the
+product was wrong" signal the circuit breaker exists to catch; it stays a
+`halt`-tier deviation below, same as always.
+
+For everything that *is* a real deviation, match it against the plan's
+`## What I'll decide alone vs. stop and ask` section — its three lists
+carry the same fixed tier keywords `deviations.md`'s own `- Tier:` field
+uses (`decide-alone` / `record-and-proceed` / `halt`), so the match is
+literal, not judgment-call vocabulary translation:
 
 - **I'll just do** (`decide-alone`) — just decide, keep going, no record.
 - **I'll do and note** (`record-and-proceed`) — append a record to

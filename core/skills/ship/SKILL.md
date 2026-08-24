@@ -508,8 +508,12 @@ quotes, it doesn't re-derive:
   never compressed further (this file's own header note); `Capability
   gaps` straight from `verify.md`; `Tooling gaps` straight from
   `verify.md`'s own "Tooling gaps" section (never re-derive or
-  re-summarize — quote); `Plan accuracy` from `conformance.json`'s score,
-  in words. `Approver` (Class 2 only, omit for Class 0/1): the
+  re-summarize — quote); `Setup events` straight from `verify.md`'s own
+  "Setup events" section, same quote-don't-re-derive rule — distinct from
+  `deviations.md`-sourced "What surprised us" above, per
+  `core/skills/task/SKILL.md` §4's boundary test; `Plan accuracy` from
+  `conformance.json`'s score, in words. `Approver` (Class 2 only, omit for
+  Class 0/1): the
   second-approver identity from `second-approver-check`'s real-approver
   result — omit this bullet (not the fact) when an override put it in
   "Overrides & bypasses" instead.

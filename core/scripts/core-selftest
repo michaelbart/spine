@@ -79,7 +79,12 @@
 #     fields case that is this script's own documented set -e/zero-match
 #     regression guard), and a render-dashboard smoke test (renders a real
 #     fixture to HTML without crashing — deliberately lighter than the
-#     rest given it's informational-only, never a gate, at 1200+ lines).
+#     rest given it's informational-only, never a gate, at 1200+ lines),
+#     and gaps-report (cross-milestone Known-gaps listing: shipped vs
+#     in-flight status via next-milestone-task reuse, multi-line prose
+#     folded onto one line, multi-line HTML comments stripped, a
+#     gap-free milestone contributes nothing, no-milestones and
+#     nonexistent-project exit codes).
 #     This closes the round-5 audit's scripts-coverage backlog: every
 #     script in core/scripts/* now has permanent regression coverage.
 #
@@ -2791,6 +2796,80 @@ if [[ "$rd_code" == "2" ]]; then
   pass "render-dashboard: not spine-installed (no .spine/capabilities.json) -> exit 2"
 else
   fail "render-dashboard: not installed -> expected exit 2, got $rd_code"
+fi
+
+# ---------------------------------------------------------------------------
+# gaps-report: flat cross-milestone Known-gaps listing, shipped-vs-in-flight
+# status, comment-stripping, multi-line prose folding
+# ---------------------------------------------------------------------------
+
+GAPS_REPORT="$SCRIPT_DIR/gaps-report"
+
+gr_ms() {
+  # gr_ms <proj> <ms-id> <member-tasks-line> <known-gaps-body...>
+  local proj="$1" ms="$2" member_line="$3"; shift 3
+  mkdir -p "$proj/work/$ms"
+  {
+    echo "# Milestone $ms"
+    echo
+    echo "## Member tasks"
+    echo
+    echo "$member_line"
+    echo
+    echo "## Known gaps for future member tasks"
+    echo
+    printf '%s\n' "$@"
+    echo
+    echo "## Capability targets"
+  } >"$proj/work/$ms/milestone.md"
+}
+
+gr_proj="$(mktemp -d "$tmp_root/grproj.XXXXXX")"
+nmt_task "$gr_proj" GT1 done
+gr_ms "$gr_proj" M0 '1. `GT1` — only task' \
+  '<!-- MACHINE: known-gaps' \
+  '     spans' \
+  '     multiple lines -->' \
+  '' \
+  '<!-- next-gap-id: 3 -->' \
+  '' \
+  '- id: gap-1' \
+  '  source: work/GT1/verify.md (falsifier, high)' \
+  '  First line of prose.' \
+  '  Second line of prose.' \
+  '- id: gap-2' \
+  '  source: work/GT1/verify.md (security, medium)' \
+  '  Another gap entirely.'
+gr_ms "$gr_proj" M1 '1. `TBD` — placeholder'
+out="$("$GAPS_REPORT" --project "$gr_proj" 2>&1)"
+if [[ "$out" == *"2 open known gap(s) across 2 milestone(s), 2 in already-shipped milestones"* ]] \
+  && [[ "$out" == *"M0 [shipped] gap-1"* ]] \
+  && [[ "$out" == *"First line of prose. Second line of prose."* ]] \
+  && [[ "$out" == *"M0 [shipped] gap-2"* ]] \
+  && [[ "$out" != *"MACHINE: known-gaps"* ]] \
+  && [[ "$out" != *"M1"*"gap"* ]]; then
+  pass "gaps-report: shipped milestone's two gaps listed, multi-line prose folded onto one line, comments stripped, gap-free in-flight milestone contributes nothing"
+else
+  fail "gaps-report: unexpected output for mixed shipped/in-flight fixture: $out"
+fi
+
+gr_empty="$(mktemp -d "$tmp_root/grempty.XXXXXX")"
+mkdir -p "$gr_empty/work"
+out="$("$GAPS_REPORT" --project "$gr_empty" 2>&1)"
+gr_code=0
+"$GAPS_REPORT" --project "$gr_empty" >/dev/null 2>&1 || gr_code=$?
+if [[ "$out" == *"no work/M*/milestone.md found"* ]] && [[ "$gr_code" == "0" ]]; then
+  pass "gaps-report: no milestones at all -> informational message, exit 0 (never a gate)"
+else
+  fail "gaps-report: no milestones -> expected an informational exit-0 message, got exit=$gr_code: $out"
+fi
+
+gr_noargs_code=0
+"$GAPS_REPORT" --project "$tmp_root/does-not-exist-$$" >/dev/null 2>&1 || gr_noargs_code=$?
+if [[ "$gr_noargs_code" == "2" ]]; then
+  pass "gaps-report: nonexistent --project directory -> exit 2"
+else
+  fail "gaps-report: nonexistent --project -> expected exit 2, got $gr_noargs_code"
 fi
 
 
