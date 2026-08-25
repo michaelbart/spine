@@ -35,7 +35,12 @@
 # guessing a resolution, per "wrong context beats missing" applied to
 # git merges too).
 #
-# Usage: registry-sync <task-id> --project <path> [--message <msg>]
+# Usage: registry-sync <task-id> --project <path> [--message <msg>] [--no-push]
+# --no-push (Extension E, /autopilot — docs/autopilot-plan.md): commit only,
+# skip the push/rebase-retry section entirely. /autopilot's own tradeoff
+# (docs/tradeoffs.md) is that nothing it does leaves the machine unreviewed
+# — every commit is real and local, nothing reaches a remote until a human
+# decides to push it themselves.
 # Exit: 0 synced (including "nothing changed" and "no remote configured" —
 #   both legitimate no-ops, not failures). 1 push failed after one
 #   pull --rebase retry — a real conflict, surface as a tooling gap
@@ -43,16 +48,18 @@
 #   2 usage error.
 set -uo pipefail
 
-usage() { echo "usage: registry-sync <task-id> --project <path> [--message <msg>]" >&2; exit 2; }
+usage() { echo "usage: registry-sync <task-id> --project <path> [--message <msg>] [--no-push]" >&2; exit 2; }
 
 [[ $# -ge 1 ]] || usage
 task_id="$1"; shift
 project=""
 message=""
+no_push=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project) project="$2"; shift 2 ;;
     --message) message="$2"; shift 2 ;;
+    --no-push) no_push=1; shift ;;
     *) usage ;;
   esac
 done
@@ -77,6 +84,11 @@ if ! git -C "$project" commit --quiet -m "$message"; then
   exit 1
 fi
 echo "registry-sync: committed $task_id"
+
+if [[ "$no_push" -eq 1 ]]; then
+  echo "registry-sync: --no-push set — committed locally only, not pushed"
+  exit 0
+fi
 
 branch="$(git -C "$project" rev-parse --abbrev-ref HEAD 2>/dev/null)"
 remote="$(git -C "$project" config "branch.$branch.remote" 2>/dev/null || true)"

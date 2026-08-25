@@ -755,7 +755,22 @@ registry's live view, not just from this machine's local one. Remove
 (the task is no longer active — a subsequent trivial edit should default
 back to Class 0, not stay phase-gated against a finished task; for a
 multi-repo task this file lives at the workspace root only — member repos
-never had one). Tell the human where the briefing is. For a `guided` task,
+never had one).
+
+**Worktree cleanup (Extension D — experimental, `docs/worktree-support-plan.md`):**
+if this task's cwd path contains `/.claude/worktrees/` (the same cheap signal
+`core/skills/task/SKILL.md`'s Extension D branch uses), this task ran in a
+spine-created worktree. Ask once: "This task ran in worktree `<path>` — remove
+it now, or keep it (e.g. still watching the PR)?" If the human doesn't answer
+either way, default to keeping it — removal is the harder-to-reverse choice,
+and a clean ship should have nothing uncommitted left to lose anyway so
+there's no cost to leaving the decision open. `ExitWorktree({action: "keep"})`
+or, only on explicit confirmation, `ExitWorktree({action: "remove"})` (adding
+`discard_changes: true` only if the tool itself reports uncommitted changes
+and the human confirms discarding them — never set it preemptively). Skip
+this whole paragraph silently for a task that didn't run in a worktree.
+
+Tell the human where the briefing is. For a `guided` task,
 also point at `pr-description.md` (§4a) — pushing and opening the PR is their
 call, made after reading both. For an `auto`/`checkpointed` task the draft PR
 is already open (§5a) — give them its URL, so the one remaining touchpoint is

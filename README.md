@@ -160,9 +160,12 @@ settling a category) genuinely isn't enough, never by default.
    actual code and writes down what's really there, before anyone proposes
    how to change it.
 3. **Plan** — a plan gets written from that research, and you read and
-   approve it before any code changes — the default, and the only mode for
-   anything but a small, low-risk change. A task explicitly run in `auto`
-   mode skips this stop; that's a narrower, opt-in exception, not the norm.
+   approve it before any code changes — the default (`guided`), and the
+   right choice for anything but a small, low-risk change. Two narrower,
+   opt-in exceptions trade some of that review for less ceremony:
+   `checkpointed` (approve the plan, then one finish action) and `auto` (no
+   plan-approval stop at all — you review the finished draft PR instead).
+   `/intake`/`/task` ask which you want; neither is the norm.
 4. **Implement** — the plan gets carried out. If reality doesn't match the
    plan, small surprises are just noted and it keeps going; a real one
    stops and asks instead of improvising past it.
@@ -206,6 +209,25 @@ one small workspace root holding the contract registry and the tasks that
 touch more than one repo at once — each member repo keeps its own normal
 spine install untouched. See `docs/tradeoffs.md`, under "Cross-repo work,"
 for the full model and its disclosed limits.
+
+## Experimental
+
+A few opt-in extensions, each disclosed with its tradeoffs in
+`docs/tradeoffs.md` rather than folded silently into the defaults above:
+
+- **Ticket branches** — `/intake` now checks out (or creates and pushes) a
+  branch named after the ticket key before a Class 1/2 task starts, instead
+  of assuming you'd already branched by hand. Automatic, no flag; Class 0's
+  traced-trivial path is untouched.
+- **Worktree isolation** — start a second `/task` in another terminal while
+  one's already active in the same checkout, and it offers a separate git
+  worktree instead of colliding with the first task's uncommitted work. See
+  `docs/worktree-support-plan.md`.
+- **`/autopilot`** `[--milestone <id>]` — loops an already-planned milestone
+  backlog end to end with no human stops at all, including the ones Class 2
+  normally forces (a second approver, halt-tier deviations). Every override
+  gets logged and reviewed once, at the end, not per task; commits stay
+  local, nothing pushes. See `docs/autopilot-plan.md`.
 
 ## If something feels like it's fighting you
 

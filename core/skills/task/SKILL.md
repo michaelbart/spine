@@ -233,11 +233,64 @@ configured" or "nothing changed" result is a normal, silent success, not a
 tooling gap — only a real push failure after `registry-sync`'s own
 rebase-retry is.
 
-**Resuming:** if `.spine/current-task` already exists, read its `state` and
-`class` and offer to resume that task where it left off rather than starting
-a new one — do not silently abandon it. Re-derive nothing from memory; a
-fresh session has none, so read `work/<task-id>/{research,plan,deviations}.md`
-before proceeding.
+**Resuming, or a second task in a worktree (Extension D — experimental,
+`docs/worktree-support-plan.md`):** if `.spine/current-task` already exists,
+first check whether this invocation actually names *new* work — a real
+description was typed (`$ARGUMENTS` non-empty) or `.spine/current-intake`
+exists — as opposed to a bare `/task` with nothing new to say, which always
+means resume. **Bare `/task`, nothing new:** read the existing task's `state`
+and `class` and offer to resume it where it left off rather than starting a
+new one — do not silently abandon it. Re-derive nothing from memory; a fresh
+session has none, so read `work/<task-id>/{research,plan,deviations}.md`
+before proceeding. **A new description (or intake handoff) was given while a
+task is already active here:** don't silently swallow it into a resume offer
+of the *other* task — that discards what the human just typed. Instead, first
+check whether this working directory is itself already a spine-created
+worktree (cheapest signal: the cwd path contains `/.claude/worktrees/` —
+`EnterWorktree`'s own convention); if so, skip straight to the bare-`/task`
+resume behavior above regardless — a worktree task never offers to spin up a
+worktree of its own, that's how nesting is avoided. Otherwise, ask plainly:
+`"<existing-task-id>` is active here (phase `<state>`). Start `<new
+description>` in a separate worktree instead of interrupting it, or
+resume/switch to `<existing-task-id>` here instead?"` Three real answers,
+never silently pick one:
+
+- **Resume/switch to `<existing-task-id>`** — fall through to the bare-`/task`
+  resume behavior above, ignoring the new description (the human chose the
+  existing task instead).
+- **New worktree** —
+  ```
+  EnterWorktree({ name: <a kebab-slug derived from the new description> })
+  ```
+  which switches this session's own working directory. Immediately, before
+  anything else runs in the new location:
+  ```
+  ${CLAUDE_SKILL_DIR}/../../scripts/setup --project <the new worktree's path>
+  ```
+  (`${CLAUDE_SKILL_DIR}` still resolves correctly here — it names this skill
+  file's own directory, unaffected by the session's cwd changing; pass the
+  new path explicitly via `--project` rather than relying on cwd.) `setup` is
+  idempotent and already handles being re-run — this call is what regenerates
+  the worktree's own `.claude/skills|agents|rules|hooks` symlinks and
+  `.claude/settings.local.json`, none of which `git worktree add` brings along
+  on its own since they're gitignored/machine-local in the original checkout.
+  Treat a `setup` failure here as a genuine stop, not a tooling-gap-and-continue
+  — running any further spine logic in a worktree with broken hook wiring
+  would silently defeat `phase-gate`/`path-escalate`/`dep-gate` for this task's
+  entire lifetime, not just degrade one check. Once `setup` succeeds, restart
+  this skill's own procedure from the top, from the new working directory, with
+  the same description — a `.spine/current-task` doesn't exist yet there, so
+  this time nothing routes back into this Extension D branch.
+- **Something else the human types** — follow it; don't re-guess.
+
+At `/ship`'s close-out, a task that ran in a spine-created worktree offers to
+clean it up — see `core/skills/ship/SKILL.md` §6. Known limitation, disclosed
+in `docs/tradeoffs.md`: `EnterWorktree` puts each worktree on its own new
+branch, so this task's `registry-sync` pushes to that branch, not the shared
+default branch — a colleague's `claims-check` won't see this task's
+`work/<task-id>/` folder until that branch merges. Harmless for the same
+engineer's own next `/task` (both worktrees share one local `.git`); it only
+matters for cross-engineer visibility, which this experiment isn't targeting.
 
 Scripts referenced below live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
 Templates live at `${CLAUDE_SKILL_DIR}/../../templates/<name>`.
@@ -300,7 +353,43 @@ class. Two things ride along in the setup step below: write
 `work/<task-id>/ticket` = the ticket key (one line; omit the file if the ticket
 was null), which `/ship` reads for the `Spine-Ticket:` trailer; write
 `work/<task-id>/autonomy` = the handoff's `autonomy` (a Class 2 task is forced
-to `guided` regardless of what the handoff says — the ceiling); for a direct
+to `guided` regardless of what the handoff says — the ceiling);
+
+**Ticket branch (Extension F, experimental — `/intake`-originated, Class 1/2
+only), done here rather than in `/intake` itself:** this point comes after the
+Resuming/Extension D check above already resolved where this task actually
+runs (either this directory had no other active task, or the human just
+arrived in a fresh worktree) — the one place a branch switch can't collide
+with another task's uncommitted work sitting in the same tree. If `ticket` is
+non-null, first check whether the current branch already resolves to this
+same key: `${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch
+--project <project root>`. A match means the human already branched by hand —
+nothing to do. Otherwise, before generating the task ID below (so the task
+folder's own commits land on the right branch from the start):
+
+- A local branch already named `<ticket>-<kebab-slug of description>` exists
+  (`git rev-parse --verify --quiet refs/heads/<branch>`) — check it out,
+  don't recreate it (a resumed ticket, or a colleague's branch pulled
+  locally).
+- Otherwise a remote-tracking one exists (`git rev-parse --verify --quiet
+  refs/remotes/<remote>/<branch>`, `<remote>` read the same way as below) —
+  `git checkout -b <branch> <remote>/<branch>`.
+- Otherwise, create it fresh from current HEAD: `git checkout -b <branch>`.
+  Then, if the branch you were just on has a configured remote
+  (`git config branch.<previous-branch>.remote`), immediately `git push -u
+  <remote> <branch>` — this is what makes `registry-sync`'s later pushes work
+  at all (it resolves the push target from `branch.<branch>.remote`, which
+  only exists once something sets it) and what gives `open-pr`'s "uses the
+  current branch when `SPINE_PR_HEAD` is unset" (`core/ADAPTER-CONTRACT.md`
+  §3.5) a real head branch to open a PR from, instead of silently assuming
+  the human already branched by hand. No remote configured on the previous
+  branch: skip the push, stay local — same "solo/single-machine project"
+  no-op `registry-sync` itself already treats as normal, not a gap. A push
+  failure here (network, permissions) is non-fatal — note it and continue on
+  the local branch; the next `registry-sync`/`/ship` push retries it
+  naturally once the human resolves it by hand.
+
+One more thing rides along in the setup step below: for a direct
 `/task` with no handoff, write the autonomy the human just chose in the step
 above (Class 2 / a downgraded task ⇒ `guided`); and if
 `class_below_recommended` is true, `ledger set <task-id>

@@ -262,6 +262,22 @@ if [[ -f "$committed_settings" ]]; then
   ' "$committed_settings" >"$tmp" && mv "$tmp" "$committed_settings"
 fi
 
+# worktree.baseRef (Extension D, experimental — docs/worktree-support-plan.md):
+# EnterWorktree's default ("fresh") branches a new worktree from
+# origin/<default-branch>, not local HEAD. A same-machine second task
+# started via /task's worktree flow needs to see whatever the first task's
+# registry-sync has already committed locally, even if that push to origin
+# hasn't landed yet (or there's no remote at all — registry-sync treats "no
+# remote configured" as a normal no-op) — "fresh" would silently start that
+# worktree from a stale or empty snapshot in either case. Merge, never
+# replace, so a project's own symlinkDirectories/sparsePaths/bgIsolation/
+# location choices survive re-running this script.
+if [[ -f "$committed_settings" ]]; then
+  tmp="$(mktemp)"
+  jq '.worktree = (.worktree // {}) + {baseRef: "head"}' \
+    "$committed_settings" >"$tmp" && mv "$tmp" "$committed_settings"
+fi
+
 # Untrack any of these paths a pre-Extension-C install committed as real
 # symlinks (working-tree files are left exactly as sync_symlink just made
 # them — this only removes them from the git index).

@@ -235,6 +235,39 @@ Conceded by design, not bugs waiting to be fixed:
   today; a fourth `core/rules/` file was deliberately not written to paper
   over that gap with an unreliable glob that would look like coverage
   without actually providing it.
+- **Worktree isolation (Extension D, experimental) delays registry
+  visibility to a merge.** When `/task` spins up a second task into a
+  worktree (`core/skills/task/SKILL.md`'s Resuming section,
+  `docs/worktree-support-plan.md`), `EnterWorktree` puts that task on its
+  own new branch — git can't check the same branch out in two worktrees
+  at once. `registry-sync` still pushes `work/<task-id>/` to whatever
+  branch is checked out, which is now that task's own branch, not the
+  project's shared default. A colleague's `claims-check`/`gaps-report`
+  won't see that task's registry entry until the branch merges. Harmless
+  for the same engineer running two terminals on one machine (both
+  worktrees share the local `.git`); a real gap for the cross-engineer
+  coordination story the registry otherwise assumes.
+- **`/autopilot` (experimental) removes every human stop `/task` has,
+  including the ones spine treats as structural rather than stylistic —
+  by explicit request, not by accident.** Class 2's forced `guided`
+  autonomy and second-approver requirement, halt-tier deviations, the
+  circuit breaker, `claims-check` blocks, and flag-blocked advances all
+  normally exist because some decisions are judged to need a human in the
+  loop, not just a slower one. `/autopilot` (`core/skills/autopilot/
+  SKILL.md`, `docs/autopilot-plan.md`) self-resolves every one of them
+  and defers the entire review to a single end-of-run report instead of
+  per-decision, per-task review. What stays real and unweakened: the
+  deterministic floor, the falsifier's stub-out probe, the security
+  adversary, `claims-check`, `conformance`, and `contract-touch` — this
+  removes *stops*, never *checks*, mirroring the same distinction the
+  `autonomy` field already draws for ordinary `auto` tasks, just pushed
+  to its extreme point. **Every commit stays local — `/autopilot` never
+  pushes and never opens a PR**, unlike ordinary `auto` autonomy (which
+  already pushes before its draft PR even opens); nothing this run does
+  leaves the machine unreviewed, by explicit choice, not because pushing
+  would have been unsafe in principle. Explicitly experimental and
+  disclosed as possibly-temporary; not the default or recommended way to
+  use spine.
 
 ## Working with other engineers
 
