@@ -294,7 +294,7 @@ if [[ -d "$project/.git" ]] || git -C "$project" rev-parse --git-dir >/dev/null 
 
   gitignore="$project/.gitignore"
   touch "$gitignore"
-  for pattern in ".claude/skills/" ".claude/agents/" ".claude/rules/" ".claude/hooks" ".claude/settings.local.json"; do
+  for pattern in ".claude/skills/" ".claude/agents/" ".claude/rules/" ".claude/hooks" ".claude/settings.local.json" ".claude/worktrees/" ".spine/.smoke-runtime-seconds"; do
     grep -qxF "$pattern" "$gitignore" || echo "$pattern" >>"$gitignore"
   done
 fi
