@@ -103,6 +103,14 @@ resolved_spine="${spine_override:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 }
 spine_sha="$(git -C "$resolved_spine" rev-parse HEAD)"
 
+# When spine installs itself as a project, the symlinks are committed as
+# relative paths (portable across machines), so the install-time steps that
+# create absolute symlinks and gitignore them must be skipped. Only
+# settings.local.json (machine-specific allow pattern) and the pin file are
+# written — everything else is already in the committed repo state.
+is_self_install=0
+[[ "$project" == "$resolved_spine" ]] && is_self_install=1
+
 pin_file="$project/.spine/core-pin.json"
 
 report_pin() {
@@ -188,45 +196,49 @@ if [[ "$check_only" -eq 1 ]]; then
   exit 0
 fi
 
-[[ -f "$project/.spine/capabilities.json" ]] || {
-  echo "setup: $project/.spine/capabilities.json not found — this project isn't" \
-       "spine-installed yet (run /bootstrap or /adopt first, from a session in" \
-       "$resolved_spine)" >&2
-  exit 2
-}
+if [[ "$is_self_install" -eq 0 ]]; then
+  [[ -f "$project/.spine/capabilities.json" ]] || {
+    echo "setup: $project/.spine/capabilities.json not found — this project isn't" \
+         "spine-installed yet (run /bootstrap or /adopt first, from a session in" \
+         "$resolved_spine)" >&2
+    exit 2
+  }
+fi
 
-mkdir -p "$project/.claude/skills" "$project/.claude/agents" "$project/.claude/rules"
+if [[ "$is_self_install" -eq 0 ]]; then
+  mkdir -p "$project/.claude/skills" "$project/.claude/agents" "$project/.claude/rules"
 
-sync_symlink() {
-  # sync_symlink <link-path> <target-path>
-  local link="$1" target="$2"
-  if [[ -L "$link" ]]; then
-    [[ "$(readlink "$link")" == "$target" ]] && return 0
-    rm -f "$link"
-  elif [[ -e "$link" ]]; then
-    echo "setup: $link exists and is not a symlink — refusing to overwrite, remove it by hand" >&2
-    return 1
-  fi
-  ln -s "$target" "$link"
-}
+  sync_symlink() {
+    # sync_symlink <link-path> <target-path>
+    local link="$1" target="$2"
+    if [[ -L "$link" ]]; then
+      [[ "$(readlink "$link")" == "$target" ]] && return 0
+      rm -f "$link"
+    elif [[ -e "$link" ]]; then
+      echo "setup: $link exists and is not a symlink — refusing to overwrite, remove it by hand" >&2
+      return 1
+    fi
+    ln -s "$target" "$link"
+  }
 
-fail=0
-for dir in "$resolved_spine"/core/skills/*/; do
-  name="$(basename "$dir")"
-  sync_symlink "$project/.claude/skills/$name" "$resolved_spine/core/skills/$name" || fail=1
-done
-for f in "$resolved_spine"/core/agents/*.md; do
-  [[ -e "$f" ]] || continue
-  name="$(basename "$f")"
-  sync_symlink "$project/.claude/agents/$name" "$f" || fail=1
-done
-for f in "$resolved_spine"/core/rules/*.md; do
-  [[ -e "$f" ]] || continue
-  name="$(basename "$f")"
-  sync_symlink "$project/.claude/rules/$name" "$f" || fail=1
-done
-sync_symlink "$project/.claude/hooks" "$resolved_spine/core/hooks" || fail=1
-[[ "$fail" -eq 0 ]] || { echo "setup: symlink sync failed, see above" >&2; exit 2; }
+  fail=0
+  for dir in "$resolved_spine"/core/skills/*/; do
+    name="$(basename "$dir")"
+    sync_symlink "$project/.claude/skills/$name" "$resolved_spine/core/skills/$name" || fail=1
+  done
+  for f in "$resolved_spine"/core/agents/*.md; do
+    [[ -e "$f" ]] || continue
+    name="$(basename "$f")"
+    sync_symlink "$project/.claude/agents/$name" "$f" || fail=1
+  done
+  for f in "$resolved_spine"/core/rules/*.md; do
+    [[ -e "$f" ]] || continue
+    name="$(basename "$f")"
+    sync_symlink "$project/.claude/rules/$name" "$f" || fail=1
+  done
+  sync_symlink "$project/.claude/hooks" "$resolved_spine/core/hooks" || fail=1
+  [[ "$fail" -eq 0 ]] || { echo "setup: symlink sync failed, see above" >&2; exit 2; }
+fi
 
 # Strip any absolute-path Bash-allow entry a pre-Extension-C install left
 # in the *committed* settings.json — that's the exact residue this script
@@ -280,8 +292,10 @@ fi
 
 # Untrack any of these paths a pre-Extension-C install committed as real
 # symlinks (working-tree files are left exactly as sync_symlink just made
-# them — this only removes them from the git index).
-if [[ -d "$project/.git" ]] || git -C "$project" rev-parse --git-dir >/dev/null 2>&1; then
+# them — this only removes them from the git index). Skipped for self-install:
+# spine's own .claude/skills etc. ARE committed (as relative symlinks) and
+# must stay tracked.
+if [[ "$is_self_install" -eq 0 ]] && { [[ -d "$project/.git" ]] || git -C "$project" rev-parse --git-dir >/dev/null 2>&1; }; then
   tracked=()
   while IFS= read -r p; do tracked+=("$p"); done < <(
     cd "$project" && git ls-files .claude/skills .claude/agents .claude/rules .claude/hooks 2>/dev/null
