@@ -233,8 +233,8 @@ configured" or "nothing changed" result is a normal, silent success, not a
 tooling gap — only a real push failure after `registry-sync`'s own
 rebase-retry is.
 
-**Resuming, or a second task in a worktree (Extension D — experimental,
-`docs/worktree-support-plan.md`):** if `.spine/current-task` already exists,
+**Resuming, or a second task in a worktree (Extension D — experimental):**
+if `.spine/current-task` already exists,
 first check whether this invocation actually names *new* work — a real
 description was typed (`$ARGUMENTS` non-empty) or `.spine/current-intake`
 exists — as opposed to a bare `/task` with nothing new to say, which always

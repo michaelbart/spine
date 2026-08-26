@@ -757,7 +757,7 @@ back to Class 0, not stay phase-gated against a finished task; for a
 multi-repo task this file lives at the workspace root only — member repos
 never had one).
 
-**Worktree cleanup (Extension D — experimental, `docs/worktree-support-plan.md`):**
+**Worktree cleanup (Extension D — experimental):**
 if this task's cwd path contains `/.claude/worktrees/` (the same cheap signal
 `core/skills/task/SKILL.md`'s Extension D branch uses), this task ran in a
 spine-created worktree. Ask once: "This task ran in worktree `<path>` — remove

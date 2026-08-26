@@ -1,6 +1,6 @@
 ---
 name: autopilot
-description: Experimental, unattended, whole-milestone-backlog execution — loops next-milestone-task, runs each task all the way to ship with every human stop self-resolved and logged (including Class 2's normally-mandatory ones), and ends with a single end-of-run report for after-the-fact review. Not a replacement for /task's normal flow. See docs/autopilot-plan.md and docs/tradeoffs.md before using this.
+description: Experimental, unattended, whole-milestone-backlog execution — loops next-milestone-task, runs each task all the way to ship with every human stop self-resolved and logged (including Class 2's normally-mandatory ones), and ends with a single end-of-run report for after-the-fact review. Not a replacement for /task's normal flow. See docs/tradeoffs.md before using this.
 disable-model-invocation: true
 argument-hint: [--milestone <milestone-id>]
 ---
@@ -26,7 +26,7 @@ keep going." What does **not** change: the deterministic floor, the
 falsifier's mandatory stub-out probe, the security adversary,
 `claims-check`, `conformance`, and `contract-touch` all still run for real
 and can still fail a task outright. This removes stops, never checks. This
-is a disclosed experiment (`docs/tradeoffs.md`, `docs/autopilot-plan.md`),
+is a disclosed experiment (`docs/tradeoffs.md`),
 not the default or recommended way to use spine — say so plainly if asked
 about it, and never let it run silently disguised as an ordinary `/task`.
 
