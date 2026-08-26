@@ -15,14 +15,20 @@ actually match.
 
 # Stage 1 — design the app
 
-```
-Design the full application: every core screen, every state each screen
-can be in (empty, loading, error, populated, and any domain-specific
-state), and the navigation between them. Prioritize a coherent, consistent
-visual language over polishing any single screen in isolation — the next
-stage extracts a reusable design system from what you build here, so
-inconsistency here becomes inconsistency in every screen that reuses it.
-```
+This isn't a prompt to paste — "design the app" means nothing without your
+actual product context. Design the app in Claude Design the way you
+normally would, bringing your own PRD, brief, or context. Before moving to
+Stage 2, make sure you've covered:
+
+- Every core screen
+- Every state each screen can be in (empty, loading, error, populated,
+  and any domain-specific state)
+- The navigation between them
+
+Prioritize a coherent, consistent visual language over polishing any
+single screen in isolation — the next stage extracts a reusable design
+system from what you build here, so inconsistency here becomes
+inconsistency in every screen that reuses it.
 
 # Stage 2 — extract the design system
 
