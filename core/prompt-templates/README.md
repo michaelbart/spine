@@ -18,6 +18,7 @@ rest of spine already knows how to consume:
 | Prompt | Produces | Consumed by |
 |---|---|---|
 | `product-spec.md` | `docs/product-spec.md` | `/design` (auto-detected, `--handoff`), `/wayfinder` |
+| ↳ its own Stage 0 | a design summary (plain text) | pasted into `product-spec.md`'s own prompt, as raw material — only if the idea currently lives solely in a Claude Design session |
 | `feature-handoff.md` | `docs/features/<slug>-handoff.md` | `/design --handoff`, `/wayfinder`, `/roadmap`, per its own Routing section |
 | `ui-handoff.md` | `docs/ui/{tokens.json, components.md, screens/*.json, screenshots/*.png, handoff.md}` | `core/rules/ui-design-system.md`, `ui-conformance` capability |
 
