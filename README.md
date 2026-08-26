@@ -110,12 +110,13 @@ colleague's don't. Full mechanics in `docs/tradeoffs.md`.
 ## Layout
 
 ```
-core/scripts/    the deterministic layer — floor, conformance, ledger, ...
-core/hooks/      the three PreToolUse gates (phase, protected-path, dependency)
-core/skills/     every slash command — see the table below
-core/agents/     researcher, falsifier, security, surveyor — fresh-context
-core/rules/      path-scoped discipline (migrations, contracts)
-core/templates/  every artifact format the skills above produce
+core/scripts/          the deterministic layer — floor, conformance, ledger, ...
+core/hooks/            the three PreToolUse gates (phase, protected-path, dependency)
+core/skills/           every slash command — see the table below
+core/agents/           researcher, falsifier, security, surveyor — fresh-context
+core/rules/            path-scoped discipline (migrations, contracts, auth, UI design system)
+core/templates/        every artifact format the skills above produce
+core/prompt-templates/ ready-to-paste prompts for generating that material elsewhere (see `/prompts`)
 ```
 
 ## Commands
@@ -182,6 +183,7 @@ settling a category) genuinely isn't enough, never by default.
 | Command | Args | What it does |
 |---|---|---|
 | `/spine` | *(none)* | "Where am I, what do I do next." Run this when unsure. |
+| `/prompts` | `[product-spec \| feature-handoff \| ui-handoff]` | Prints a ready-to-paste prompt for generating handoff material in another session — a product spec, a mid-project feature handoff, or a Claude Design UI handoff bundle. |
 | `/tasks` | *(none)* | Lists every open task — owner, class, phase, claims, flags. |
 | `/costs` | `[--since <date>]` | Fast numeric answer, in chat, no browser — untracked ratio, token/drift instrumentation, not a leaderboard. For the visual version, `/visualize`. |
 | `/ratchet` | `<description>` | Turns a finding that's genuinely recurred twice into a deterministic check. |
@@ -189,6 +191,71 @@ settling a category) genuinely isn't enough, never by default.
 | `/update` | `[--bump-pin]` | Syncs an installed project to this checkout after a `git pull`. |
 | `/task-report` | `<task-id>` | One task's HTML record, standalone. `/visualize` already generates this for every task as a side effect — use this only for just one, without rendering the whole dashboard. |
 | `/visualize` | `[--project <path>] [--since <date> \| --all]` | Project-wide HTML dashboard — timeline, decisions, milestones, and the same drift numbers `/costs` reports, in one browsable page. |
+
+## Typical flows
+
+Four common starting points, each ending in the same place: the ordinary
+`/task` classify → research → plan → implement → verify → ship loop, run
+repeatedly until a milestone (or the backlog) is done. Run `/spine` any
+time you're unsure which step comes next.
+
+**Starting a brand-new project**
+
+1. `/bootstrap --project <path>` — install spine; writes `CLAUDE.md`,
+   `docs/charter.md`, `docs/map.md`.
+2. Have real product material already? `/prompts product-spec` prints a
+   prompt for drafting `docs/product-spec.md` in a separate chat session —
+   save it there; `/design` auto-detects it every run, not just the first.
+3. `/design` — a facilitated session turning the charter (plus the product
+   spec, if any) into the six foundational decisions and milestone 0, the
+   walking skeleton.
+4. `/task --milestone M0` for M0's first member task, then bare `/task` to
+   auto-continue its queue.
+5. Once M0 ships: `/roadmap` sequences the next milestones from
+   `docs/vision.md` if the shape's already known, or `/wayfinder` first if
+   it's still genuinely foggy.
+
+**Adopting spine into an existing codebase**
+
+1. `/adopt --project <path>` — a `surveyor` agent reads the real repo and
+   drafts adapters, `CLAUDE.md`, and charter material from what's actually
+   there; you confirm or correct each finding, never a cold interview.
+2. `/task <description>` for real work right away — `/design` is optional
+   on brownfield (making implicit architecture explicit), not required to
+   start.
+3. Re-run `/adopt` any time to recalibrate — a new capability becomes
+   available, a UI handoff bundle gets added, the stack changes.
+
+**Starting a big feature or change mid-project**
+
+1. `/prompts feature-handoff` prints a prompt for drafting
+   `docs/features/<slug>-handoff.md` — paste in the project's real
+   `docs/charter.md` and `docs/decisions/` so it cites real lines, not
+   guesses.
+2. That document's own "Routing" section decides what's next:
+   `/design --handoff <path>` (revises or extends architecture), a
+   `docs/vision.md` addition plus `/roadmap` (known milestone shape),
+   `/wayfinder` (genuinely foggy), or straight to `/task` (turns out to be
+   task-sized after all).
+3. From there, the normal `/task` loop for whatever milestone or tasks
+   resulted.
+
+**Building UI faithful to a design**
+
+1. `/prompts ui-handoff` prints three staged Claude Design prompts
+   (design the app → extract the design system → export in spine's exact
+   schema) — save the result under `docs/ui/`.
+2. `core/rules/ui-design-system.md` picks it up automatically, no command
+   needed — the next task that touches a declared UI path reads the
+   tokens, the component library, and the relevant screen's JSON *and*
+   screenshot before writing any code.
+3. Sequence the design system/component library's own implementation
+   *before* any screen tasks (`docs/ui/handoff.md`'s "Recommended build
+   order") — screens built against an unbuilt library is exactly how
+   visual drift compounds.
+4. Want the deterministic `ui-conformance` check enforced at `/verify`
+   time, not just grounding? Re-run `/adopt` to recalibrate once the
+   bundle exists.
 
 ## Working with other engineers
 
@@ -222,12 +289,13 @@ A few opt-in extensions, each disclosed with its tradeoffs in
 - **Worktree isolation** — start a second `/task` in another terminal while
   one's already active in the same checkout, and it offers a separate git
   worktree instead of colliding with the first task's uncommitted work. See
-  `docs/worktree-support-plan.md`.
+  `core/skills/task/SKILL.md`'s Resuming section and `docs/tradeoffs.md`.
 - **`/autopilot`** `[--milestone <id>]` — loops an already-planned milestone
   backlog end to end with no human stops at all, including the ones Class 2
   normally forces (a second approver, halt-tier deviations). Every override
   gets logged and reviewed once, at the end, not per task; commits stay
-  local, nothing pushes. See `docs/autopilot-plan.md`.
+  local, nothing pushes. See `core/skills/autopilot/SKILL.md` and
+  `docs/tradeoffs.md`.
 
 ## If something feels like it's fighting you
 

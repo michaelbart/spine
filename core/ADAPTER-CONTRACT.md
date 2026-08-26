@@ -8,13 +8,13 @@ a language, framework, or tool — this document, like the core, is stack-blind.
 
 A capability is an executable at `.spine/adapters/<name>` in the installed
 project. The core never calls a tool directly; it calls a capability name.
-Eighteen capabilities exist:
+Nineteen capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
 `clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`
 (§3.8), `migrate-rehearse` (§3.7), `contract-check` (Extension B — §3.2),
-`ui-render` (§3.3), `ticket-fetch` (intake — §3.4), `open-pr` (ship —
-§3.5), `worktree-prep` (falsifier — §3.6).
+`ui-render` (§3.3), `ui-conformance` (§3.9), `ticket-fetch` (intake —
+§3.4), `open-pr` (ship — §3.5), `worktree-prep` (falsifier — §3.6).
 
 `contract-check` only ever exists in a repo that is a workspace member and
 party (producer or consumer) to at least one declared contract
@@ -39,6 +39,18 @@ runtime shape." Like `contract-check`, `ui-render` is never invoked by
 invokes it directly, and only when `core/scripts/ui-touch` reports the
 task's diff actually touched a UI-file-shape path (`.spine/ui-paths.conf`).
 See §3.3.
+
+`ui-conformance` only ever exists in a project with a UI handoff
+bundle (`docs/ui/handoff.md`, `core/templates/ui-handoff.md`) — a
+project with no such bundle marks it `not-applicable` with reason "no
+UI handoff bundle (docs/ui/) in this project." Unlike `ui-render`'s
+own conditional question, this one needs no dedicated interview question
+at bootstrap/adopt time — bundle presence is a plain file check, not a
+judgment call the way "does this project serve a browser UI" is. Like
+`ui-render`, it is never invoked by `floor`'s dispatch loop —
+`core/skills/verify/SKILL.md`'s own orchestration invokes it directly,
+gated by the same `core/scripts/ui-touch` result §3.3 already uses. See
+§3.9.
 
 `ticket-fetch` only ever exists in a project whose engineers work from an issue
 tracker (`/intake`, `core/skills/intake/SKILL.md`) — a project with no tracker,
@@ -418,8 +430,8 @@ after).
 ### 3.7 `migrate-rehearse` — eligible only on a migration-touching Class 2 task
 
 `migrate-rehearse` sits in §3's "operates on nothing" row like `test` and
-`mutate`, and — unlike `contract-check`/`ui-render`/`ticket-fetch`/
-`open-pr`/`worktree-prep` (§3.2–§3.6) — it *is* invoked directly by
+`mutate`, and — unlike `contract-check`/`ui-render`/`ui-conformance`/
+`ticket-fetch`/`open-pr`/`worktree-prep` (§3.2–§3.6, §3.9) — it *is* invoked directly by
 `floor`'s own dispatch loop, not by a skill's separate orchestration. But
 it is not always-on the way `test` is: `floor` runs it only when **both**
 hold —
@@ -501,6 +513,67 @@ way. `core/scripts/adapter-conformance` invokes `--self-test cold` for
 these three capabilities specifically (§4) and fails conformance if it's
 missing or non-zero — a `smoke-seed`/`smoke-run`/`smoke-golden` that
 doesn't self-heal cannot stay `implemented`.
+
+### 3.9 `ui-conformance` — declared tokens/components actually present, never visual similarity
+
+Conditional existence, same shape as `ticket-fetch`/`open-pr`/
+`worktree-prep`: only ever exists in a project with a UI handoff
+bundle (§1). Sits in §3's "operates on nothing" row like `ui-render`: no
+stdin, no positional argument, exit code alone governs pass/fail. The
+adapter owns end-to-end enumeration and rendering, exactly the same
+delegation §3.3 already uses for routes: for every `docs/ui/
+screens/<id>.json` naming a `route`, render that route for real (an
+adapter may share its dev-server bring-up with its own `ui-render`
+adapter — core does not care how, only that each capability's own pass
+criterion below is met) and check, deterministically:
+
+- **Every entry in that screen's `components_used` list is actually
+  present in the rendered output** — by whatever stable marker this
+  project's component library exposes (a `data-*` attribute, a rendered
+  class name, a component's own registered display name). Which marker to
+  check is a stack-specific detail the adapter itself owns, same as
+  `ui-render` already owns route-driving.
+- **Key values from `docs/ui/tokens.json` this screen depends on
+  resolve, in the real render, to what's declared** — not a stale or
+  hand-typed substitute a diff introduced instead of reusing the token.
+
+**Pass criterion**: every screen with a route in `docs/ui/screens/`
+renders with every declared component present and every checked token
+value matching. **This is a structural/identity check, not a
+visual-similarity check** — it answers "did the build actually use what
+the handoff declared," never "does it look right." A screenshot under
+`docs/ui/screenshots/` (`core/templates/ui-handoff.md`) is
+grounding material for the agent while it writes the code, and for a
+human skimming the task's briefing — it is deliberately never the input
+to this capability's pass/fail decision. Pixel- or perceptual-diffing a
+real render against a golden screenshot is exactly the kind of gate that's
+flaky across font rendering, anti-aliasing, and dynamic content without
+dedicated image-diff infrastructure this core does not ship; a flaky
+floor-adjacent gate erodes trust in every other gate next to it (the
+"teeth, not more prompting" thesis README.md opens with), so this
+capability stays deliberately narrower and fully deterministic instead of
+reaching for that.
+
+**Eligibility, not always-on**: same shape as `ui-render` (§3.3) — never
+invoked by `floor`'s dispatch loop at all. `core/skills/verify/SKILL.md`'s
+own orchestration runs `core/scripts/ui-touch` first (reusing the same
+result §3.3's own check already produced this pass, never re-running it);
+`ui-conformance` is only invoked when that reports a declared UI path
+was touched, on a project where this capability is `implemented`, gated
+by its own class opt-in (`ui_conformance_class1_optin`,
+mirroring `ui_render_class1_optin`'s own default-`false` shape) — kept
+separate from `ui_render_class1_optin` rather than reusing it, since a
+team may want a real render checked (cheap, behavioral) without also
+wanting design-token conformance enforced on every Class 1 change (a
+stricter, more opinionated gate).
+
+**Self-test**: `--self-test pass`/`--self-test fail` build their own
+throwaway screen fixture (a tiny local page, plus a matching throwaway
+`screens/<id>.json`/`tokens.json`/`components.md`) inside scratch space —
+never the project's real bundle. `pass`: the fixture's render actually
+contains its declared component and token. `fail`: the fixture is built
+to be missing one on purpose, and the adapter's real check must catch it
+— same "route both modes through the same check" rule §4 states generally.
 
 ## 4. The self-test convention (what makes conformance possible)
 

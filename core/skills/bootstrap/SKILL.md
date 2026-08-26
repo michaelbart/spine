@@ -115,7 +115,17 @@ render. If no: leave `.spine/ui-paths.conf` absent (mirrors
 and mark `ui-render` `not-applicable` in `.spine/capabilities.json` with
 reason "no browser UI in this project's runtime shape."
 
-For each of the 18 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
+**If yes, also ask whether a UI handoff bundle (tokens, component
+library, per-screen specs, screenshots — `docs/ui/`,
+`core/templates/ui-handoff.md`) exists or is planned.** If not yet:
+mention **`/prompts ui-handoff`** — the staged prompts for producing
+one from Claude Design (or a comparable tool) — rather than letting the
+engineer assume none exists. This doesn't block anything here: `ui-render`
+and `ui-conformance` are independent capabilities, and a project can
+add the bundle later, any time before it matters (the next `/adopt`-style
+recalibration will pick it up).
+
+For each of the 19 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
 invocation exists for the confirmed stack, write
 `<project>/.spine/adapters/<name>` as a real, executable script — exit
 0/non-zero, one line on success, full diagnostics on failure, plus a working
@@ -256,5 +266,8 @@ cold, and committed to in one pass, with no chance for the six
 architecture categories or a decision map to catch what a milestone-first
 read misses). If the engineer has no such document yet, they can always
 add `docs/product-spec.md` later — `/design` checks for it every run, not
-just the first. Skip this note entirely for Jira-driven work where the
-ticket queue is the plan.
+just the first — and **`/prompts product-spec`** prints a ready-to-paste
+interview prompt for drafting one in a separate chat session, in exactly
+the structure `/design` expects. Mention it here plainly; don't assume
+they already know it exists. Skip this note entirely for Jira-driven work
+where the ticket queue is the plan.

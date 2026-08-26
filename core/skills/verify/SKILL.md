@@ -183,6 +183,38 @@ section (§5) — never folded into the floor table, same discipline as
 `not-applicable`), record it degraded with its recorded reason — same
 "never silently skip a gate" discipline as every other capability.
 
+## 1d. UI conformance check (only when the diff touches a declared UI path)
+
+Reuses the exact `ui-touch` result step 1c already produced this pass —
+never a second invocation. If `ui_touched` was `false` for every repo
+checked: skip this step entirely, same omit-whole-section rule step 1c
+itself uses.
+
+If `ui_touched` was `true` for any repo: check class eligibility, same
+opt-in shape step 1c uses, its own separate key:
+
+```
+jq -r '.ui_conformance_class1_optin // false' ~/.spine/user-config.json
+```
+
+Class 2: always eligible. Class 1: eligible only if the above reads
+`true` (default `false`). Not eligible: record `SKIPPED (Class 1,
+ui_conformance_class1_optin not set)` in verify.md's own "UI
+conformance" section — a deliberate calibration choice, not an
+unexplained absence.
+
+Eligible: check `.spine/capabilities.json` for `ui-conformance`'s
+status in that repo. If `implemented`, run it directly — **not through
+`floor`** — `.spine/adapters/ui-conformance` (CWD at that repo's
+root, per `core/ADAPTER-CONTRACT.md §3.9`). Record pass/fail in its own
+"UI conformance" section (§5) — never folded into "UI render," even
+though both gate on the same `ui-touch` result; they check different
+things (a real render vs. declared-token/component fidelity) and each
+gets its own line so a reader can tell which one failed. If not
+`implemented` (`unavailable`/`not-applicable` — the common case for a
+project with no `docs/ui/` bundle at all), record it degraded with
+its recorded reason.
+
 ## 2. Adversary count
 
 Class 2: always both, `falsifier` and `security`. Class 1: how many adversaries
@@ -437,6 +469,15 @@ this document quotes scripts, it doesn't paraphrase them:
   fail, `SKIPPED (Class 1, ui_render_class1_optin not set)` if this class
   wasn't eligible, or degraded with its recorded reason if the capability
   isn't `implemented`.
+- **UI conformance** (per `core/templates/verify.md`'s own section,
+  omitted entirely under the same condition as "UI render" above — they
+  share one `ui-touch` result): the `ui-conformance` result — pass/fail
+  with the adapter's own diagnostics on fail (which declared component or
+  token didn't show up in the real render), `SKIPPED (Class 1,
+  ui_conformance_class1_optin not set)` if this class wasn't eligible,
+  or degraded with its recorded reason if the capability isn't
+  `implemented` (the common case for a project with no `docs/ui/`
+  bundle).
 - Conformance line from `conformance.json` (or one line per
   `conformance-<repo>.json`, multi-repo).
 - One subsection per adversary that ran *or was reused*, from its filtered

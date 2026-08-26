@@ -103,8 +103,8 @@ Conceded by design, not bugs waiting to be fixed:
   narrow one (e.g. always run the floor's lint/type layer even when
   everything else is skipped), not a redesign.
 - **Class 2 is permanently unreachable for a project with no smoke-testable
-  runtime.** Unlike `contract-check`/`ui-render`/`ticket-fetch`/`open-pr`/
-  `worktree-prep`, `smoke-seed`/`smoke-run`/`smoke-golden` have no
+  runtime.** Unlike `contract-check`/`ui-render`/`ui-conformance`/
+  `ticket-fetch`/`open-pr`/`worktree-prep`, `smoke-seed`/`smoke-run`/`smoke-golden` have no
   legitimate `not-applicable` escape hatch — the floor's Class 2 gate
   treats anything other than `implemented` as a hard fail (`core/scripts/
   floor`'s smoke-run check). A pure CLI/library/batch project genuinely
@@ -237,8 +237,8 @@ Conceded by design, not bugs waiting to be fixed:
   without actually providing it.
 - **Worktree isolation (Extension D, experimental) delays registry
   visibility to a merge.** When `/task` spins up a second task into a
-  worktree (`core/skills/task/SKILL.md`'s Resuming section,
-  `docs/worktree-support-plan.md`), `EnterWorktree` puts that task on its
+  worktree (`core/skills/task/SKILL.md`'s Resuming section),
+  `EnterWorktree` puts that task on its
   own new branch — git can't check the same branch out in two worktrees
   at once. `registry-sync` still pushes `work/<task-id>/` to whatever
   branch is checked out, which is now that task's own branch, not the
@@ -254,7 +254,7 @@ Conceded by design, not bugs waiting to be fixed:
   circuit breaker, `claims-check` blocks, and flag-blocked advances all
   normally exist because some decisions are judged to need a human in the
   loop, not just a slower one. `/autopilot` (`core/skills/autopilot/
-  SKILL.md`, `docs/autopilot-plan.md`) self-resolves every one of them
+  SKILL.md`) self-resolves every one of them
   and defers the entire review to a single end-of-run report instead of
   per-decision, per-task review. What stays real and unweakened: the
   deterministic floor, the falsifier's stub-out probe, the security

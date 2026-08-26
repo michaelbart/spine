@@ -57,9 +57,13 @@ On yes, proceed exactly as `--handoff docs/product-spec.md` would (first
 run or re-entry mode, per the branch above — whichever this actually is).
 On no, proceed without it, but say so explicitly rather than silently
 dropping a real document that was sitting right there — the same
-never-silent standard the rest of this skill holds itself to. Skip this
-check entirely if `docs/product-spec.md` doesn't exist, or if `--handoff`
-was already given (nothing to ask, it's already grounded).
+never-silent standard the rest of this skill holds itself to. **If
+`docs/product-spec.md` doesn't exist at all**, mention `/prompts
+product-spec` as a way to generate one in a separate session before
+continuing ungrounded — the human may still choose to proceed without one,
+but say the option exists rather than silently assuming they already know
+it does. Skip this whole check if `--handoff` was already given (nothing
+to ask, it's already grounded).
 
 ## 1. Walk the six foundational categories
 

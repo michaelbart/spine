@@ -79,7 +79,11 @@ answers **whether this project serves a browser UI a person looks at**; if
 yes, confirm its proposed view/component glob(s) for `.spine/ui-paths.conf`
 and dev-server start command + port. If no: mark `ui-render`
 `not-applicable`, reason "no browser UI in this project's runtime shape."
-Generate `.spine/adapters/<name>` for each of the 18 capabilities per
+If yes and this project has no `docs/ui/` handoff bundle yet, mention
+**`/prompts ui-handoff`** the same way `core/skills/bootstrap/
+SKILL.md` does — an existing codebase adopting spine mid-life is exactly
+as likely to want one as a greenfield project.
+Generate `.spine/adapters/<name>` for each of the 19 capabilities per
 `core/ADAPTER-CONTRACT.md`, mark `unavailable`/`not-applicable` with real
 reasons where nothing viable exists, then:
 

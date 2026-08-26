@@ -215,10 +215,12 @@ only commands that exist in this install (they're symlinked under
 - **`/tasks`** — list every open task and its phase.
 - **`/costs`** — what spine is costing, drift first.
 - **`/design`**, **`/wayfinder`**, **`/prototype`**, **`/ratchet`**,
-  **`/remap`** — foundational design; charting a large foggy effort into a
-  map of decision tickets; a disposable spike to settle a visual/
-  behavioral question; converting a recurring friction into a check; and
-  regenerating the map; mention these only briefly, as "also available."
+  **`/remap`**, **`/prompts`** — foundational design; charting a large foggy
+  effort into a map of decision tickets; a disposable spike to settle a
+  visual/behavioral question; converting a recurring friction into a
+  check; regenerating the map; and printing a ready-to-paste handoff
+  prompt (product spec, feature handoff, or UI handoff) for use in
+  another session; mention these only briefly, as "also available."
 
 Keep it to what a confused engineer needs: the front door and the two or three
 things they'd want next. Don't reproduce the whole README.

@@ -17,11 +17,12 @@ mess" anti-pattern). A single-repo task has exactly one
 is the same zero-behavioral-change guarantee as everywhere else in
 Extension B, expressed at the template level.
 
-§"UI render" is unrelated to Extension B — it applies to a single-repo
-task exactly as it does a multi-repo one, gated purely by whether the
-task's own diff touched a declared UI path (core/scripts/ui-touch), never
-by repo topology. Omit the whole section on any task (single- or
-multi-repo) where nothing was touched.
+§"UI render" and §"UI conformance" are both unrelated to Extension B —
+each applies to a single-repo task exactly as it does a multi-repo one,
+gated purely by whether the task's own diff touched a declared UI path
+(core/scripts/ui-touch), never by repo topology, and both share that one
+ui-touch result rather than each re-deriving it. Omit either whole section
+on any task (single- or multi-repo) where nothing was touched.
 -->
 
 # Verify: `<task-id>`
@@ -65,6 +66,23 @@ Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
      isn't implemented. Same discipline as "Contract conformance" above —
      never folded into the floor table even though it's a floor-shaped
      pass/fail. -->
+
+## UI conformance
+
+<!-- Omitted entirely if core/scripts/ui-touch found no UI path touched in
+     any repo — same "correctly never applied" rule "UI render" above
+     uses; this section gates on the same ui-touch result, never a second
+     check. When it did apply: the ui-conformance result — PASS/FAIL
+     with the adapter's own diagnostics on fail (which screen was missing
+     a declared component, or which token drifted, per
+     core/ADAPTER-CONTRACT.md §3.9's pass criterion — never a visual-
+     similarity verdict, this capability doesn't render judgment calls),
+     `SKIPPED (Class 1, ui_conformance_class1_optin not set)` if this
+     class wasn't eligible, or DEGRADED with capabilities.json's recorded
+     reason if the capability isn't implemented (the common case for a
+     project with no docs/ui/ bundle). Same discipline as "UI render"
+     — never folded into it even though both gate on the same ui-touch
+     result; they check different things. -->
 
 ## Conformance
 
