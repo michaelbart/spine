@@ -1,0 +1,199 @@
+#!/bin/bash
+# issue-ledger — low-ceremony known-issue capture, separate from
+# work/<milestone-id>/milestone.md's own provenance-locked "## Known gaps
+# for future member tasks" section (that one is populated only by /ship's
+# flagged-finding triage from a real adversary verdict — never
+# hand-invented). This script manages docs/known-issues.md instead: an
+# observation noted outside any active task or ticket (manual testing, a
+# hunch, no /verify run, no ticket-tracker key — /intake requires a real
+# ticket, which a local-only project won't have). Wrapped by
+# core/skills/note-issue/SKILL.md (`/note-issue <one-line>`); absorbed by
+# core/skills/roadmap/SKILL.md §1b, same discipline as Known-gaps §1a.
+#
+# Usage:
+#   issue-ledger add "<one-line>" [--severity low|med|high] [--evidence <file:line|url|note>] [--project <path>]
+#   issue-ledger list [--open|--all] [--project <path>]
+#   issue-ledger resolve <issue-id> [--project <path>]
+#   issue-ledger count [--open|--all] [--project <path>]
+#
+# `list`/`count` print only to stdout what a caller should parse (one
+# line per issue for `list`, a bare integer for `count`) — every
+# informational or error message goes to stderr, so `issue-ledger count
+# --open --project <path>` is safe for /spine to consume directly, and
+# `issue-ledger list ... | wc -l` always matches `count`'s own number.
+set -uo pipefail
+
+usage() {
+  cat >&2 <<'EOF'
+usage:
+  issue-ledger add     "<one-line>" [--severity low|med|high] [--evidence <str>] [--project <path>]
+  issue-ledger list     [--open|--all] [--project <path>]
+  issue-ledger resolve  <issue-id> [--project <path>]
+  issue-ledger count    [--open|--all] [--project <path>]
+EOF
+  exit 2
+}
+
+[[ $# -ge 1 ]] || usage
+cmd="$1"; shift
+project="$(pwd)"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+template="$SCRIPT_DIR/../templates/known-issues.md"
+
+known_issues_path() { echo "$project/docs/known-issues.md"; }
+
+ensure_file() {
+  local p; p="$(known_issues_path)"
+  if [[ ! -f "$p" ]]; then
+    [[ -f "$template" ]] || { echo "issue-ledger: template missing at $template" >&2; exit 2; }
+    mkdir -p "$(dirname "$p")"
+    cp "$template" "$p"
+  fi
+  echo "$p"
+}
+
+# Strips <!-- ... --> comments, including ones spanning multiple lines —
+# same technique as gaps-report's strip_comments, kept independent since
+# the two scripts have no shared library to import from.
+strip_comments() {
+  awk '
+    {
+      line = $0
+      if (incomment) {
+        idx = index(line, "-->")
+        if (idx > 0) { incomment = 0; line = substr(line, idx + 3) }
+        else { next }
+      }
+      out = ""
+      while (1) {
+        s = index(line, "<!--")
+        if (s == 0) { out = out line; break }
+        out = out substr(line, 1, s - 1)
+        rest = substr(line, s + 4)
+        e = index(rest, "-->")
+        if (e == 0) { incomment = 1; line = ""; break }
+        line = substr(rest, e + 3)
+      }
+      print out
+    }
+  '
+}
+
+# stdin: a known-issues.md body (comments already stripped). stdout: one
+# line per entry, tab-separated: id, severity, status, noted_at,
+# evidence, description.
+extract_entries() {
+  awk -F'\t' '
+    /^- id: issue-[0-9]+/ {
+      if (id != "") print id "\t" severity "\t" status "\t" noted_at "\t" evidence "\t" desc
+      id = $0; sub(/^- id: */, "", id)
+      severity = ""; status = ""; noted_at = ""; evidence = ""; desc = ""
+      next
+    }
+    id != "" && /^  severity:/ { severity = $0; sub(/^  severity: */, "", severity); next }
+    id != "" && /^  status:/   { status   = $0; sub(/^  status: */,   "", status);   next }
+    id != "" && /^  noted_at:/ { noted_at = $0; sub(/^  noted_at: */, "", noted_at); next }
+    id != "" && /^  evidence:/ { evidence = $0; sub(/^  evidence: */, "", evidence); next }
+    id != "" && /^  resolved_at:/ { next }
+    id != "" {
+      l = $0
+      sub(/^  */, "", l)
+      if (l != "") { if (desc == "") desc = l; else desc = desc " " l }
+    }
+    END { if (id != "") print id "\t" severity "\t" status "\t" noted_at "\t" evidence "\t" desc }
+  '
+}
+
+case "$cmd" in
+  add)
+    [[ $# -ge 1 ]] || usage
+    desc="$1"; shift
+    severity="med"; evidence="none"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --severity) severity="$2"; shift 2 ;;
+        --evidence) evidence="$2"; shift 2 ;;
+        --project)  project="$2";  shift 2 ;;
+        *) usage ;;
+      esac
+    done
+    [[ "$severity" =~ ^(low|med|high)$ ]] || { echo "issue-ledger: --severity must be low, med, or high; got \"$severity\"" >&2; exit 2; }
+    [[ -n "$desc" ]] || { echo "issue-ledger: description must not be empty" >&2; exit 2; }
+    p="$(ensure_file)"
+    counter_line="$(grep -n '^<!-- next-issue-id: [0-9]*-->\|^<!-- next-issue-id: [0-9]* -->' "$p" | tail -1)"
+    [[ -n "$counter_line" ]] || { echo "issue-ledger: $p has no '<!-- next-issue-id: N -->' counter — malformed" >&2; exit 2; }
+    counter_lineno="${counter_line%%:*}"
+    n="$(sed -n "${counter_lineno}p" "$p" | grep -oE '[0-9]+')"
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    tmp="$(mktemp)"
+    {
+      sed -n "1,${counter_lineno}p" "$p"
+      printf '\n- id: issue-%s\n  severity: %s\n  status: open\n  noted_at: %s\n  evidence: %s\n  %s\n' \
+        "$n" "$severity" "$ts" "$evidence" "$desc"
+      sed -n "$((counter_lineno + 1)),\$p" "$p"
+    } >"$tmp"
+    sed -i.bak "${counter_lineno}s/next-issue-id: [0-9]*/next-issue-id: $((n + 1))/" "$tmp" && rm -f "$tmp.bak"
+    mv "$tmp" "$p"
+    echo "ok: logged issue-$n"
+    ;;
+
+  list|count)
+    filter="open"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --open) filter="open"; shift ;;
+        --all)  filter="all";  shift ;;
+        --project) project="$2"; shift 2 ;;
+        *) usage ;;
+      esac
+    done
+    p="$(known_issues_path)"
+    if [[ ! -f "$p" ]]; then
+      echo "issue-ledger: no $p — nothing logged yet" >&2
+      [[ "$cmd" == "count" ]] && echo 0
+      exit 0
+    fi
+    entries="$(strip_comments <"$p" | extract_entries)"
+    if [[ "$filter" == "open" ]]; then
+      entries="$(printf '%s\n' "$entries" | awk -F'\t' '$3 == "open"')"
+    fi
+    entries="$(printf '%s\n' "$entries" | sed '/^$/d')"
+    if [[ "$cmd" == "count" ]]; then
+      if [[ -z "$entries" ]]; then echo 0; else printf '%s\n' "$entries" | wc -l | tr -d ' '; fi
+    else
+      if [[ -z "$entries" ]]; then
+        echo "issue-ledger: no $filter issues in $p" >&2
+      else
+        printf '%s\n' "$entries" | awk -F'\t' '{printf "%s\t[%s]\t%s\t%s\n", $1, $2, $3, $6}'
+      fi
+    fi
+    ;;
+
+  resolve)
+    [[ $# -ge 1 ]] || usage
+    issue_id="$1"; shift
+    while [[ $# -gt 0 ]]; do case "$1" in --project) project="$2"; shift 2;; *) usage;; esac; done
+    p="$(known_issues_path)"
+    [[ -f "$p" ]] || { echo "issue-ledger: no $p — nothing to resolve" >&2; exit 2; }
+    start_line="$(grep -n "^- id: ${issue_id}\$" "$p" | head -1 | cut -d: -f1)"
+    [[ -n "$start_line" ]] || { echo "issue-ledger: $issue_id not found in $p" >&2; exit 2; }
+    status_line="$(awk -v s="$start_line" 'NR > s && /^  status:/ { print NR; exit } NR > s && /^- id:/ { exit }' "$p")"
+    [[ -n "$status_line" ]] || { echo "issue-ledger: $issue_id has no status: field — malformed entry" >&2; exit 2; }
+    current_status="$(sed -n "${status_line}p" "$p" | sed 's/^  status: *//')"
+    if [[ "$current_status" == "resolved" ]]; then
+      echo "ok: $issue_id already resolved"
+      exit 0
+    fi
+    ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    tmp="$(mktemp)"
+    awk -v sl="$status_line" -v ts="$ts" '
+      NR == sl { print "  status: resolved"; print "  resolved_at: " ts; next }
+      { print }
+    ' "$p" >"$tmp"
+    mv "$tmp" "$p"
+    echo "ok: resolved $issue_id"
+    ;;
+
+  *) usage ;;
+esac

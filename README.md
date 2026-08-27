@@ -183,6 +183,7 @@ settling a category) genuinely isn't enough, never by default.
 | Command | Args | What it does |
 |---|---|---|
 | `/spine` | *(none)* | "Where am I, what do I do next." Run this when unsure. |
+| `/note-issue` | `<one-line description>` | Log a known issue found outside any active task or ticket — no classification, no ceremony. Written to `docs/known-issues.md`; `/roadmap` absorbs every open entry into a milestone or an explicit decline. |
 | `/prompts` | `[product-spec \| feature-handoff \| ui-handoff]` | Prints a ready-to-paste prompt for generating handoff material in another session — a product spec, a mid-project feature handoff, or a Claude Design UI handoff bundle. |
 | `/tasks` | *(none)* | Lists every open task — owner, class, phase, claims, flags. |
 | `/costs` | `[--since <date>]` | Fast numeric answer, in chat, no browser — untracked ratio, token/drift instrumentation, not a leaderboard. For the visual version, `/visualize`. |

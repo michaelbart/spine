@@ -128,6 +128,25 @@ anything here — same read-only stance as every other report this skill
 gives. If the script could not run at all, say so plainly and skip this
 callout rather than guessing.
 
+## 4a. Known issues (read-only, additive)
+
+`docs/known-issues.md` (`core/skills/note-issue/SKILL.md`) is a
+low-ceremony ledger for observations logged outside any active task or
+ticket — structurally separate from any milestone's own provenance-locked
+Known-gaps section. Nothing else surfaces it between `/roadmap` runs, so
+without this it can rot invisibly. Surface the open count, same additive,
+read-only stance as every other check in this skill:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/issue-ledger count --open --project <project root>
+```
+
+Non-zero: one line — "N open known issue(s) logged — `/roadmap` absorbs
+them into a milestone (or an explicit decline) next time it runs." Zero,
+or `docs/known-issues.md` doesn't exist yet: say nothing, same as a clean
+install-health check. If the script could not run at all, say so plainly
+("couldn't check known-issues.md") rather than reporting a clean bill.
+
 ## 5. Now report: idle, or a task in progress
 
 If `.spine/current-task` does **not** exist -> idle, show the menu (§5.1). If
