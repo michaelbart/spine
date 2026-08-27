@@ -133,7 +133,8 @@ Last updated: `<yyyy-mm-dd>`
 
 ## UI/visual handoff
 
-<!-- Only if this project has a browser UI and a separate UI handoff
+<!-- Only if this project has a rendered UI (browser-rendered, or native
+     mobile/desktop via simulator/emulator) and a separate UI handoff
      bundle exists or is planned (tokens, component library, per-screen
      specs + screenshots — see core/templates/ui-handoff.md, meant to
      live at docs/ui/handoff.md). Point at it here rather than
@@ -145,7 +146,7 @@ Last updated: `<yyyy-mm-dd>`
      component library built before any screen" to "Sequencing
      constraints" above — that ordering matters enough to state as a real
      constraint, not just implied by having a handoff bundle. "None — no
-     browser UI" or "None yet — planned" are both complete answers. -->
+     rendered UI" or "None yet — planned" are both complete answers. -->
 
 ## Build order
 

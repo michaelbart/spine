@@ -29,12 +29,13 @@ exactly) — `core/skills/verify/SKILL.md`'s aggregation step invokes it
 directly, once per touched contract, only for repos
 `core/scripts/contract-touch` puts in a task's blast radius. See §3.2.
 
-`ui-render` only ever exists in a project whose runtime shape serves a
-browser UI a person looks at (`core/skills/bootstrap/SKILL.md` /
-`core/skills/adopt/SKILL.md`'s Layer 3 calibration question) — a project
-with no browser UI (a CLI, a library, a pure API with no rendered surface)
-marks it `not-applicable` with reason "no browser UI in this project's
-runtime shape." Like `contract-check`, `ui-render` is never invoked by
+`ui-render` only ever exists in a project whose runtime shape renders a UI
+a person looks at — a browser-rendered web app, or a native mobile/desktop
+app driven through a simulator or emulator (`core/skills/bootstrap/
+SKILL.md` / `core/skills/adopt/SKILL.md`'s Layer 3 calibration question) —
+a project with no such surface (a CLI, a library, a pure API with no
+rendered surface) marks it `not-applicable` with reason "no UI surface to
+render in this project's runtime shape." Like `contract-check`, `ui-render` is never invoked by
 `floor`'s dispatch loop — `core/skills/verify/SKILL.md`'s own orchestration
 invokes it directly, and only when `core/scripts/ui-touch` reports the
 task's diff actually touched a UI-file-shape path (`.spine/ui-paths.conf`).
@@ -46,7 +47,8 @@ project with no such bundle marks it `not-applicable` with reason "no
 UI handoff bundle (docs/ui/) in this project." Unlike `ui-render`'s
 own conditional question, this one needs no dedicated interview question
 at bootstrap/adopt time — bundle presence is a plain file check, not a
-judgment call the way "does this project serve a browser UI" is. Like
+judgment call the way "does this project render a UI a person looks at"
+is. Like
 `ui-render`, it is never invoked by `floor`'s dispatch loop —
 `core/skills/verify/SKILL.md`'s own orchestration invokes it directly,
 gated by the same `core/scripts/ui-touch` result §3.3 already uses. See
@@ -236,6 +238,31 @@ a real home — CI, and a dedicated cleanup task that pays down pre-existing
 debt once — it has simply been moved out of the per-task gate, which was
 failing every task in horizon for reasons no single task's diff could fix.
 
+**Multi-project solutions and platform-head coverage.** A solution with
+more than one buildable project (a shared library plus one or more
+platform-head/executable projects — a mobile app's iOS/Android heads, a
+monorepo's separate deployable packages) has a second scope axis beyond
+the file-set scoping above: which *projects* a `typecheck` run attempts to
+build at all, not just which *files* within one project it covers. A
+`typecheck` adapter that only ever compiles the library project — because
+it's the one buildable without extra credentials, or simply the fastest —
+can report a clean PASS while the platform-head project the diff actually
+changed, and that a person would actually ship, was never compiled. This
+is the same shape of blind spot §3.3 documents for `test`/`test-changed`
+versus `ui-render` (a check running against a stand-in passes while the
+real thing is broken): a `typecheck` adapter for a multi-project solution
+must attempt to build every project in the diff's blast radius that
+produces a shippable artifact, not merely whichever project is most
+convenient to build offline. Where a platform-head project genuinely
+cannot build in this environment — a private package feed with no
+credentials configured, for instance — that is not a reason to narrow
+what `typecheck` attempts; it is exactly what §2's exit-code discipline
+exists to surface. The adapter's own build step fails, `typecheck` reports
+FAIL with the real diagnostic (the feed-auth error, or whatever it
+actually was) on stdout/stderr, and a human sees an honest, actionable
+gate instead of a clean PASS that quietly covered less than it looked
+like.
+
 ### 3.2 `contract-check` (Extension B) — which contract, not an output path
 
 `contract-check` needs an input §3's table has no row for: **which
@@ -268,37 +295,48 @@ self-test's entire point is proving the adapter's own logic without
 touching anything real. An adapter that requires the real env vars to be
 set even in self-test mode has misunderstood the convention.
 
-### 3.3 `ui-render` — a real browser, not a mocked render
+### 3.3 `ui-render` — a real render, not a mocked one
 
 Every other capability that touches UI code (`test`, `test-changed`) runs
 against a mocked DOM or mocked network layer — real, valuable coverage,
 but structurally blind to a class of bug that only shows up when the
-actual view is served by the actual dev server and rendered in an actual
-browser: a network call that returns something other than what the test
-mocked (a dev-server SPA fallback returning 200+HTML for an unmatched API
-route, for instance), a CSS/layout failure invisible to jsdom/happy-dom, a
-route that 404s for real. `ui-render` exists to catch exactly this gap, not to replace or
+actual view is rendered by the real runtime a person would see it in, not
+a mock: for a browser-rendered app, the actual view served by the actual
+dev server and rendered in an actual browser (a network call that returns
+something other than what the test mocked — a dev-server SPA fallback
+returning 200+HTML for an unmatched API route, for instance — a
+CSS/layout failure invisible to jsdom/happy-dom, a route that 404s for
+real); for a native mobile/desktop app, the actual screen running on an
+actual simulator/emulator (a deep link or navigation step that silently
+no-ops, a screen that never leaves a loading state against a real
+backend). `ui-render` exists to catch exactly this gap, not to replace or
 duplicate `test`/`test-changed`.
 
 `ui-render` sits in §3's "operates on nothing" row: no stdin, no
 positional argument, exit code alone governs pass/fail (§2). The adapter
-is responsible end-to-end for standing up whatever it needs to render a
-real page — starting the project's own dev server (or reusing one already
-running), driving a real or headless browser to the project's real
-routes, and tearing down anything it started before returning, pass or
-fail. Which routes to drive and how to reach a rendered page is a
-stack-specific detail the adapter itself owns (e.g. reading a small
-project-local routes list it maintains, or the same entry points
-`docs/map.md`'s survey already names) — core never enumerates routes on
-the adapter's behalf.
+is responsible end-to-end for standing up whatever it needs to reach a
+real rendered state, and tearing down anything it started before
+returning, pass or fail — for a browser-rendered app: starting the
+project's own dev server (or reusing one already running) and driving a
+real or headless browser to a real route; for a native mobile/desktop
+app: booting a simulator/emulator (or reusing one already booted),
+installing and launching the built app, and driving it to the relevant
+screen (a deep link, or scripted login/navigation). Which routes/screens
+to drive and how to reach a rendered state is a stack-specific detail the
+adapter itself owns (e.g. reading a small project-local routes/screens
+list it maintains, or the same entry points `docs/map.md`'s survey
+already names) — core never enumerates routes or screens on the
+adapter's behalf.
 
-**Pass criterion, at minimum**: every route the adapter drives renders a
-non-empty, non-whitespace body, and (where the adapter can determine it)
-the rendered content is one of that route's own known states — not a
-generic framework shell, not an empty successful-request placeholder. An
-adapter that only checks "the page returned a 200" has not implemented
-this capability correctly; the entire reason it exists is to catch a
-blank/wrong render that a 200 status code would not.
+**Pass criterion, at minimum**: every route/screen the adapter drives
+renders a non-empty, non-whitespace body (browser) or a non-blank,
+non-crashed screen (native), and (where the adapter can determine it) the
+rendered content is one of that route/screen's own known states — not a
+generic framework shell, not an empty successful-request placeholder, not
+a permanently-loading spinner. An adapter that only checks "the page
+returned a 200" or "the app launched" has not implemented this capability
+correctly; the entire reason it exists is to catch a blank/wrong render
+that a 200 status or a successful launch would not.
 
 **Eligibility, not always-on**: unlike `test`, `ui-render` is not run
 unconditionally by `floor` — it is never invoked by `floor`'s dispatch
@@ -309,10 +347,25 @@ is only invoked when that reports the diff touched a UI-file-shape path
 time). A task whose diff never touches a view/component file never pays
 this capability's cost.
 
+**Never a pixel/perceptual diff.** Same rule §3.9 states explicitly for
+`ui-conformance`: a real render, whether captured via a browser or a
+simulator/emulator screenshot, is grounding material and a pass/fail
+input for the criterion above — it is deliberately never diffed against a
+golden image. Pixel- or perceptual-diffing is exactly the kind of gate
+that's flaky across font rendering, anti-aliasing, animation timing, and
+dynamic content without dedicated image-diff infrastructure this core
+does not ship, and native rendering surfaces are, if anything, more prone
+to that flakiness than a browser (status bars, keyboard/permission
+overlays, animation frames) — a flaky floor-adjacent gate erodes trust in
+every other gate next to it.
+
 **Self-test**: `--self-test pass`/`--self-test fail` build their own
-throwaway page/fixture inside scratch space and a throwaway static server
-to serve it — never the project's real dev server or real routes, same
-isolation every other capability's self-test already requires (§4). Both
+throwaway fixture inside scratch space — a throwaway page plus a
+throwaway static server to serve it (browser case), or a throwaway
+fixture screen in a scratch build plus a scratch simulator/emulator
+target (native case) — never the project's real dev server, real routes,
+or real app bundle, same isolation every other capability's self-test
+already requires (§4). Both
 modes must route through the *same* render-check function normal mode
 uses (§4's own general rule, restated here because this is exactly the
 capability the rule was written after finding broken elsewhere): the pass

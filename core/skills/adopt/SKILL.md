@@ -75,10 +75,13 @@ Same process as `core/skills/bootstrap/SKILL.md` §4, except stack, commands,
 and runtime shape come from the surveyor's digest (§0.5) rather than your own
 reading of the repo — present its `## Stack & commands` and `## Runtime
 shape` findings for confirmation rather than asking cold. The digest already
-answers **whether this project serves a browser UI a person looks at**; if
-yes, confirm its proposed view/component glob(s) for `.spine/ui-paths.conf`
-and dev-server start command + port. If no: mark `ui-render`
-`not-applicable`, reason "no browser UI in this project's runtime shape."
+answers **whether this project renders a UI a person looks at — browser or
+native mobile/desktop via simulator/emulator**; if yes, confirm its
+proposed view/component glob(s) for `.spine/ui-paths.conf` and how
+`ui-render` reaches a real rendered state (dev-server start command + port
+for a browser app; simulator/emulator boot, bundle/package id, and launch
+path for a native app). If no: mark `ui-render` `not-applicable`, reason
+"no UI surface to render in this project's runtime shape."
 If yes and this project has no `docs/ui/` handoff bundle yet, mention
 **`/prompts ui-handoff`** the same way `core/skills/bootstrap/
 SKILL.md` does — an existing codebase adopting spine mid-life is exactly

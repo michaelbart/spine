@@ -115,8 +115,9 @@ Required sections, in this order, with this exact meaning:
    uncertainty down ("probably X, but Y might force otherwise because Z")
    rather than picking one to sound decisive. Don't skip a category for
    being unsure.
-9. **UI/visual handoff** — ask whether this project has a browser UI at
-   all, and if so whether a separate design handoff (tokens, component
+9. **UI/visual handoff** — ask whether this project has a rendered UI at
+   all (browser-rendered, or native mobile/desktop via simulator/emulator),
+   and if so whether a separate design handoff (tokens, component
    library, per-screen specs, screenshots) exists or is planned. If it's
    fully designed up front (e.g. a Claude Design pass before any code),
    say so explicitly and add "design system built before any screen" to

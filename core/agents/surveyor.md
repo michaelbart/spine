@@ -45,10 +45,13 @@ blank), and give a real, specific reason wherever you're inferring
   and `install-command-patterns.conf` verbatim, so give real commands, not
   descriptions of them.
 - `## Runtime shape` — what actually runs (service / app / CLI / library),
-  and explicitly: does this project serve a browser UI a person looks at?
-  If yes, the view/component glob(s) and the dev-server start command +
-  port. If no, say so with the reason (e.g. "headless API service, no
-  browser-rendered surface").
+  and explicitly: does this project render a UI a person looks at —
+  browser-rendered, or native mobile/desktop via simulator/emulator? If
+  yes, the view/component glob(s) and how a real rendered state is
+  reached (dev-server start command + port for a browser app; the
+  simulator/emulator target, bundle/package id, and launch path for a
+  native app). If no, say so with the reason (e.g. "headless API service,
+  no rendered surface").
 - `## Protected-path candidates` — inferred glob list: auth/authorization,
   public API surface, payment/PII handling, anything that looks like a
   migrations directory, dependency manifests — tag each with `#migration`

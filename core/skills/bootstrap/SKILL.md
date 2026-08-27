@@ -101,19 +101,23 @@ outside `.spine/adapters/` may ever read them, and nothing in `spine/` may
 name a language, framework, or tool.
 
 **Ask specifically, as its own question, not folded into "runtime
-shape": does this project serve a browser UI a person looks at?**
-"App" alone doesn't distinguish a browser-rendering web app from a CLI, a
-headless service, or a mobile/desktop app with no browser involved, and
-that distinction is exactly what `ui-render`
-(`core/ADAPTER-CONTRACT.md §3.3`) needs. If yes: ask for the glob(s)
-identifying view/component files and write them to
-`<project>/.spine/ui-paths.conf` (one glob per line, `#` comments — same
-format `.spine/protected-paths.conf` already uses), and ask the dev-server
-start command + port the `ui-render` adapter will need to boot a real
-render. If no: leave `.spine/ui-paths.conf` absent (mirrors
-`.spine/install-command-patterns.conf`'s own "absent means no-op" rule)
-and mark `ui-render` `not-applicable` in `.spine/capabilities.json` with
-reason "no browser UI in this project's runtime shape."
+shape": does this project render a UI a person looks at — a
+browser-rendered web app, or a native mobile/desktop app driven through a
+simulator or emulator?** "App" alone doesn't distinguish a UI-rendering
+app (browser or native) from a CLI or a headless service, and that
+distinction is exactly what `ui-render` (`core/ADAPTER-CONTRACT.md §3.3`)
+needs. If yes: ask for the glob(s) identifying view/component files and
+write them to `<project>/.spine/ui-paths.conf` (one glob per line, `#`
+comments — same format `.spine/protected-paths.conf` already uses), and
+ask how the `ui-render` adapter will reach a real rendered state — for a
+browser app, the dev-server start command + port; for a native
+mobile/desktop app, the simulator/emulator boot command, the built app's
+bundle/package id, and however it's driven to the relevant screen (a deep
+link, or scripted login/navigation). If no: leave `.spine/ui-paths.conf`
+absent (mirrors `.spine/install-command-patterns.conf`'s own "absent means
+no-op" rule) and mark `ui-render` `not-applicable` in
+`.spine/capabilities.json` with reason "no UI surface to render in this
+project's runtime shape."
 
 **If yes, also ask whether a UI handoff bundle (tokens, component
 library, per-screen specs, screenshots — `docs/ui/`,
