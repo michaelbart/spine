@@ -303,6 +303,23 @@ the artifact paths from step 1. Never summarize the implementation session
 into the delegation message — that defeats the independence the fresh-
 context property exists for (Layer 3).
 
+**Resolve and state the base as a concrete SHA, not just symbolic `HEAD`.**
+`falsifier` runs `isolation: worktree` (`core/agents/falsifier.md`), cloned
+from this repo's own `HEAD` at dispatch time — a git ref, not this
+session's uncommitted working tree — and its mandatory step 0 now applies
+the diff into that worktree before anything else (`core/agents/
+falsifier.md`, added ahead of mandate (a)). That apply only succeeds
+cleanly when the worktree's own base matches the base the diff was
+actually computed against. Run `git rev-parse <base>` yourself before
+dispatch and include the resulting SHA verbatim in the delegation message
+alongside the diff — this is what lets falsifier, on an apply failure,
+report the precise mismatch (`git rev-parse HEAD` inside its own worktree
+versus the SHA you gave it) instead of a vague "didn't apply." `security`
+runs with no `isolation` (read-only, no worktree — `core/ADAPTER-CONTRACT.md`
+§3.6) and already sees this session's real, uncommitted working tree
+directly, so it has no analogous apply step and needs the base SHA only
+for its own reference, not for reconciling a cloned copy.
+
 **Bound each adversary's run — new, and load-bearing in `auto`.** An adversary
 with no budget can run unbounded; in `guided` a watching human interrupts, but
 `auto`/`checkpointed` have no such human, so the budget *is* the backstop. Give
@@ -323,7 +340,14 @@ rather than shipping on an incomplete adversarial pass.
   `work/<task-id>/plan.md`, the diff, and `work/<task-id>/artifacts/
   callers.md` (single-repo) or, multi-repo, each edited repo's own
   `<repo-abs-path>/work/<task-id>/artifacts/callers.md` (plural — one per
-  edited repo, real paths, not a single merged file). **Multi-repo, when
+  edited repo, real paths, not a single merged file). **Single-repo: state
+  the absolute project root path too**, not just the relative
+  `work/<task-id>/...` paths — falsifier's own worktree clone generally has
+  no `work/` folder at all (it's generated fresh this run, never
+  committed), so it needs an unambiguous real path to resolve `callers.md`
+  against directly, mirroring design mode's own `docs/charter.md` carve-out
+  (`core/agents/falsifier.md` mandate (c)). Multi-repo already gives this —
+  each `<repo-abs-path>/...` path is already absolute. **Multi-repo, when
   step 1b found any touched contract**: additionally include the
   workspace root's `work/<task-id>/artifacts/contract-touch.json`'s
   `touched_contracts` list and each one's spec file path — this is what
@@ -333,7 +357,11 @@ rather than shipping on an incomplete adversarial pass.
   Also say explicitly whether `.spine/adapters/worktree-prep` exists and is
   `implemented` (read from `capabilities.json`) and its path — this is what
   arms mandate (b)'s step 0; falsifier never infers availability from the
-  diff or from probing the filesystem itself.
+  diff or from probing the filesystem itself. Also state the concrete base
+  SHA resolved above, verbatim — this is what arms the diff-apply step 0
+  ahead of mandate (a): falsifier compares it against its own worktree's
+  `git rev-parse HEAD` to name a stale-base mismatch precisely if the
+  apply fails, rather than guessing.
 - `subagent_type: security` (if running) — same, plus each edited repo's
   own `work/<task-id>/artifacts/dep-diff.md`.
 

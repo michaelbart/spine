@@ -24,6 +24,43 @@ You run in an isolated worktree: mutating it (stubbing code, running
 mutated tests) is expected and safe — it is a disposable copy, discarded
 after your run. You are still never to touch anything outside it.
 
+**Step 0 — apply the diff, before anything else.** Your worktree was
+cloned from a git ref (`HEAD` at dispatch time), not the implementer's
+dirty working tree — and implementation work isn't committed until
+`/ship` (`core/skills/verify/SKILL.md` §3), so your worktree's copy of
+every file this diff touches still reads as pre-diff until you apply it
+yourself. Skipping this step doesn't make mandate (a)/(b)/(c) safer to
+skip too — it makes them silently wrong: you'd be falsifying acceptance
+checks against code that doesn't contain the change under review.
+
+Before mandate (a) begins, apply the diff you were given — a single
+bounded declared command, the same disciplined shape as mandate (b)'s own
+`worktree-prep` step 0 below:
+
+```
+git apply <<'EOF'
+<the diff exactly as given in the delegation message>
+EOF
+```
+
+Exit 0 → your worktree now reflects the actual post-diff implementation;
+proceed to mandate (a) for real. Non-zero → **do not retry with different
+flags, do not hand-reconcile the patch, and do not fall back to reasoning
+about the diff text as a substitute for running it** — that silent
+fallback is exactly the failure mode this step exists to close. This is a
+tooling gap, recorded the same way as mandate (b)'s stub-out-probe gap: a
+verdict whose `claim` is "diff apply failed: worktree base does not match
+the diff's base — see stderr" with `git apply`'s actual stderr quoted,
+and the concrete base SHA the delegation message gave you (if it gave
+one) versus your worktree's own `git rev-parse HEAD`, so the caller can
+tell at a glance whether this is a stale-base mismatch (interim commits
+landed after the diff was computed) or something else. With the diff
+unapplied, (a) cannot be run for real and (b)'s tests would exercise
+pre-diff code — say so plainly in your reply rather than reporting either
+as a clean pass, and still attempt (c) (invariant relaxation via the
+caller map doesn't require executing the new code) and your three
+hardest questions from the diff text and caller map alone.
+
 **Design mode** (invoked by `/design`, once, at the end of the design
 stage — before any code exists): you see exactly two things, `docs/charter.md`
 and every `docs/decisions/D-*.md` record currently `proposed` or `adopted`.
@@ -86,6 +123,23 @@ relaxes an invariant that caller depended on (an assumption about ordering,
 uniqueness, non-null, authorization scope, anything). Where you find one,
 construct the caller-side case that depended on it and show it now breaks
 or silently does the wrong thing.
+
+The caller map (and any other `work/<task-id>/...` artifact path the
+delegation message points you at — `dep-diff.md`, a multi-repo
+`contract-touch.json` list, anything else under that task's own `work/`
+folder) is generated fresh during this same `/verify` run, before you were
+dispatched — but it's written to the *real* project's working tree, not
+committed, and your worktree clone was cut from the last commit. Unlike
+the diff, there's no patch to apply here to bring it in — it was never
+part of any diff to begin with, and it's read-only input, not code to
+execute, so applying it would be the wrong operation anyway. Read it from
+the project path you were given directly, not from your worktree's copy
+of that path, the same carve-out design mode already uses for
+`docs/charter.md` and `docs/decisions/D-*.md`: if `work/<task-id>/...`
+doesn't resolve inside your worktree (it generally won't — confirmed
+empirically, the whole `work/` folder is typically absent from a fresh
+worktree clone), that's expected, not a tooling failure — resolve the
+same relative path against the real project root instead.
 
 **Three hardest questions.** Beyond the mandate above, pose and answer the
 three hardest questions you have about this change — the ones you'd ask the
