@@ -230,14 +230,32 @@ project has none yet) and the current timestamp. An empty map with a fresh
 stamp is correct here; it grows through `/remap` as the codebase does.
 
 `mkdir -p <project>/docs/decisions <project>/work` and touch `.gitkeep` in
-`docs/decisions`. Do **not** create or commit a `work/.gitkeep` — `work/` is
-gitignored by `setup` (machine-local scratch; task files live there during a
-task but are never committed).
+`docs/decisions`. Create `<project>/work/.gitignore` with this exact content
+(committed to the repo so every team member gets it):
+
+```
+# Ignore task telemetry/tracking files — keep narrative docs (research.md,
+# plan.md, deviations.md, verify.md, briefing.md, notes.md) which are
+# committed by registry-sync and provide context for future sessions.
+*/state
+*/class
+*/owner
+*/autonomy
+*/flags.json
+*/claims.json
+*/approval.json
+*/ticket
+*/milestone
+*/artifacts/
+```
+
+This lets `registry-sync` commit only the human-readable per-task docs while
+leaving internal tracking files off the PR diff entirely.
 
 ## 6. Commit the install and hand off
 
 Commit the symlinks, `.claude/settings.json`, `docs/charter.md`,
-`docs/map.md`, `docs/decisions/.gitkeep`,
+`docs/map.md`, `docs/decisions/.gitkeep`, `work/.gitignore`,
 `.spine/capabilities.json`, `.spine/protected-paths.conf`,
 `.spine/install-command-patterns.conf` (if written),
 `.spine/ui-paths.conf` (if written), `.spine/profile.json`,

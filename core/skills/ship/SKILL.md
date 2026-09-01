@@ -30,15 +30,14 @@ lives:
    member task (§3b), known-gap resolution (§3c).
 5. **§4/§4a Briefing and PR description** — the one-page human-facing
    summary, and (if `open-pr` applies) the PR body.
-6. **§5/§6 Ledger, commit, and close-out** — including, multi-repo, a
+6. **§5/§6 Commit and close-out** — including, multi-repo, a
    resumable staged commit sequence across repos.
 
 ## 0. Ship-time re-grounding (Extension C §2.4)
 
 The window between plan approval and ship is unguarded otherwise — a
 neighbor's task can merge and invalidate this task's grounding after
-`check-stale` already passed at plan time. Two re-runs, both recorded in
-the ledger so their cost is measured, not guessed:
+`check-stale` already passed at plan time. Two re-runs:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md
@@ -82,11 +81,8 @@ Inter-task contracts` or `## Capability targets` — is a neighbor's real
 change and stays fully driftable; (d) accounts for only this task's own
 hand in a shared file, never the file wholesale. Only a file covered by
 **none of the four** is genuine unexplained drift. If every drifted file
-is expected by this rule: `ledger set <task-id> ship_time_regrounding_check_stale
-"stale (expected — matches
-predicted-touch/deviations/verify-fixed/own-milestone-edit)"` and proceed
-normally — not a halt, not a deviation, does not touch the circuit
-breaker.
+is expected by this rule: proceed normally — not a halt, not a deviation,
+does not touch the circuit breaker.
 
 If any drifted file is **not** covered by any of these checks: this is a real
 deviation, not a soft warning — append a
@@ -101,9 +97,8 @@ stands on is no longer trustworthy," which is exactly as true when a
 neighbor invalidated it as when the original research was simply wrong.
 Treating it differently would need a second, parallel invalidation
 channel this system doesn't have and shouldn't grow one just for this.
-`ledger set <task-id> ship_time_regrounding_check_stale "stale"` (or
-`"ok"`) before proceeding — proceeding means going back to
-`core/skills/task/SKILL.md` step 2 (research), not continuing here.
+Proceeding means going back to `core/skills/task/SKILL.md` step 2
+(research), not continuing here.
 
 If ok: `git pull --rebase` onto the current mainline (single-repo: this
 project; multi-repo: the workspace root, then each repo in `## Ship
@@ -118,10 +113,6 @@ The second merger always re-verifies against the first's reality — this
 is what makes that literally true instead of aspirational. If this
 post-rebase floor fails, that's a real merge-gate failure (§1 below), not
 a deviation — the diff itself now conflicts with what actually landed.
-`ledger set <task-id> ship_time_regrounding_floor "pass"` (or `"fail:
-<capability>"`) — a fourth, distinct field alongside `_check_stale`,
-`_claims`, and `_index` below, so a ship that hits more than one
-re-grounding check keeps every result instead of the last write winning.
 
 **Third re-grounding check: the real diff against other open tasks'
 claims** (Phase D self-red-team finding — narrow-claims verification).
@@ -144,11 +135,6 @@ already and didn't — most likely the colliding task's own claims changed
 after this one's plan was approved without `propagate` reaching this
 task; record it the same way, but note the distinction in the deviation
 record rather than treating both as the identical failure mode.
-`ledger set <task-id> ship_time_regrounding_claims "clear"` (or
-`"undeclared: <n>"` / `"declared: <n>"`) — a third, distinct field from
-the two above, so `/task-report` (`render-task`'s "Conformance, approval &
-re-grounding" section) shows which of the three re-grounding checks fired
-on this task, not just whether ship-time re-grounding happened at all.
 
 **Honest limit, stated plainly rather than implied by silence**: this is
 discovered late (ship time, code already written) and is not as strong as
@@ -176,10 +162,7 @@ ${CLAUDE_SKILL_DIR}/../../scripts/decision-index --project <project root> --chec
 never this task's own fault by construction — §2 hasn't run yet at this
 point in the skill — so it is not a deviation and does not touch the
 circuit breaker; it's a stale, inherited artifact this task is about to
-fix anyway once §2's regeneration runs. Note it in the ledger
-(`ledger set <task-id> ship_time_regrounding_index "stale (regenerating in
-§2)"` or `"ok"`) so a human reading `/task-report` for this task can see
-whether the index was stale at ship time, and move on — §2's own
+fix anyway once §2's regeneration runs. Note it in `notes.md` and move on — §2's own
 regeneration (which runs
 unconditionally whenever this task touched `docs/decisions/`, and should
 also run here if it's stale for a reason unrelated to this task, e.g. a
@@ -221,27 +204,11 @@ ${CLAUDE_SKILL_DIR}/../../scripts/second-approver-check <task-id> --project <pro
 
 Exit 1 halts here, verbatim message. Exit 0: read its stdout — an
 `override` result is not a quiet pass, and gets its own unconditional line
-in the briefing (§4), same visibility standard as `--bypass`. Either way
-(override or a real approver), record it with `ledger record-second-approver
-<task-id> --project <project root>` — this derives the value from
-`approval.json` itself (same fields `second-approver-check` reads) and writes
-it inside the script, never in this command's own arguments. Use this instead
-of a raw `ledger set <task-id> second_approver "..."` call: a self-approval
-override's reason is real and human-authorized, but a `ledger set` command
-whose literal text contains "override"/"self-approved"/"authorized" reads
-identically to an agent narrating its own bypass in progress to any
-safety classifier scanning Bash commands — solo-maintainer projects hit
-Class 2's self-approval path on every ship, so this is a recurring false
-positive, not a one-off, and `record-second-approver` exists specifically
-to route around it without changing what gets recorded. An override result
-is still expected to be loud in the briefing; a real second-approver result
-is expected, non-remarkable, still recorded for `/costs`' per-engineer view
-but not called out as loudly in the briefing.
+in the briefing (§4), same visibility standard as `--bypass`. An override result is still expected to be loud in the briefing; a real
+second-approver result is expected and non-remarkable.
 
 **`--bypass <reason>`** skips every check above (floor/deviations, ship
-order, second-approver) — loudly, never silently. Record the bypass in the
-ledger (`ledger set <task-id> bypass "<reason>"`) and give it its own
-visible section in the briefing (§4). Bypass is for a genuine emergency
+order, second-approver) — loudly, never silently. Record the bypass in `notes.md` and give it its own visible section in the briefing (§4). Bypass is for a genuine emergency
 (production down, the fix touches auth) that can't wait on the harness —
 it is not a way to route around a check you disagree with. `--bypass` does
 not skip §0's ship-time re-grounding — that runs first, unconditionally;
@@ -508,13 +475,8 @@ briefing can run several times a fair page's worth of prose and still show
 comfortably under 60 lines. Treat **~600 words** as the real "over cap"
 signal for this file; record both. `wc -l < briefing.md` and `wc -w <
 briefing.md` it once written (redirect stdin, not `wc -l briefing.md` —
-the latter's filename suffix gets stored verbatim by `ledger set` and
-breaks the numeric cap check downstream) and record both counts (`ledger
-set <task-id> briefing_line_count <n>` and `ledger set <task-id>
-briefing_word_count <n>`) — this cap has no other backstop, so the
-recorded counts are what make an oversized briefing visible in
-`/task-report` rather than only ever self-checked in the moment. Over cap
-(either signal) means trim before shipping, not ship anyway. Section by
+the latter appends the filename) — over cap (either signal) means trim
+before shipping, not ship anyway. Section by
 section, each sourced only from what's already been produced — this file
 quotes, it doesn't re-derive:
 
@@ -583,7 +545,7 @@ the completeness-line rule — don't re-derive or restate that logic here;
 read the template, follow it exactly, including its ratchet-trigger note
 on the deviations.md extraction heuristic. Every other section reads
 straight from the same artifacts §4 just finished reading (plan.md,
-deviations.md, verify.md, the ledger, approval.json) plus three §4 doesn't
+deviations.md, verify.md, approval.json) plus three §4 doesn't
 need: `work/<task-id>/artifacts/conformance.json` (the real predicted/
 actual file lists, not verify.md's count-only summary line),
 `work/<task-id>/artifacts/<agent>-verdict.json` for each adversary that ran
@@ -595,7 +557,7 @@ ship-time floor re-run used).
 **This file is never a summary of the diff.** If you catch yourself about
 to read the changed source files to describe what they do, stop — that's
 the post-hoc-summary failure mode this step exists to prevent. Every
-sentence traces to plan.md, deviations.md, verify.md, the ledger, or one
+sentence traces to plan.md, deviations.md, verify.md, approval.json, or one
 of the three artifacts above; nothing here is generated by re-reading code.
 
 **Multi-repo (Extension B):** one shared `pr-description.md`, written once
@@ -605,35 +567,19 @@ from is task-scoped, not repo-scoped). Its `**Contracts**` section carries
 whole section on a single-repo task, or a multi-repo task whose
 `contract-touch` run found nothing touched.
 
-`ledger set <task-id> pr_description "generated"` — one field, folded into
-`ledger aggregate`'s `pr_description_count` and reported by `/costs`, so a
-ship that skipped this step is visible against `task_count` rather than
-silently absorbed.
+**Same over-cap tracking as §4's briefing, same reason**: `wc -l
+< pr-description.md` and `wc -w < pr-description.md` (redirect stdin),
+same ~600-word real "over cap" signal. Over cap means trim before shipping,
+not ship anyway.
 
-**Same over-cap tracking as §4's briefing, same reason**: this template
-shares briefing.md's one-unwrapped-paragraph-per-label format (its own
-header comment says so), and in practice runs *longer*, not shorter — its
-reader has less context than briefing's, and its extra sections
-(`Review this at the plan level`, `Where to look`) add real length. `wc -l
-< pr-description.md` and `wc -w < pr-description.md` (redirect stdin, same
-reason as §4), record both (`ledger set <task-id>
-pr_description_line_count <n>` and `ledger set <task-id>
-pr_description_word_count <n>`), same ~600-word real "over cap" signal.
-Over cap means trim before shipping, not ship anyway.
-
-## 5. Ledger and commit
-
-`ledger mark <task-id> ship` — per the rule in `core/skills/task/SKILL.md`
-§6, this harvests the `verify` phase's window (its stored mark timestamp to
-the `ship` timestamp you just wrote) into phase key `verify`. Then, since no
-further mark follows `ship` in this task, harvest `ship` itself right now:
-`ledger harvest <task-id> ship --transcript <path> --from <the ship mark
-timestamp> --to <now>`.
+## 5. Commit
 
 **Derive the ticket, add its trailer.** **Prefer `work/<task-id>/ticket`** if
-present (recorded by `/intake`); otherwise run
-`${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch --project <project
-root>`. If either yields a key, add `Spine-Ticket: <key>` as an additional trailer
+present (recorded by `/intake`); otherwise extract the ticket key from the
+current branch name (`git rev-parse --abbrev-ref HEAD` and parse the
+ticket-pattern from `.spine/ticket-pattern.conf` if present, or fall back to
+the first `[A-Z]+-[0-9]+` match in the branch name). If either yields a key,
+add `Spine-Ticket: <key>` as an additional trailer
 line on this task's commit(s) — every repo, in the multi-repo case — alongside
 `Spine-Task:`, per `core/ADAPTER-CONTRACT.md` §6's composing-trailer rule. If it
 prints nothing (off-ticket), omit that line.
@@ -687,10 +633,9 @@ names (`core/templates/plan.md` — typically last, since its own artifacts
 For `--bypass`, add `Spine-Bypass: <reason>` as its own trailer line
 alongside (or instead of, if this was never a real task-folder task)
 `Spine-Task:` — on every repo's commit in the multi-repo case, not just
-one. Never omit both — that's the untracked-commit ratio
-(`ledger scan-untracked-ratio`) existing specifically to catch, and it runs
-per repo (`core/ADAPTER-CONTRACT.md §6`), so a repo whose commit is missing
-the trailer is caught independently of its siblings having it.
+one. Never omit both — every commit in this system should carry
+`Spine-Task:` or `Spine-Bypass:` so the task origin is traceable from
+`git log`.
 
 **Propagate** (Extension C §2.5) — this task's own commit(s) just changed
 files (and possibly decisions/contracts) other open tasks may ground on:
