@@ -250,10 +250,8 @@ git add -A -- workspace.json .spine/ contracts/ docs/ work/ CLAUDE.md .claude/
 git commit -m "spine: workspace init — <n> repos, <m> contracts"
 ```
 
-**Extend mode** — its own distinct message shape, so the event feed
-(`render-dashboard`'s event kind, `/costs`) can tell "this workspace was
-created" from "this workspace grew" apart rather than collapsing both into
-one indistinguishable "workspace init" line:
+**Extend mode** — its own distinct message shape, distinguishing "this
+workspace was created" from "this workspace grew":
 
 ```
 git add -A -- workspace.json .claude/settings.json

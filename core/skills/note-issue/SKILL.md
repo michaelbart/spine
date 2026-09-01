@@ -67,10 +67,9 @@ on first use if it doesn't exist yet — nothing to set up beforehand.
 If `issue-ledger` could not run at all (not a "ran and reported an
 error" case — genuinely could not execute), say so plainly and, as a
 fallback, hand-append the same fenced shape `core/templates/
-known-issues.md` documents directly to `docs/known-issues.md` yourself
-(mirroring `core/scripts/ledger`'s own `hand_tracked` fallback
-discipline) — the point of this skill is that the observation never gets
-lost to a tooling hiccup, not that the script must be the one to write it.
+known-issues.md` documents directly to `docs/known-issues.md` yourself —
+the point of this skill is that the observation never gets lost to a
+tooling hiccup, not that the script must be the one to write it.
 
 ## 4. Confirm
 

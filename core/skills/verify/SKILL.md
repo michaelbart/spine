@@ -29,12 +29,11 @@ pre-existing, unrelated failures must never block a
 producer task forever).
 
 **Tooling-gap discipline applies to every script below** — see
-`core/skills/task/SKILL.md`'s own header section for the full three-outcome
+`core/skills/task/SKILL.md`'s own header section for the three-outcome
 rule (ran-passed / ran-failed / could-not-run) and how to record it
-(notes.md, `ledger note-gap`, and a hand-authored `ledger.json` stub if
-`ledger` itself is what's unreachable). Several capabilities here need a
-specific default when they could not run at all, because "silently treat
-as pass" is exactly the failure mode this fix exists to close:
+(notes.md). Several capabilities here need a specific default when they
+could not run at all, because "silently treat as pass" is exactly the
+failure mode this fix exists to close:
 
 - **`floor` could not run at all** (distinct from `floor` running and
   reporting `FAIL`): this is not a `FAIL` you can fix by touching the
@@ -51,8 +50,7 @@ as pass" is exactly the failure mode this fix exists to close:
   filtering was manual, not mechanical, for this run.
 - **`conformance` could not run**: record the gap with exactly this
   consequence — "conformance score unavailable — plan predictiveness
-  unmeasured for this task" — and leave `ledger set ... conformance_score`
-  unset (don't invent a number).
+  unmeasured for this task."
 - **`ui-touch` could not run at all**: do not treat this as "no UI
   touched" (that would silently skip step 1c's gate on a task that
   genuinely touched UI code) — record the gap with the consequence "UI
@@ -365,14 +363,6 @@ rather than shipping on an incomplete adversarial pass.
 - `subagent_type: security` (if running) — same, plus each edited repo's
   own `work/<task-id>/artifacts/dep-diff.md`.
 
-Harvest each subagent's own transcript in full into the ledger under its
-own phase key, same mechanism as `core/skills/task/SKILL.md` §6:
-`ledger harvest <task-id> falsifier --transcript
-.../subagents/agent-<id>.jsonl --from <epoch> --to <now>` (and the same for
-`security` if it ran), `<id>` from the Agent tool's result. This is a
-separate line item from the `verify` phase key `/task` marks for this
-skill's own orchestration overhead — don't fold one into the other.
-
 Each replies with exactly one JSON object (`core/ADAPTER-CONTRACT.md §5`).
 Write each verbatim to `work/<task-id>/artifacts/<agent>-verdict-raw.json`,
 then:
@@ -553,12 +543,6 @@ this document quotes scripts, it doesn't paraphrase them:
   line already accumulated in `work/<task-id>/notes.md`, verbatim, one
   line per event. Write "none" only if genuinely empty.
 
-`ledger set <task-id> conformance_score <f1 from conformance.json>` (multi-repo:
-average the `f1` field across every edited repo's own `conformance-<repo>.json`
-— a single task-level ledger has one `conformance_score`, not one per repo, and
-"which repo's number wins" left undefined has already produced real tasks that
-silently kept an arbitrary one of several scores while discarding the rest) and
-`ledger set <task-id> capability_gaps <json array of the gap names>`.
 
 ## 6. Report
 

@@ -149,8 +149,8 @@ tooling (its CLI or API); mark `not-applicable`, reason "no PR host", if PRs
 are opened by hand. If a `ticket-fetch` adapter is written, also write
 `<project>/.spine/ticket-pattern.conf` — one extended-regex line matching this
 tracker's key shape (e.g. `[A-Z][A-Z0-9]+-[0-9]+` for `ABC-1234`), which
-`ledger ticket-from-branch` reads to derive a ticket from the branch; absent, it
-falls back to that same default. `worktree-prep`: the package manager and
+task startup reads to derive a ticket key from the branch name; absent,
+it falls back to that same default. `worktree-prep`: the package manager and
 gitignored-deps shape needed to write it are already known from the earlier
 stack questions — symlink/reuse the relevant dir(s) from the source checkout
 into a fresh worktree; mark `not-applicable`, reason "nothing to provision",
@@ -230,12 +230,14 @@ project has none yet) and the current timestamp. An empty map with a fresh
 stamp is correct here; it grows through `/remap` as the codebase does.
 
 `mkdir -p <project>/docs/decisions <project>/work` and touch `.gitkeep` in
-each.
+`docs/decisions`. Do **not** create or commit a `work/.gitkeep` — `work/` is
+gitignored by `setup` (machine-local scratch; task files live there during a
+task but are never committed).
 
 ## 6. Commit the install and hand off
 
 Commit the symlinks, `.claude/settings.json`, `docs/charter.md`,
-`docs/map.md`, `docs/decisions/.gitkeep`, `work/.gitkeep`,
+`docs/map.md`, `docs/decisions/.gitkeep`,
 `.spine/capabilities.json`, `.spine/protected-paths.conf`,
 `.spine/install-command-patterns.conf` (if written),
 `.spine/ui-paths.conf` (if written), `.spine/profile.json`,

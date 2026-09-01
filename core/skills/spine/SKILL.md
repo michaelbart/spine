@@ -229,10 +229,6 @@ only commands that exist in this install (they're symlinked under
   this first when you pick up a ticket.*
 - **`/task <description>`** — start work directly, without a ticket: classify ->
   research -> plan (you approve it) -> implement -> verify -> ship.
-- **`/visualize`** — open the project dashboard (timeline, decisions,
-  capabilities, drift) in a browser.
-- **`/tasks`** — list every open task and its phase.
-- **`/costs`** — what spine is costing, drift first.
 - **`/design`**, **`/wayfinder`**, **`/prototype`**, **`/ratchet`**,
   **`/remap`**, **`/prompts`** — foundational design; charting a large foggy
   effort into a map of decision tickets; a disposable spike to settle a

@@ -32,7 +32,7 @@ that already looked complete. Its one-line output branches four ways:
   with `<milestone-id>`'s next task: `<description>`?" — before doing
   anything else, Step 0 included. This is a real touchpoint, not a
   courtesy notice: nothing has been created yet (no task folder, no
-  git-identity resolution, no ledger), so it's the cheapest possible point
+  git-identity resolution), so it's the cheapest possible point
   to catch a wrong guess, one keystroke against retyping the whole
   description by hand. On confirmation, proceed exactly as if the human
   had typed `<that description> --milestone <that-milestone-id>`. On
@@ -51,20 +51,11 @@ that already looked complete. Its one-line output branches four ways:
   fall through to asking for a description.
 - **`NONE`** — no milestone exists yet, or every one found is already
   complete. Fall through to asking for a description, saying briefly why
-  auto-continue didn't fire. If a milestone did just complete, also run
-  `${CLAUDE_SKILL_DIR}/../../scripts/gaps-report --project <project root>`
-  — if it reports any open entries, mention them in the same breath ("M<n>
-  also has N open known gap(s) — run `/roadmap` to fold them into the next
-  milestone, or `--milestone M<n+1>` to handle it there"); this is the only
-  other point besides new-milestone creation (below) where a human is
-  likely to see them without going looking for them.
-- If the script could not run at all, this is the "could not run" case the
-  tooling-gap discipline (header note below) distinguishes from a real
-  result — but no task folder exists yet at this point for that discipline's
-  usual `notes.md` line, so just say so plainly to the human ("couldn't
-  check for a queued milestone task") and fall through to asking for a
-  description; don't treat a script that couldn't execute as "nothing
-  queued."
+  auto-continue didn't fire.
+- If the script could not run at all, this is a tooling gap — say so
+  plainly to the human ("couldn't check for a queued milestone task") and
+  fall through to asking for a description; don't treat a script that
+  couldn't execute as "nothing queued."
 
 **Step 0 — core version check (Extension C §2.1, the "cheap session-start
 check").** No SessionStart-shaped hook exists to carry this — the
@@ -116,27 +107,18 @@ proceed here and I'll create it directly?"` This is informational, not a
 hard block — same "never a gate" stance `/ship` takes on the identical
 suggestion — the human may legitimately want an ad hoc milestone id. If the
 human says proceed: **also check every already-shipped milestone**, not
-just the immediately preceding one — `${CLAUDE_SKILL_DIR}/../../scripts/
-gaps-report --project <project root>` prints exactly this, one flat list
-across every `work/M*/milestone.md`, flagged shipped vs. in-flight. Checking
-only `M<n-1>` would let a gap deferred at one new-milestone stop silently
-drop out of every future one — the milestone it lives in stops being
-"immediately preceding" the moment a second new milestone gets created
-after it, and nothing else would ever look at it again. For every shipped
-milestone `gaps-report` shows with open entries, read them aloud and ask
-what to do with each: carry it verbatim into `<id>`'s own Known Gaps
-section (same id, `source`, prose — the append-verbatim convention
+just the immediately preceding one — read each `work/M*/milestone.md`
+directly, checking for open entries in its `## Known gaps` section. For
+every shipped milestone with open entries, read them aloud and ask what to
+do with each: carry it verbatim into `<id>`'s own Known Gaps section (same
+id, `source`, prose — the append-verbatim convention
 `core/skills/roadmap/SKILL.md` §3 uses), fold it into this task's own scope
 instead, explicitly decline it (say so, move on — never silently drop, same
 completeness standard `/roadmap` §4 holds itself to), or defer it — leave
 it exactly where it is and say nothing more now. Deferring is a safe,
 legitimate answer here (unlike declining, it isn't final): the gap stays in
-its original milestone's own Known Gaps section, `gaps-report` will surface
-it again next time, and this same stop will re-ask about it at the *next*
-new-milestone creation too, for as long as it takes. If `gaps-report` could
-not run at all, this is the tooling-gap discipline's "could not run" case —
-say so plainly and fall back to checking `work/M<n-1>/milestone.md` by hand
-rather than skipping the check entirely. Only then create
+its original milestone's own Known Gaps section and this same stop will
+re-ask about it at the next new-milestone creation. Only then create
 `work/<id>/milestone.md` at the workspace root, seeded from
 `core/templates/milestone.md` plus whatever gap entries were carried
 forward (bump `next-gap-id` past the highest carried id). **If
@@ -302,44 +284,16 @@ must resolve `../../` against the symlink's real target (`<spine>/core/...`).
 Collapsing it as text yields a nonexistent `.claude/scripts/...` path and a
 "no such file" error.
 
-**Tooling-gap discipline (applies to every script invocation below, not
-just ledger):** every time you invoke a core script, distinguish three
-outcomes, not two — "ran and passed," "ran and failed" (a real result, act
-on it normally), and **could not run at all** (the tool call itself was
-blocked, denied, or errored before the script's own logic ever executed —
-a permission denial, a sandbox/classifier block, "command not found" from
-a broken symlink; not the script exiting non-zero on its own). The third
-state is the one that's silently indistinguishable from the second if you
-don't name it — a blocked or denied tool call looks, from here, exactly
-like nothing happened, unless you say so yourself. On "could not run":
-
-1. Append a line to `work/<task-id>/notes.md` (create it, header `# Notes`,
-   if it doesn't exist yet): `TOOLING GAP: <script> could not run — <one-line
-   consequence>.` Be concrete about the consequence (e.g. "research
-   staleness unmeasured for this task," not "check-stale failed").
-2. If `ledger` itself is reachable (this gap is about some *other* script),
-   also run `ledger note-gap <task-id> <script> "<consequence>"` — this is
-   what feeds `/costs`' tooling-degradation count mechanically instead of
-   leaving it as prose only a human reading notes.md would find.
-3. If `ledger` itself is what's unreachable — including `ledger init` never
-   having succeeded for this task — hand-author `work/<task-id>/ledger.json`
-   directly (Write tool) with the same shape `ledger init` would have
-   produced (see `core/scripts/ledger`'s `init` case for the exact fields)
-   but with **`hand_tracked: true`** and a `tooling_gaps` array containing
-   at least this gap. This is the stamp that keeps the task from being
-   silently invisible to `ledger aggregate` (which globs
-   `work/*/ledger.json`) — a real ledger.json with `hand_tracked:false` and
-   a hand-authored one with `hand_tracked:true` are visually and
-   mechanically distinguishable to anyone reading either the file or
-   `/costs`' output.
-4. Never let a could-not-run script silently read as "nothing to report."
-   Degrade gracefully (keep going by hand, per the phase's own fallback —
-   e.g. hand-tracking `state` below) but the degradation itself must leave
-   a trace in at least one of notes.md / ledger.json / verify.md.
-
-This discipline is what `/verify` (step 1 below hands off to) and `/ship`
-carry forward into `verify.md`'s and `briefing.md`'s own "Tooling gaps"
-sections — notes.md is this task's running log until then.
+**Tooling-gap discipline (applies to every script invocation below):**
+every time you invoke a core script, distinguish three outcomes — "ran and
+passed," "ran and failed" (a real result, act on it normally), and **could
+not run at all** (blocked, denied, or errored before the script's own logic
+executed). On "could not run": append a line to `work/<task-id>/notes.md`
+(create it, header `# Notes`, if it doesn't exist yet):
+`TOOLING GAP: <script> could not run — <one-line consequence>.` Be concrete
+about the consequence. Never let a could-not-run script silently read as
+"nothing to report." This carries forward into `verify.md`'s own "Tooling
+gaps" section.
 
 ## 1. Classify — the first recurring human touchpoint
 
@@ -362,9 +316,9 @@ runs (either this directory had no other active task, or the human just
 arrived in a fresh worktree) — the one place a branch switch can't collide
 with another task's uncommitted work sitting in the same tree. If `ticket` is
 non-null, first check whether the current branch already resolves to this
-same key: `${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch
---project <project root>`. A match means the human already branched by hand —
-nothing to do. Otherwise, before generating the task ID below (so the task
+same key: check whether `git rev-parse --abbrev-ref HEAD` already contains
+the ticket key as a substring. A match means the human already branched by
+hand — nothing to do. Otherwise, before generating the task ID below (so the task
 folder's own commits land on the right branch from the start):
 
 - A local branch already named `<ticket>-<kebab-slug of description>` exists
@@ -392,12 +346,11 @@ folder's own commits land on the right branch from the start):
 One more thing rides along in the setup step below: for a direct
 `/task` with no handoff, write the autonomy the human just chose in the step
 above (Class 2 / a downgraded task ⇒ `guided`); and if
-`class_below_recommended` is true, `ledger set <task-id>
-class_downgraded_from <recommended_class>` and add a
-`notes.md` line — the downgrade stays visible without consuming a
-circuit-breaker slot (it is a classification choice, not a plan-vs-reality
-deviation, so it is **not** a `deviations.md` record). Then **delete
-`.spine/current-intake`** and continue to §2. The class-suggestion list below is
+`class_below_recommended` is true, add a `notes.md` line recording the
+downgrade — the downgrade stays visible without consuming a circuit-breaker
+slot (it is a classification choice, not a plan-vs-reality deviation, so it
+is **not** a `deviations.md` record). Then **delete `.spine/current-intake`**
+and continue to §2. The class-suggestion list below is
 only for a `/task` invoked directly, with no intake handoff.
 
 Every task gets a class, and the human confirms it — not the model alone.
@@ -408,24 +361,17 @@ confirm an autonomy right after the class — see "Autonomy for a direct
 - **Class 0 (trivial):** suggest when the change looks like it will touch
   ≤2 files, ≈15 lines or fewer (or this project's `.spine/profile.json`
   `class0_max_files`/`class0_max_lines` if set), introduces no new public
-  symbol, and (check
-  against `.spine/protected-paths.conf`) touches no protected path. No work
-  folder, no per-task `ledger.json`, no phases — but not invisible: make the
-  edit, then leave a **trace** (traced-trivial). Derive the ticket from the branch —
-  `${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch --project <project
-  root>` — and if it returns a key, commit the edit carrying a `Spine-Ticket:
-  <key>` trailer (composes with any subject convention, `core/ADAPTER-CONTRACT.md`
-  §6) and record it: `${CLAUDE_SKILL_DIR}/../../scripts/ledger trace <key> "<one
-  line: what changed>" --project <project root>`. That's the whole ceremony — one
-  commit, one trace line, no folder, no docs. If no ticket is derivable (genuinely
-  off-ticket), make the edit and skip the trailer/trace; spine doesn't chase
-  off-ticket one-offs — they stay visible via the org's own commit convention.
-  The backstop is
-  `path-escalate`: with no active task it defaults to class 0, so if the
-  edit turns out to touch a protected path, the hook halts it and you tell
-  the human plainly: "this stopped being trivial" — then restart as a real
-  task. This threshold is an initial value; `/costs` data is what should
-  revise it, not intuition.
+  symbol, and (check against `.spine/protected-paths.conf`) touches no
+  protected path. No work folder, no phases — but not invisible: make the
+  edit, then commit it carrying a `Spine-Ticket: <key>` trailer if a ticket
+  key is derivable from the branch name (split on `-`, match against
+  `.spine/ticket-pattern.conf` if present). If no ticket is derivable
+  (genuinely off-ticket), make the edit and skip the trailer; spine doesn't
+  chase off-ticket one-offs — they stay visible via the org's own commit
+  convention. The backstop is `path-escalate`: with no active task it
+  defaults to class 0, so if the edit turns out to touch a protected path,
+  the hook halts it and you tell the human plainly: "this stopped being
+  trivial" — then restart as a real task.
 - **Class 1 (standard):** the default for anything bigger than that.
 - **Class 2 (high blast radius):** suggest when the human's description or
   your own quick read implies protected-path or schema/contract/auth
@@ -458,15 +404,7 @@ still-`TBD` member-task entry with `<task-id>` in `work/<id>/milestone.md`,
 per this skill's own header note above (`phase-gate` only gates
 `Edit`/`Write` once a `state` file exists and reads `research`/`plan`; no
 `state` file yet means this edit is a genuine no-op for the hook to
-evaluate, not an exemption it has to special-case). Only after that: write
-`work/<task-id>/state` = `research`, then
-`${CLAUDE_SKILL_DIR}/../../scripts/ledger init <task-id>` and
-`ledger mark <task-id> classify`. If `ledger init` could not run at all,
-this is the ledger-itself-unreachable case in the tooling-gap discipline
-above — hand-author the `ledger.json` stub (`hand_tracked: true`) right
-now, at task creation, rather than waiting for a later phase to notice; a
-task that never gets a ledger.json at all is invisible to `/costs`, not
-just degraded.
+evaluate, not an exemption it has to special-case). Only after that: write `work/<task-id>/state` = `research`.
 
 **Registry init (Extension C §2.2), same step, before the first
 `registry-sync`:** resolve owner identity —
@@ -492,11 +430,10 @@ deferred to the end of the phase.
 
 ## 2. Research
 
-`ledger mark <task-id> research`. Delegate to the `researcher` agent (Agent
-tool, `subagent_type: researcher`) with a delegation message containing: the
-task description, the task ID, the class, whether this is a bug fix
-(root-cause mode) or not, and pointers to `docs/charter.md` / `docs/map.md`
-if they exist.
+Delegate to the `researcher` agent (Agent tool, `subagent_type: researcher`)
+with a delegation message containing: the task description, the task ID, the
+class, whether this is a bug fix (root-cause mode) or not, and pointers to
+`docs/charter.md` / `docs/map.md` if they exist.
 
 **Class 1 is research-lite:** tell the researcher explicitly to ground only
 the files the change will directly touch or directly call into, and skip a
@@ -509,16 +446,13 @@ silently drift from it task to task.
 
 The researcher's entire reply is the complete `research.md` content
 (including its header) — write it verbatim to `work/<task-id>/research.md`.
-Harvest its subagent transcript into the ledger under phase key
-`research-agent` (see §6). Then harvest the main session's own
-`classify`→`research` window into phase key `research`.
 
 ## 3. Plan
 
 **Flag check first** (per this skill's own header note on flag-blocked
 advance): read `work/<task-id>/flags.json`; any unacknowledged entry halts
-here, before anything else in this step. `ledger mark <task-id> plan`,
-write `state` = `plan`, `registry-sync <task-id>`. First run
+here, before anything else in this step. Write `state` = `plan`,
+`registry-sync <task-id>`. First run
 `${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md`
 — if it reports stale, the grounding drifted since it was written; regenerate
 research (back to step 2) before planning on it. If `check-stale` could not
@@ -538,16 +472,9 @@ line. The `## Predicted touch` section (inside its own `<!-- MACHINE:
 predicted-touch -->` fence) is machine-parsed verbatim by
 `core/scripts/conformance`, don't reformat it (multi-repo: every entry
 repo-qualified, `<repo-name>:<path>`, per the template's own comment).
-**200-line hard cap, comments included** — `wc -l` it before presenting;
-if it doesn't fit, the task splits into two, it does not get compressed
-into unreadability. This cap has no other backstop — record the actual
-count (`ledger set <task-id> plan_line_count <n>`) so an oversized plan
-that slipped through is visible in `/task-report` after the fact, not just
-self-checked once and forgotten. Use `wc -l < plan.md` (redirect stdin),
-not `wc -l plan.md` — the latter prints the filename alongside the count
-(`"42 plan.md"`), which `ledger set` stores as-is since it isn't valid
-JSON, and a non-numeric `plan_line_count` breaks the cap check it exists
-to feed. Multi-repo, additionally: write `## Ship order` the
+**200-line hard cap, comments included** — `wc -l < plan.md` it before
+presenting; if it doesn't fit, the task splits into two, it does not get
+compressed into unreadability. Multi-repo, additionally: write `## Ship order` the
 moment `## Predicted touch` names more than one repo. Write `## Contract
 change` if research or your own reading of `## Predicted touch` suggests
 this plan touches a declared contract's producer paths or spec — this is a
@@ -640,13 +567,8 @@ surface(s), and the three resolution paths verbatim from its own output
 Predicted touch` and re-running this check, same as any other plan
 revision. Override means proceeding anyway, loudly: append a note to
 *this* task's `deviations.md` (tier `record-and-proceed`, since choosing
-to override is itself the resolution) naming the conflicting task, and
-`ledger set <task-id> claims_conflicts <n>` (`n` = the blocking count
-`claims-check` reported) so `/costs`' per-engineer view has real data
-instead of a permanent zero — do this on *every* blocking run, override
-or not, since a conflict that gets resolved by waiting/renegotiating
-still happened and is worth counting. If clear (exit 0, warnings or not),
-proceed straight to presenting the plan.
+to override is itself the resolution) naming the conflicting task. If
+clear (exit 0, warnings or not), proceed straight to presenting the plan.
 
 **If `work/<task-id>/autonomy` is `auto`, there is no plan-approval stop.**
 Write the plan exactly as above — it is still written, and `/ship` attaches it
@@ -690,15 +612,14 @@ iteration.
   model as `/ship --bypass`): the owner may self-approve by writing
   `approval.json` with `"override": true` and a real
   `"override_reason"` — loud, not silent; `/ship` (Phase C's own
-  extension) surfaces this in the briefing and the ledger unconditionally,
-  never treats it as an ordinary approval.
+  extension) surfaces this in the briefing unconditionally, never treats it
+  as an ordinary approval.
 
 ## 4. Implement
 
-**Flag check first**, same rule as step 3. On approval: `ledger mark
-<task-id> implement`, write `state` = `implement`, `registry-sync
-<task-id>`. This is what unblocks `phase-gate` — it only restricts writes
-during `research`/`plan`.
+**Flag check first**, same rule as step 3. On approval: write
+`state` = `implement`, `registry-sync <task-id>`. This is what unblocks
+`phase-gate` — it only restricts writes during `research`/`plan`.
 
 Work the plan's steps directly (you have full tool access again; `phase-gate`
 no longer applies, `path-escalate`/`dep-gate` still do). For each decision
@@ -748,8 +669,7 @@ literal, not judgment-call vocabulary translation:
 **Circuit breaker:** count every deviations.md record regardless of tier.
 On the third for this task, the plan is invalidated — `git stash push -u -m
 "spine: circuit breaker, work/<task-id>"` to preserve what you'd built
-without losing it, write `state` back to `research`, bump
-`work/<task-id>/ledger.json`'s `deviation_count` (see §6), `registry-sync
+without losing it, write `state` back to `research`, `registry-sync
 <task-id>`, and tell the human plainly: three wrong guesses means the
 research was wrong once, not that each guess should be patched forward.
 Fresh research is required before re-planning.
@@ -762,9 +682,8 @@ reaffirms it as-is, dated, and the deviations.md resolution records which.
 
 **Flag check first**, same rule as step 3. Implementation acceptance
 checks (from the plan) should already pass before you move on — check them
-yourself first; don't hand a known-broken diff to `/verify`. Then: `ledger
-mark <task-id> verify`, write `state` = `verify`, `registry-sync
-<task-id>`.
+yourself first; don't hand a known-broken diff to `/verify`. Then: write
+`state` = `verify`, `registry-sync <task-id>`.
 
 **This phase's shape depends on `work/<task-id>/autonomy`** (absent =
 `guided`). The independence that `/verify` protects comes from the falsifier
@@ -819,27 +738,3 @@ the human's word alone.
 read is the third recurring touchpoint, and it happens once, at the end,
 not as a gate you enforce mid-flow.
 
-## 6. Ledger bookkeeping (every phase transition above)
-
-Session transcript path: `$HOME/.claude/projects/$(pwd | tr '/' '-')/${CLAUDE_SESSION_ID}.jsonl`.
-**Rule: whichever `ledger mark <task-id> <phaseN+1>` call you make is also
-what harvests the phase it's closing out** —
-`ledger harvest <task-id> <phaseN> --transcript <path> --from <phaseN's
-stored mark timestamp> --to <the phaseN+1 timestamp you just wrote>`. Read
-phaseN's stored timestamp back from `work/<task-id>/ledger.json`, don't
-recompute it. Concretely: marking `research` harvests `classify`; marking
-`plan` harvests `research`; marking `implement` harvests `plan`; marking
-`verify` harvests `implement`. `/ship` continues the same rule for the
-phases after this skill hands off (see `core/skills/ship/SKILL.md` §4) and
-additionally harvests its own final `ship` window, since nothing marks a
-phase after it.
-
-For a subagent (researcher, falsifier, security), harvest its own
-transcript (`.../subagents/agent-<id>.jsonl`, `<id>` from the Agent tool's
-result) in full under its own phase key (`research-agent`, `falsifier`,
-`security`) — this is separate bookkeeping from the window-based harvest
-above, not a replacement for it; the orchestrating phase's own window still
-covers the main session's overhead around the delegation.
-
-`ledger set <task-id> class_escalated true` if step 3's auto-escalation
-fired; `ledger set <task-id> deviation_count <n>` whenever it changes.

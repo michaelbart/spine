@@ -49,10 +49,9 @@ Exit 0: parse its JSON (`{key, title, description, url, ...}`) — that's the
 ticket. **Any non-zero exit, or no adapter installed, or no key given: fall
 back to a manual paste** — ask the engineer to paste the ticket's title and
 description. A fetch failure is never a hard stop (§3.4); the front door still
-opens by hand. Either way, also derive the branch's ticket key
-(`${CLAUDE_SKILL_DIR}/../../scripts/ledger ticket-from-branch --project
-<project root>`) — if it disagrees with the key you fetched, say so and ask
-which is right rather than guessing.
+opens by hand. Either way, also check the current branch name
+(`git rev-parse --abbrev-ref HEAD`) for the ticket key as a substring — if it
+names a different key, say so and ask which is right rather than guessing.
 
 ## 2. Is this even a task?
 
@@ -144,11 +143,8 @@ escalation and scope-first.
   class you can't defend.
 
 Always offer escalate-up. If the engineer chooses a class **below** your
-recommendation, that's their call, but record it as an override so `/costs`
-can see it: note it plainly now, and it will be carried into the task's ledger
-(`class_downgraded_from` set to your recommendation, plus a one-line
-deviation at task setup). Escalation and same-as-recommended need no such
-record.
+recommendation, that's their call — note it plainly now so it's visible at
+task setup. Escalation and same-as-recommended need no such record.
 
 ## 7. Route
 
@@ -158,10 +154,7 @@ Once the class is confirmed:
   the pipeline. Nothing else runs.
 - **Class 0 (traced-trivial)**: make the edit, then follow the traced-trivial
   steps in `core/skills/task/SKILL.md` §1 directly — commit carrying a
-  `Spine-Ticket: <key>` trailer and record it with
-  `${CLAUDE_SKILL_DIR}/../../scripts/ledger trace <key> "<one line>" --project
-  <project root>`. You already know the ticket key from §1, so pass it. No task
-  folder, no phases.
+  `Spine-Ticket: <key>` trailer. No task folder, no phases.
 - **Class 1 / Class 2**: write the handoff so the task flow picks up your
   classification instead of re-doing it, then continue **as the task**:
 
