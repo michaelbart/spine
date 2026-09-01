@@ -143,7 +143,7 @@ not a second pass of reading the repository.
 Identical to `core/skills/bootstrap/SKILL.md` §5 — the same symlink set
 (`.claude/skills/`, `.claude/agents/`, `.claude/rules/`, `.claude/hooks`),
 the same `.claude/settings.json` hook wiring, `docs/decisions/.gitkeep`,
-`work/.gitkeep`.
+`work/.gitignore` (same selective-ignore content as bootstrap §5).
 
 **`CLAUDE.md`, unlike greenfield, may already exist and already carry real
 content** (engineering conventions, a CQRS pattern, whatever the team wrote
