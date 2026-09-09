@@ -25,7 +25,7 @@
 # (.spine/adapters/**, .spine/capabilities.json, and siblings — see
 # is_bookkeeping below) — same exclusion core/scripts/conformance already
 # applies to its own diff, for the identical reason: a task's own
-# ledger.json/deviations.md/artifacts/ writes, and a task's own edits to
+# flags.json/deviations.md/artifacts/ writes, and a task's own edits to
 # its adapters/capabilities manifest, are never reviewable application
 # source, and left in, they reach every diff-scoped capability (lint,
 # typecheck, secret-scan, clone-scan, callers) as literal input. `callers`
@@ -98,7 +98,7 @@ changed_files=""
 # an adapter bug found mid-verify) are never reviewable application code —
 # same exclusion core/scripts/conformance already applies to its own
 # "actual" diff, and for the identical reason: left in, a task's own
-# work/<task-id>/** writes (ledger.json, deviations.md, artifacts/, the
+# work/<task-id>/** writes (flags.json, deviations.md, artifacts/, the
 # task's own milestone.md bookkeeping edit) or .spine/** tooling-config
 # edits reach diff-scoped capabilities like `callers` as literal grep
 # targets, which fails them outright on content that was never meant to

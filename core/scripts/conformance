@@ -45,12 +45,12 @@ excluded=()
 # Spine's own bookkeeping (the task folder tree, and the one-line active-task
 # pointer) is never reviewable code — every skill in core/ treats `work/` as
 # task-management state only (plan.md, verify.md, deviations.md, briefing.md,
-# artifacts/, ledger.json), never product source. Left in "actual," a task's
+# artifacts/, flags.json), never product source. Left in "actual," a task's
 # own record-keeping writes swamp precision/recall for exactly the small,
 # well-scoped tasks this score matters most for (real case: a 2-file plan
 # scored recall=0.14 because 12 of its 14 "actual" files were its own
 # work/<task-id>/** bookkeeping). Excluded at the source, not display-layer
-# filtered by a downstream consumer, so every reader of this score — /costs,
+# filtered by a downstream consumer, so every reader of this score —
 # a briefing, a PR description — sees the same clean number.
 is_excluded() {
   case "$1" in

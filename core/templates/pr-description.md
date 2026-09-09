@@ -2,7 +2,7 @@
 Assembled by /ship §4a, immediately after briefing.md (same sources, same
 moment) and before the commit. Every sentence in the rendered output must
 trace to a specific line in a specific already-written artifact — plan.md,
-deviations.md, verify.md, the ledger, work/<task-id>/artifacts/*.json. This
+deviations.md, verify.md, notes.md, work/<task-id>/artifacts/*.json. This
 file quotes and computes; it never re-reads the diff and summarizes it. A
 post-hoc summary is the implementer's own account of its own work — the
 one thing this system's adversaries are structurally forbidden from
@@ -95,8 +95,8 @@ below are explicitly optional — omit the whole section (not an empty one)
 per each section's own rule. No script reads this file back in (same as
 briefing.md); the **bold-label**
 convention is kept anyway, for the same reason briefing.md keeps it: cheap
-now, `grep`-able the day `/costs` or some other aggregate reads PRs in
-bulk instead of one at a time.
+now, `grep`-able the day some aggregate reads PRs in bulk instead of one
+at a time.
 -->
 
 ## `<task-id>` — <title in plain words>
@@ -147,7 +147,7 @@ actually true, how it was resolved. "Nothing — the plan held." if none.>
 
 **Overrides & bypasses:** <Any `--bypass`, claims-check `--diff`
 `[UNDECLARED]` override, or second-approver self-approval override — each
-its own line, the recorded reason included. Source: the ledger +
+its own line, the recorded reason included. Source: notes.md +
 approval.json, same fields briefing.md's own "Overrides & bypasses"
 section reads.>
 
@@ -181,4 +181,4 @@ verification this describes are task-scoped, not repo-scoped; each
 member repo's own PR links here rather than carrying a divergent copy.>
 
 Record: `work/<task-id>/` — plan, verify.md, deviations.md, briefing,
-ledger.
+notes.md.

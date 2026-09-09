@@ -54,7 +54,7 @@
 #   initialization. Just resolves spine's location and compares it
 #   against the pin. This is the "cheap session-start check" the build
 #   prompt asks for — wired into core/skills/task/SKILL.md's new step 0
-#   and core/skills/tasks/SKILL.md, not a new hook (the deliverable
+#   and core/skills/spine/SKILL.md, not a new hook (the deliverable
 #   manifest forbids one; see docs/tradeoffs.md's Phase B note for why a
 #   SessionStart-shaped hook was rejected in favor of this).
 #

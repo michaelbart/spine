@@ -110,7 +110,7 @@ colleague's don't. Full mechanics in `docs/tradeoffs.md`.
 ## Layout
 
 ```
-core/scripts/          the deterministic layer — floor, conformance, ledger, ...
+core/scripts/          the deterministic layer — floor, conformance, claims, ...
 core/hooks/            the three PreToolUse gates (phase, protected-path, dependency)
 core/skills/           every slash command — see the table below
 core/agents/           researcher, falsifier, security, surveyor — fresh-context
@@ -141,7 +141,7 @@ settling a category) genuinely isn't enough, never by default.
 | `/wayfinder` | `[--map <map-id>]` | For an effort too large and foggy for `/design`'s six categories or `/roadmap`'s known list: charts it as a map of decision tickets, resolved one per session, until it clears into real `docs/vision.md` entries and (where warranted) real decisions. |
 | `/roadmap` | `[--after M<n>]` | Sequences the next milestones from `docs/vision.md`, absorbing anything flagged along the way. You confirm the order before anything's written. |
 | `/prototype` | `<question>` | Build a concrete, disposable artifact to settle a visual/behavioral question discussion can't. No class, no plan, no floor, no ship — the declared exception to research → plan → implement, usable any time. |
-| `/workspace` | `--root <path> --repo <name>=<path> ...` | Multi-repo only — sets up a workspace root coordinating several repos through declared contracts. |
+| `/workspace` | `--root <path> [--repo <name>=<path> ...] [--from-design <project-path>]` | Multi-repo only — sets up a workspace root coordinating several repos through declared contracts. |
 
 **Every task**
 
@@ -185,13 +185,9 @@ settling a category) genuinely isn't enough, never by default.
 | `/spine` | *(none)* | "Where am I, what do I do next." Run this when unsure. |
 | `/note-issue` | `<one-line description>` | Log a known issue found outside any active task or ticket — no classification, no ceremony. Written to `docs/known-issues.md`; `/roadmap` absorbs every open entry into a milestone or an explicit decline. |
 | `/prompts` | `[product-spec \| feature-handoff \| ui-handoff]` | Prints a ready-to-paste prompt for generating handoff material in another session — a product spec, a mid-project feature handoff, or a Claude Design UI handoff bundle. |
-| `/tasks` | *(none)* | Lists every open task — owner, class, phase, claims, flags. |
-| `/costs` | `[--since <date>]` | Fast numeric answer, in chat, no browser — untracked ratio, token/drift instrumentation, not a leaderboard. For the visual version, `/visualize`. |
 | `/ratchet` | `<description>` | Turns a finding that's genuinely recurred twice into a deterministic check. |
 | `/remap` | *(none)* | Regenerates `docs/map.md` from real repo state. |
 | `/update` | `[--bump-pin]` | Syncs an installed project to this checkout after a `git pull`. |
-| `/task-report` | `<task-id>` | One task's HTML record, standalone. `/visualize` already generates this for every task as a side effect — use this only for just one, without rendering the whole dashboard. |
-| `/visualize` | `[--project <path>] [--since <date> \| --all]` | Project-wide HTML dashboard — timeline, decisions, milestones, and the same drift numbers `/costs` reports, in one browsable page. |
 
 ## Typical flows
 

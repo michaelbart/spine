@@ -693,7 +693,7 @@ Write `work/<task-id>/state` = `done` (this is the transition out of
 must have actually landed before this write, never write `done` while a
 repo in `## Ship order` is still pending). `registry-sync <task-id>` —
 this task's own final registry write; a `done` task no longer participates
-in `claims-check`/`propagate`/`/tasks`' open-task scan (all three skip
+in `claims-check`/`propagate`'s open-task scan (both skip
 by `state`), so this is what actually removes it from the shared
 registry's live view, not just from this machine's local one. Remove
 `.spine/current-task`

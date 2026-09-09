@@ -9,9 +9,9 @@ is where it's the wrong tool, what it costs, and what it doesn't catch.
 agents cost real tokens over "just fix it." Rough estimate: 2–4x for a
 Class 1 task (small, self-contained, low blast radius), more for Class 2
 (wider blast radius, a second approver, more likely to hit a real
-deviation). `/costs` is the intended source of truth once a project has run
-enough real tasks to measure its own number — treat the estimate as a
-starting point, not a guarantee.
+deviation). There's no built-in instrumentation for this — measure it
+yourself against real task time if the estimate matters to your team;
+treat it as a starting point, not a guarantee.
 
 **Human minutes.** Class 1 asks for three short touchpoints — confirm the
 class, read a short plan before approving it, read a one-page briefing when
@@ -59,8 +59,8 @@ cost is a colleague's attention when a plan needs a second approver.
 
 ## When to abandon it
 
-If `/costs` shows the attention cost of the three touchpoints (classify,
-approve, read the briefing) regularly exceeding what a careful human review
+If the attention cost of the three touchpoints (classify,
+approve, read the briefing) regularly exceeds what a careful human review
 of the same diff would have cost — after the initial calibration period,
 and after `/ratchet` has had a chance to turn repeat friction into a
 deterministic check — the system has failed its own test. That's a real
@@ -138,38 +138,9 @@ Conceded by design, not bugs waiting to be fixed:
   `verify.md`'s "Setup events" section, never `deviations.md`, never
   counted)? Nothing stops a task from misclassifying a real deviation as
   a setup event to dodge the circuit breaker — same honor-system exposure
-  as the bullet above, just one boundary test wide instead of zero. It's
-  also currently prose-only visibility: `render-task`/`render-dashboard`
-  surface `deviations.md`'s and `TOOLING GAP:`'s structured `ledger.json`
-  fields, but nothing yet gives `SETUP:` lines the same structured field —
-  a setup event is visible in `verify.md`/`briefing.md`, not (yet) in the
-  dashboard or `/costs`.
-- **The `implement` phase's token harvest runs on an honor system, even
-  though the mark that's supposed to trigger it mostly doesn't.**
-  `task/SKILL.md` §5/§6 bundles "mark `verify`" and "harvest `implement`'s
-  token window into it" into one documented step; neither half is
-  enforced by a hook. As of round 4, real installed-project data shows the
-  two halves have diverged: the *mark* itself (`verify.marked_at`) is now
-  present in ~95% of real tasks, but the *harvest*
-  (`implement.tokens`) is still missing in roughly two-thirds — sessions
-  reliably call `ledger mark <task-id> verify`, they just don't reliably
-  also make the paired `ledger harvest` call. `render-task` surfaces
-  recorded subagent cost against the umbrella phase when the mark itself
-  is missing, and flags a phase's cost as "(not recorded)" when its own
-  mark is present but its harvest evidently wasn't, so the spend isn't
-  silently presented as zero — but the per-phase cost breakdown stays only
-  as reliable as the session that ran it, and nothing currently forces the
-  harvest to happen.
-- **A ledger field can still go dead between audits.** `core/scripts/
-  ledger-field-audit` heuristically checks that every `ledger set
-  <task-id> <field>` documented in a skill has at least one reader-shaped
-  reference elsewhere in the deterministic layer — added after this exact
-  "written every task, read by nothing" bug recurred across two audit
-  rounds (nine fields total). It's grep-based, not a real parser, and
-  nothing runs it automatically — no hook, no floor, no `/task` path calls
-  it. Run it by hand periodically; a field it flags is a lead to check,
-  not a settled fact, and a field it doesn't flag isn't proof of a real
-  reader either (a coincidental substring match reads as clean).
+  as the bullet above, just one boundary test wide instead of zero. A
+  setup event is visible in `verify.md`/`briefing.md`; there's no
+  project-wide aggregate view across tasks.
 - **Adversary findings are checked for evidence shape, not evidence
   truth.** A finding needs a real file:line or command output to survive
   filtering — but nothing confirms the cited evidence actually supports
@@ -242,8 +213,8 @@ Conceded by design, not bugs waiting to be fixed:
   own new branch — git can't check the same branch out in two worktrees
   at once. `registry-sync` still pushes `work/<task-id>/` to whatever
   branch is checked out, which is now that task's own branch, not the
-  project's shared default. A colleague's `claims-check`/`gaps-report`
-  won't see that task's registry entry until the branch merges. Harmless
+  project's shared default. A colleague's `claims-check` won't see that
+  task's registry entry until the branch merges. Harmless
   for the same engineer running two terminals on one machine (both
   worktrees share the local `.git`); a real gap for the cross-engineer
   coordination story the registry otherwise assumes.
@@ -357,7 +328,7 @@ surprise:
 | A product-spec layer | The charter deliberately stays at constraints, not a spec — a product spec itself stays optional and human-authored, never generated. `docs/vision.md` is the one exception, and only partly: it's still never invented outright, but `/wayfinder` (added since this row was first written) does write it, one confirmed line at a time, when the milestone shape was genuinely unknown rather than just unwritten — see `core/skills/wayfinder/SKILL.md` §4. |
 | A concurrency or stress-test lane | The smoke-test capability is the insertion point if this gets built |
 | Deterministic detection of undeclared cross-repo coupling | Only the adversary review looks for this today; no mechanical scan does |
-| A workspace-wide cost rollup across member repos' own task histories | Each repo's own `/costs` works; nothing sums across a workspace yet |
+| A workspace-wide cost rollup across member repos' own task histories | No per-repo cost tracking exists to roll up in the first place |
 | One repo belonging to more than one workspace | Unsupported — a workspace assumes exclusive ownership of its member repos |
-| Abandoning a task (a terminal state short of `done`) | `work/<task-id>/state` today only ever reaches `done` via `/ship`; nothing lets an engineer close out a task they've decided not to finish. Deceptively not a one-file fix: at least five existing mechanisms treat "not `done`" as "still open" and would each need to learn a new `abandoned` state — `core/skills/tasks/SKILL.md`'s own open-task definition, `core/scripts/next-milestone-task`'s milestone-completeness check, `core/scripts/claims-check`'s live-claims predicate, `render-dashboard`'s timeline, and `.spine/current-task` clearing if the abandoned task is the active one. The real design fork underneath all of that: when a milestone's own member task gets abandoned, does that slot need a brand-new replacement task before the milestone can ever reach done, or does the milestone itself need re-scoping through `/roadmap`? That's a design decision on the order of choosing `/wayfinder`'s ticket types, not a mechanical add — give it its own design pass before touching any of the five files above. |
+| Abandoning a task (a terminal state short of `done`) | `work/<task-id>/state` today only ever reaches `done` via `/ship`; nothing lets an engineer close out a task they've decided not to finish. Deceptively not a one-file fix: at least three existing mechanisms treat "not `done`" as "still open" and would each need to learn a new `abandoned` state — `core/scripts/next-milestone-task`'s milestone-completeness check, `core/scripts/claims-check`'s live-claims predicate, and `.spine/current-task` clearing if the abandoned task is the active one. The real design fork underneath all of that: when a milestone's own member task gets abandoned, does that slot need a brand-new replacement task before the milestone can ever reach done, or does the milestone itself need re-scoping through `/roadmap`? That's a design decision on the order of choosing `/wayfinder`'s ticket types, not a mechanical add — give it its own design pass before touching any of the three mechanisms above. |
 | Reverting a shipped task | No mechanism today undoes a task after `/ship` — the only path is a fresh, manually-authored task that happens to reverse the change. Not even the framing is settled yet: is "rollback" a `git revert` of the ship commit(s) (fast, but bypasses research/plan/verify for the undo itself — exactly the kind of unreviewed change spine exists to prevent), or a real compensating task that goes through the normal classify → research → plan → verify → ship discipline (safer, but slower, and still has to decide what happens to anything the original task's `plan.md` cited — a decision's `## Implementing paths`, a milestone's `## Known gaps for future member tasks` entry it resolved, a `docs/decisions/` record distilled from it)? Bigger and less scoped than abandoning a task above; needs its own dedicated design conversation, not a bolt-on. |

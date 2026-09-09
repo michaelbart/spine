@@ -53,9 +53,7 @@ ensure_file() {
   echo "$p"
 }
 
-# Strips <!-- ... --> comments, including ones spanning multiple lines —
-# same technique as gaps-report's strip_comments, kept independent since
-# the two scripts have no shared library to import from.
+# Strips <!-- ... --> comments, including ones spanning multiple lines.
 strip_comments() {
   awk '
     {

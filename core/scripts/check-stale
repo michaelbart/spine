@@ -59,7 +59,7 @@
 # falls under the *citing* research.md's own task folder
 # (`work/<task-id>/` — derived from `$doc`'s own path, not a new header
 # field) is never checked for drift. Bookkeeping state under a task's own
-# folder (notes.md, deviations.md, ledger.json, claims.json, flags.json,
+# folder (notes.md, deviations.md, claims.json, flags.json,
 # state, class, approval.json) is *expected* to change over that task's
 # lifetime by design — the tooling-gap discipline requires appending to
 # notes.md, for instance. A research.md that (correctly) lists one of its

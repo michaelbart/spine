@@ -89,7 +89,7 @@ Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
 <!-- Verbatim from core/scripts/conformance against this task's plan.md.
      Informational only — never a merge gate (Layer 4).
      A low score here means research or planning is failing; track the
-     trend across tasks via /costs, don't chase a single low score. -->
+     trend across tasks, don't chase a single low score. -->
 
 predicted=`<n>` actual=`<n>` precision=`<p>` recall=`<r>` f1=`<f>`
 
@@ -169,7 +169,7 @@ Verdicts kept: `<n>` · dropped: `<n>`
 ## Tooling gaps
 
 <!-- Distinct from capability gaps above: this is about spine's own core
-     scripts (ledger, check-stale, conformance, verdict-filter, floor
+     scripts (check-stale, conformance, verdict-filter, floor
      itself) being unreachable during this task, not a project capability
      being unimplemented. Merged from work/<task-id>/notes.md's
      accumulated `TOOLING GAP:` lines plus anything hit during this

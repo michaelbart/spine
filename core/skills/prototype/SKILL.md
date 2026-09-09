@@ -69,9 +69,9 @@ enforced rather than asked for:
   needs a real task, not a workaround to route past.
 - **No floor, no adapters, no adversary review, on purpose.** Don't run
   `.spine/adapters/*`, don't invoke the falsifier or security agents,
-  don't write a `ledger.json`. A prototype's whole value is being cheaper
-  than that ceremony — running it anyway defeats the point of this skill
-  existing.
+  don't write a `work/<task-id>/` state folder. A prototype's whole value
+  is being cheaper than that ceremony — running it anyway defeats the
+  point of this skill existing.
 
 Iterate with the human as needed — this is exploratory by definition, so
 expect the shape of "what to build" to shift as the answer starts to show

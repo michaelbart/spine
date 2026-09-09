@@ -285,7 +285,7 @@ how, but `/spine` itself never advances anything.
 
 ## 6. Never editorialize
 
-Like `/tasks`, this skill reports and stops. It never blocks, never fixes,
+This skill reports and stops. It never blocks, never fixes,
 never decides. "No active task — here's how to start," "you're mid-M1, next
 member task is X," and "you're mid-verify and it passed, run `/ship <id>` next"
 are all complete, useful answers. If the install is healthy, idle, and no

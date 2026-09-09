@@ -88,7 +88,7 @@ non-zero means it couldn't be. See §3.6.
 `not-applicable`, each with a `reason`. Only capabilities marked `implemented`
 are ever invoked by `floor` or any skill. An absent or degraded capability is
 never silently skipped — its gate is recorded as degraded, explicitly, in
-`verify.md`, the ledger, and the delta briefing.
+`verify.md` and the delta briefing.
 
 ## 2. Exit code and output discipline
 
@@ -835,13 +835,13 @@ any other trailer (e.g. `Co-Authored-By:`) and any Conventional-Commits-style
 subject prefix a project's own CI enforces — the trailer says nothing about
 commit-message grammar and never fights it.
 
-This makes the untracked-commit ratio mechanical:
-`core/scripts/ledger scan-untracked-ratio` greps `git log` trailers over a
-window and reports commits carrying none of `Spine-Task:`,
-`Spine-Ticket:`, or `Spine-Bypass:` as off-spine work, by definition — no
-model judgment involved. `/ship --bypass <reason>` writes `Spine-Bypass:
-<reason>` instead of (or alongside) the task trailer, so bypassed work is
-still mechanically visible and distinguishable from silent drift.
+This makes the untracked-commit ratio mechanical to audit by hand: a
+`git log` trailer grep over a window can report commits carrying none of
+`Spine-Task:`, `Spine-Ticket:`, or `Spine-Bypass:` as off-spine work, by
+definition — no model judgment involved. `/ship --bypass <reason>` writes
+`Spine-Bypass: <reason>` instead of (or alongside) the task trailer, so
+bypassed work is still mechanically visible and distinguishable from
+silent drift.
 
 **Class 0 (traced-trivial) and the `Spine-Ticket:` trailer.** A Class 0 change
 has no task folder and no `Spine-Task:` id, but it is not off-spine: the
@@ -851,15 +851,13 @@ traced-trivial path (`core/skills/task/SKILL.md` §1) commits it carrying
 Spine-Ticket: <ticket-key>
 ```
 
-— the key derived from the branch/commit convention (`ledger
-ticket-from-branch`), never invented — and appends a one-line in-project record
-via `ledger trace` (to `.spine/trace.jsonl`). Spine does **not** enforce this
-trailer with a hook: the surrounding org already requires a ticket on every
-commit, so a second gate would be redundant — a spine value `/ratchet` and the
-stack-independence rule both reject. The trailer is spine's own convention so
-`scan-untracked-ratio` can distinguish a traced Class 0 commit from genuinely
-off-spine work, and so the dashboard can surface trivial work that tracker linkage
-alone never would. **Every `/ship` commit (Class 1/2) also carries `Spine-Ticket:
+— the key parsed directly from the current branch/commit convention, never
+invented. Spine does **not** enforce this trailer with a hook: the
+surrounding org already requires a ticket on every commit, so a second gate
+would be redundant — a spine value `/ratchet` and the stack-independence
+rule both reject. The trailer is spine's own convention so a trailer grep
+can distinguish a traced Class 0 commit from genuinely off-spine work.
+**Every `/ship` commit (Class 1/2) also carries `Spine-Ticket:
 <key>` alongside its `Spine-Task:` trailer when a ticket is available** — same
 derivation, same composing rule; the spine task id and the ticket key travel
 together. When no ticket is derivable (genuinely off-ticket), the trailer is
@@ -871,8 +869,8 @@ at the workspace root, per `core/skills/task/SKILL.md` — as the
 touching two repos produces two commits (one per repo, in the declared
 ship order, `core/skills/ship/SKILL.md`'s staged-ship §), both carrying an
 identical `Spine-Task: <task-id>` trailer. This is spine's existing
-linkage primitive doing the cross-repo join — `ledger
-scan-untracked-ratio` run against any one member repo's own `git log`
+linkage primitive doing the cross-repo join — a trailer grep
+run against any one member repo's own `git log`
 still works unmodified, since it only ever inspects that repo's own
 commits for the trailer's presence; it does not need to know a commit's
 trailer also appears in a sibling repo.

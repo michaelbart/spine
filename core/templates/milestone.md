@@ -1,8 +1,8 @@
 <!--
 One file per milestone: work/<milestone-id>/milestone.md. Milestone IDs are
 `M0`, `M1`, ... — sequential, distinct in shape from task IDs
-(`<YYYYMMDD>-<kebab-slug>`) specifically so `ledger scan-untracked-ratio`'s
-commit-trailer grep is never confused by a milestone folder: a milestone
+(`<YYYYMMDD>-<kebab-slug>`) specifically so a commit-trailer grep for
+`Spine-Task:` values is never confused by a milestone folder: a milestone
 never ships its own commit, its member tasks do, each carrying its own
 ordinary `Spine-Task: <task-id>` trailer. `M0` is reserved, always, for the
 walking skeleton — design-gate's stopping-rule check #1 looks for

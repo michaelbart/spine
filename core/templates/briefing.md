@@ -6,7 +6,7 @@ knowing what their product now does and why, it failed at its one job.
 Don't pad it to look thorough; cut anything without a reason to be here.
 
 Full detail already lives in the task's own record — `plan.md`,
-`verify.md`, `deviations.md`, the ledger, all pointed at by this file's
+`verify.md`, `deviations.md`, `notes.md`, all pointed at by this file's
 own closing line. This document's rule is "nothing omitted, only
 ordered": everything material appears, headline-first, with a pointer
 into the record for depth — simplifying a section into silence is a
@@ -17,8 +17,8 @@ defect here, same as burying its point three sentences down.
 **bold-label** convention below (`**Floor:**`, `**Overrides & bypasses:**`,
 etc.) is kept anyway, and kept stable across tasks, on purpose: it costs
 nothing today and it's what makes this file `grep`-able the day something
-(`/costs`, most likely) starts reading briefings in aggregate instead of
-one at a time. Don't rename a label casually. (This stability guarantee
+starts reading briefings in aggregate instead of one at a time. Don't
+rename a label casually. (This stability guarantee
 only covers briefings written after a given convention shipped — nothing
 retroactively updates an already-shipped project's older briefings to a
 later heading shape; see `docs/tradeoffs.md`'s "Known limits.")
@@ -111,4 +111,4 @@ thing — the constraint honored, the trap avoided, the decision that looks
 arbitrary but isn't. Often the sharpest line in the document; don't let it
 default to a restatement of "what changed.">
 
-Record: `work/<task-id>/` — plan, verify.md, deviations.md, ledger.
+Record: `work/<task-id>/` — plan, verify.md, deviations.md, notes.md.
