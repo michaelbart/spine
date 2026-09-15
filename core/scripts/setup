@@ -114,7 +114,16 @@ is_self_install=0
 pin_file="$project/.spine/core-pin.json"
 
 report_pin() {
-  # Sets PIN_STATUS to ok|mismatch-warn|mismatch-strict|unpinned.
+  # Sets PIN_STATUS to ok|mismatch-warn|mismatch-strict|unpinned, and on a
+  # mismatch also PIN_DIRECTION to behind|ahead|diverged — merge-base
+  # direction between this machine's resolved spine HEAD and the project's
+  # pinned sha. Both skew directions are common ("this machine ran ahead
+  # of the pin" and "the pin was already bumped, this machine hasn't
+  # pulled yet") and need opposite advice — the single always-"have a
+  # maintainer bump the pin" message this used to print was actively wrong
+  # for the second direction (git log <pinned>..<local> is an empty range
+  # when local is an ancestor of pinned, and the fix there is "git pull",
+  # not "bump a pin that's already correct").
   if [[ ! -f "$pin_file" ]]; then
     PIN_STATUS="unpinned"
     return 0
@@ -136,6 +145,14 @@ report_pin() {
     PIN_STATUS="mismatch-warn"
   fi
   PINNED_SHA="$pinned_sha"
+
+  if git -C "$resolved_spine" merge-base --is-ancestor "$spine_sha" "$pinned_sha" 2>/dev/null; then
+    PIN_DIRECTION="behind"
+  elif git -C "$resolved_spine" merge-base --is-ancestor "$pinned_sha" "$spine_sha" 2>/dev/null; then
+    PIN_DIRECTION="ahead"
+  else
+    PIN_DIRECTION="diverged"
+  fi
 }
 
 print_pin_result() {
@@ -145,18 +162,46 @@ print_pin_result() {
     unpinned)
       echo "setup: no pin recorded at $pin_file yet" ;;
     mismatch-warn)
-      echo "setup: CORE VERSION SKEW (warn) — $project is pinned to $PINNED_SHA," \
-           "this machine's spine resolves to $spine_sha. Hooks/gates on this" \
-           "machine may enforce differently than what this project was last" \
-           "calibrated against. Run 'git -C $resolved_spine log $PINNED_SHA..$spine_sha'" \
-           "to see what changed, then have a maintainer bump the pin once the" \
-           "new core has been tested (README: Staying installed)." ;;
+      case "$PIN_DIRECTION" in
+        behind)
+          echo "setup: CORE VERSION SKEW (warn) — $project's pin was bumped to" \
+               "$PINNED_SHA; this machine's spine still resolves to $spine_sha" \
+               "(an older commit). Hooks/gates on this machine may enforce" \
+               "differently than what this project now expects. Run 'git -C" \
+               "$resolved_spine pull' to catch up." ;;
+        ahead)
+          echo "setup: CORE VERSION SKEW (warn) — $project is pinned to $PINNED_SHA," \
+               "this machine's spine resolves to $spine_sha (newer). Hooks/gates on" \
+               "this machine may enforce differently than what this project was last" \
+               "calibrated against. Run 'git -C $resolved_spine log $PINNED_SHA..$spine_sha'" \
+               "to see what changed, then have a maintainer bump the pin once the" \
+               "new core has been tested (README: Staying installed)." ;;
+        *)
+          echo "setup: CORE VERSION SKEW (warn) — $project is pinned to $PINNED_SHA," \
+               "this machine's spine resolves to $spine_sha, and the two don't share" \
+               "a common ancestor in this checkout (diverged, or this machine's" \
+               "spine remote doesn't have $PINNED_SHA yet — try 'git -C" \
+               "$resolved_spine fetch'). Resolve by hand before trusting either." ;;
+      esac ;;
     mismatch-strict)
-      echo "setup: CORE VERSION SKEW (strict) — $project is pinned to $PINNED_SHA," \
-           "this machine's spine resolves to $spine_sha. Blocking per this" \
-           "project's strict pin mode. Pull this machine's spine checkout to" \
-           "$PINNED_SHA, or have a maintainer bump the pin after testing the" \
-           "newer core, before continuing." >&2 ;;
+      case "$PIN_DIRECTION" in
+        behind)
+          echo "setup: CORE VERSION SKEW (strict) — $project's pin was bumped to" \
+               "$PINNED_SHA; this machine's spine still resolves to $spine_sha" \
+               "(an older commit). Blocking per this project's strict pin mode." \
+               "Run 'git -C $resolved_spine pull' to catch up, then re-run setup." >&2 ;;
+        ahead)
+          echo "setup: CORE VERSION SKEW (strict) — $project is pinned to $PINNED_SHA," \
+               "this machine's spine resolves to $spine_sha (newer). Blocking per" \
+               "this project's strict pin mode. Pull this machine's spine checkout" \
+               "back to $PINNED_SHA, or have a maintainer bump the pin after testing" \
+               "the newer core, before continuing." >&2 ;;
+        *)
+          echo "setup: CORE VERSION SKEW (strict) — $project is pinned to $PINNED_SHA," \
+               "this machine's spine resolves to $spine_sha, and the two don't share a" \
+               "common ancestor in this checkout. Blocking per this project's strict" \
+               "pin mode — resolve by hand (fetch/rebase) before continuing." >&2 ;;
+      esac ;;
   esac
 }
 
