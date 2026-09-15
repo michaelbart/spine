@@ -282,7 +282,10 @@ A few opt-in extensions, each disclosed with its tradeoffs in
 - **Ticket branches** — `/intake` now checks out (or creates and pushes) a
   branch named after the ticket key before a Class 1/2 task starts, instead
   of assuming you'd already branched by hand. Automatic, no flag; Class 0's
-  traced-trivial path is untouched.
+  traced-trivial path is untouched. Naming follows this project's own
+  `.spine/branch-naming.conf` template (`{ticket}`/`{slug}`/`{type}`/`{user}`
+  tokens, e.g. `feature/{ticket}-{slug}`) if one was set during
+  `/bootstrap`/`/adopt`, else the plain `{ticket}-{slug}` default.
 - **Worktree isolation** — start a second `/task` in another terminal while
   one's already active in the same checkout, and it offers a separate git
   worktree instead of colliding with the first task's uncommitted work. See

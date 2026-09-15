@@ -74,7 +74,14 @@ blank), and give a real, specific reason wherever you're inferring
   gitignored-dependency shape (package manager + directories) for
   worktree provisioning. Mark any of the three "none found" with the
   concrete evidence you checked (e.g. "no tracker key pattern in the last
-  N commit messages or PR titles").
+  N commit messages or PR titles"). Also report the observed *branch*
+  naming shape around that ticket key from real branch names (local and
+  remote-tracking) — a literal type prefix like `feature/`/`fix/` before
+  the key, the key immediately followed by a slug, or no consistent
+  pattern at all — as a template using `{ticket}`/`{slug}`/`{type}`/`{user}`
+  tokens (e.g. `{type}/{ticket}-{slug}`) for `branch-naming.conf`. "No
+  consistent pattern found" is a real, reportable finding, not a gap to
+  paper over with a guess.
 - `## Map content` — real module boundaries, the data flows that matter
   most, real entry points, and a `## Known weirdness` subsection (state
   plainly what you find: half-finished migrations, undocumented

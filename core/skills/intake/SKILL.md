@@ -109,6 +109,17 @@ State the proposed class *and the evidence* (predicted files, which signals
 fired or didn't). This is the objective, checklist-gated classification that
 keeps "it's small" from silently dodging warranted rigor.
 
+**For Class 1/2 only, also propose a type — `feature` or `fix`** (Extension
+F's ticket-branching only fires for those two classes — see `.spine/
+branch-naming.conf` in `core/skills/task/SKILL.md` §1 — so skip this for a
+Class 0 traced-trivial edit, it would never be used). Infer it, don't ask
+cold: if the ticket-fetch adapter returned a structured issue-type field,
+map it (Jira-shaped "Bug"/"Defect" → `fix`; "Story"/"Task"/"Feature" →
+`feature`); otherwise keyword-match the title/description ("fix", "bug",
+"broken", "regression" → `fix`); otherwise default `feature`. Fold this into
+the same menu turn as the class/autonomy proposal below — never a separate
+question.
+
 **For a Class 1 task, also propose an autonomy** — how many *stops* the flow has
 (`core/skills/task/SKILL.md`'s autonomy dial, orthogonal to class). Read it off
 the same signal: a small, low-complexity Class 1 with crisp scope → `auto` (spine
@@ -161,7 +172,8 @@ Once the class is confirmed:
   ```
   # .spine/current-intake  (consumed and deleted by core/skills/task/SKILL.md §1)
   {"ticket":"<key|null>", "class":<0|1|2>, "autonomy":"<auto|checkpointed|guided>",
-   "description":"<the clarified brief>", "class_below_recommended":<true|false>,
+   "type":"<feature|fix>", "description":"<the clarified brief>",
+   "class_below_recommended":<true|false>,
    "recommended_class":<0|1|2>, "at":"<iso8601>"}
   ```
 

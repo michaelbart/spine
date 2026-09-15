@@ -105,6 +105,15 @@ observed key shape it reports), `open-pr` (the PR host it identifies), and
 mark any of them `not-applicable` with a real reason if the digest found no
 such tool or nothing to provision.
 
+Also write `.spine/branch-naming.conf` from that same section's observed
+branch-naming template — present it for confirm-or-edit rather than asking
+cold, same as the class/protected-path proposals above. If the digest found
+no consistent pattern, propose the plain default `{ticket}-{slug}` instead of
+guessing. Either way, **the confirmed template must contain `{ticket}`**
+(same requirement as `core/skills/bootstrap/SKILL.md` §4) — if the engineer's
+edit drops it, say why that breaks the "already branched by hand" detection
+and ask again rather than writing it as given.
+
 ## 4. The map and charter draft
 
 Produce `<project>/docs/map.md` from

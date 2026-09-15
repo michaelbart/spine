@@ -150,7 +150,16 @@ are opened by hand. If a `ticket-fetch` adapter is written, also write
 `<project>/.spine/ticket-pattern.conf` — one extended-regex line matching this
 tracker's key shape (e.g. `[A-Z][A-Z0-9]+-[0-9]+` for `ABC-1234`), which
 task startup reads to derive a ticket key from the branch name; absent,
-it falls back to that same default. `worktree-prep`: the package manager and
+it falls back to that same default. Also ask what branch this team's own
+ticket branches actually look like (Extension F, `core/skills/task/SKILL.md`
+§1's "Ticket branch"), and write `<project>/.spine/branch-naming.conf` — one
+line, a template built from `{ticket}`, `{slug}`, `{type}` (`feature`|`fix`),
+and `{user}` tokens, e.g. `{type}/{ticket}-{slug}`. Default if the engineer
+has no particular convention: `{ticket}-{slug}`. **The template must contain
+`{ticket}`** — task startup's "did the human already branch by hand"
+detection depends on the ticket key literally appearing in the branch name;
+refuse (ask again) a proposed template that omits it. `worktree-prep`: the
+package manager and
 gitignored-deps shape needed to write it are already known from the earlier
 stack questions — symlink/reuse the relevant dir(s) from the source checkout
 into a fresh worktree; mark `not-applicable`, reason "nothing to provision",
@@ -259,7 +268,8 @@ Commit the symlinks, `.claude/settings.json`, `docs/charter.md`,
 `.spine/capabilities.json`, `.spine/protected-paths.conf`,
 `.spine/install-command-patterns.conf` (if written),
 `.spine/ui-paths.conf` (if written), `.spine/profile.json`,
-`.spine/ticket-pattern.conf` (if written), and
+`.spine/ticket-pattern.conf` (if written), `.spine/branch-naming.conf` (if
+written), and
 `.spine/adapters/` as one setup commit — this is the one commit any
 install mechanism requires; everything after this is `git pull` inside
 `spine/` with zero further commits in `<project>`.
