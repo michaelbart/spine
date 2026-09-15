@@ -245,10 +245,14 @@ fi
 # exists to eliminate; the machine-local equivalent now lives in
 # settings.local.json instead (below). A relative entry (.spine/adapters/*
 # and friends) is left untouched — those were always portable.
+# `.permissions.allow // []` guards a project whose committed settings.json
+# has no `permissions` key at all — the normal shape for anything installed
+# by the current bootstrap/adopt (§5: only `hooks` is written) — without it
+# `map` throws "Cannot iterate over null (null)" on every first setup run.
 committed_settings="$project/.claude/settings.json"
 if [[ -f "$committed_settings" ]]; then
   tmp="$(mktemp)"
-  jq '.permissions.allow |= (map(select(test("^Bash\\(/") | not)))' \
+  jq '.permissions.allow |= ((. // []) | map(select(test("^Bash\\(/") | not)))' \
     "$committed_settings" >"$tmp" && mv "$tmp" "$committed_settings"
 fi
 
