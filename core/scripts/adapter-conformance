@@ -2,8 +2,12 @@
 # adapter-conformance — feeds an adapter its own known-passing and
 # known-failing self-test fixtures (core/ADAPTER-CONTRACT.md §4) and verifies
 # exit codes and output discipline (one line on success, non-empty
-# diagnostics on failure). Also statically lints every bash-shebang adapter
-# for the shell-strictness/portability rule (ADAPTER-CONTRACT.md §2.1):
+# diagnostics on failure). A `--self-test fail` fixture whose own
+# unexpected-success path fired reports that distinctly via the
+# SELF-TEST-FAIL-FIXTURE-BROKEN: marker (§4) instead of being
+# indistinguishable from a correctly-demonstrated failure. Also statically
+# lints every bash-shebang adapter for the shell-strictness/portability
+# rule (ADAPTER-CONTRACT.md §2.1):
 # `set -euo pipefail` present, no unguarded bash-4-only syntax. For
 # smoke-seed/smoke-run/smoke-golden, additionally requires a third self-test
 # scenario, `--self-test cold` (ADAPTER-CONTRACT.md §2.2, §3.8), proving each
@@ -104,13 +108,17 @@ check_one() {
     echo "ok: --self-test pass — exit 0, one line: \"$pass_out\""
   fi
 
-  local fail_out fail_code
+  local fail_out fail_code broken_marker
   fail_out="$(cd "$project" && "$adapter" --self-test fail 2>&1)"; fail_code=$?
+  broken_marker="$(printf '%s\n' "$fail_out" | grep -m1 '^SELF-TEST-FAIL-FIXTURE-BROKEN:' || true)"
   if [[ $fail_code -eq 0 ]]; then
     echo "FAIL: $cap --self-test fail exited 0 (expected non-zero — an adapter that always passes fails conformance by construction)"
     ok=0
   elif [[ -z "$fail_out" ]]; then
     echo "FAIL: $cap --self-test fail exited $fail_code but printed no diagnostics"
+    ok=0
+  elif [[ -n "$broken_marker" ]]; then
+    echo "FAIL: $cap --self-test fail exited $fail_code, but its own fixture's unexpected-success path fired — not a correctly-demonstrated failure, a real hole in the underlying check (ADAPTER-CONTRACT.md §4): ${broken_marker#SELF-TEST-FAIL-FIXTURE-BROKEN: }"
     ok=0
   else
     echo "ok: --self-test fail — exit $fail_code, diagnostics present ($(printf '%s\n' "$fail_out" | grep -c '.') lines)"

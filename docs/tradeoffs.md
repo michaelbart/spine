@@ -168,7 +168,17 @@ Conceded by design, not bugs waiting to be fixed:
   real adapter greps a full repo-relative path — a shape neither fixture
   ever exercised, so it stayed "conformant" indefinitely). A human
   reviewing a hand-written adapter is the only real backstop for those two
-  rules; nothing mechanical currently checks them.
+  rules; nothing mechanical currently checks them. A narrower instance of
+  the same gap — a `--self-test fail` branch whose own internal probe
+  unexpectedly succeeds versus one that correctly demonstrates the
+  failure, both converging on the same exit code — now has a mechanical
+  backstop: the `SELF-TEST-FAIL-FIXTURE-BROKEN:` marker convention
+  (`core/ADAPTER-CONTRACT.md` §4) lets `adapter-conformance` tell the two
+  apart instead of reporting an identical clean pass for either. But it's
+  opt-in per adapter, not a property `adapter-conformance` can verify is
+  present where it should be — a fail branch with a real
+  unexpected-success path that never emits the marker degrades silently
+  back to the old undetectable behavior, same as before this fix.
 - **A per-task floor only sees the current diff.** Lint and type checks are
   scoped to changed files so a task never fails for debt it didn't write —
   the tradeoff is that pre-existing debt in untouched files stays invisible

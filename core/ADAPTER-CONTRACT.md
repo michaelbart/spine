@@ -693,6 +693,36 @@ that satisfied every check `adapter-conformance` runs while violating this
 one. A human reviewing a hand-written adapter is the real backstop for
 these two rules (see `docs/tradeoffs.md`'s Known limits).
 
+**A `--self-test fail` branch with two divergent internal paths needs a
+way to say which one fired.** Some fail fixtures don't just build a
+single guaranteed-violating case — they first drive the adapter's real
+check against a fixture *expected* to fail it, and only reach the generic
+fail line if that attempt itself behaves as expected (e.g. a fixture that
+drives a flow which should time out because nothing was ever seeded for
+it; if the flow unexpectedly succeeds, that's not "the fixture correctly
+failed," it's a hole in the check being self-tested). Left alone, both
+paths — "correctly demonstrated the failure" and "the fixture's own
+unexpected-success branch fired" — converge on the same generic
+`exit 1`, and `adapter-conformance` only ever checks `fail_code -ne 0`
+plus non-empty diagnostics, so a regression that broke the underlying
+check into always-succeeding would still read as a clean, conformant
+`--self-test fail`. Only a human reading stderr text would ever notice.
+
+The convention: a `--self-test fail` branch whose own unexpected-success
+path fires must print a line starting with `SELF-TEST-FAIL-FIXTURE-BROKEN:
+<reason>` to stderr before its `exit 1` (in addition to whatever ordinary
+diagnostics that path already prints). `adapter-conformance` greps
+`--self-test fail`'s combined output for that literal prefix; finding it
+is reported as its own distinct `FAIL` — the underlying check has a real
+hole — never folded into the generic `ok` a correctly-demonstrated
+failure gets. This is additive, not a new requirement on every fail
+branch: a fail fixture that only ever builds one guaranteed-violating
+case, with no "did the check even catch it" sub-probe, has nothing to
+distinguish and never needs the marker — omitting it degrades to
+today's behavior (an ordinary, undifferentiated fail), never a false
+failure. Adopt it only where a fail branch's own internal probe
+succeeding or failing is itself part of what's being asserted.
+
 Design note this implies: an adapter must be able to construct at least one
 concrete pass case and one concrete fail case for its own capability, fully
 self-contained. Where a capability's tool has nothing meaningful to

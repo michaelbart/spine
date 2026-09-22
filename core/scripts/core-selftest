@@ -18,6 +18,11 @@
 #   - adapter-conformance's shell-strictness lint (ADAPTER-CONTRACT.md
 #     §2.1): flags a bash adapter missing `set -euo pipefail` and a
 #     bash-4-only construct with no $BASH_VERSINFO guard.
+#   - adapter-conformance's SELF-TEST-FAIL-FIXTURE-BROKEN marker
+#     (ADAPTER-CONTRACT.md §4): a --self-test fail fixture with no marker
+#     stays an ordinary conformant fail; one whose own unexpected-success
+#     path fired and emits the marker fails conformance distinctly instead
+#     of reading as an identical clean pass.
 #   - adapter-conformance's `--self-test cold` requirement for
 #     smoke-seed/smoke-run/smoke-golden (ADAPTER-CONTRACT.md §2.2, §3.8):
 #     a self-healing adapter passes conformance, a non-self-healing one
@@ -442,6 +447,51 @@ check_lint_case "set -euo pipefail, no bash4 syntax -> conformant" good pass
 check_lint_case "missing -e -> flagged, conformance fails" no-strict fail "missing 'set -euo pipefail'"
 check_lint_case "unguarded bash-4-only construct -> flagged, conformance fails" bash4-unguarded fail "BASH_VERSINFO guard"
 check_lint_case "bash-4-only construct behind \$BASH_VERSINFO guard -> conformant" bash4-guarded pass
+
+# ---------------------------------------------------------------------------
+# adapter-conformance: SELF-TEST-FAIL-FIXTURE-BROKEN marker distinguishes a
+# --self-test fail fixture whose own unexpected-success path fired from one
+# that correctly demonstrated the failure (ADAPTER-CONTRACT.md §4) — both
+# used to converge on the same generic exit 1, indistinguishable to
+# adapter-conformance's exit-code/non-empty-diagnostics check alone.
+# ---------------------------------------------------------------------------
+
+marker_proj="$(mktemp -d "$tmp_root/markerproj.XXXXXX")"
+mkdir -p "$marker_proj/.spine/adapters"
+
+write_selftest_adapter "$marker_proj/.spine/adapters/ordinary-fail" "set -euo pipefail" ""
+
+cat >"$marker_proj/.spine/adapters/broken-fail" <<'EOF'
+#!/bin/bash
+set -euo pipefail
+if [[ "${1:-}" == "--self-test" ]]; then
+  if [[ "${2:-}" == "pass" ]]; then echo "ok"; exit 0; fi
+  if [[ "${2:-}" == "fail" ]]; then
+    echo "SELF-TEST-FAIL-FIXTURE-BROKEN: probe unexpectedly succeeded" >&2
+    exit 1
+  fi
+fi
+echo "ok"
+exit 0
+EOF
+chmod +x "$marker_proj/.spine/adapters/broken-fail"
+
+if out="$("$ADAPTER_CONFORMANCE" ordinary-fail --project "$marker_proj" 2>&1)"; then code=0; else code=$?; fi
+if [[ $code -eq 0 ]] && ! grep -q "SELF-TEST-FAIL-FIXTURE-BROKEN" <<<"$out"; then
+  pass "adapter-conformance: fail fixture with no marker stays an ordinary conformant fail"
+else
+  fail "adapter-conformance: fail fixture with no marker stays an ordinary conformant fail (exit=$code)"
+  echo "$out"
+fi
+
+if out="$("$ADAPTER_CONFORMANCE" broken-fail --project "$marker_proj" 2>&1)"; then code=0; else code=$?; fi
+if [[ $code -ne 0 ]] && grep -q "unexpected-success path fired" <<<"$out" \
+  && grep -q "probe unexpectedly succeeded" <<<"$out"; then
+  pass "adapter-conformance: SELF-TEST-FAIL-FIXTURE-BROKEN marker fails conformance distinctly"
+else
+  fail "adapter-conformance: SELF-TEST-FAIL-FIXTURE-BROKEN marker fails conformance distinctly (exit=$code)"
+  echo "$out"
+fi
 
 # ---------------------------------------------------------------------------
 # adapter-conformance: --self-test cold requirement for smoke-seed/
