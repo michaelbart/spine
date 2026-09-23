@@ -60,8 +60,12 @@ while IFS= read -r line; do
   [[ -z "$glob" ]] && continue
   while IFS= read -r f; do
     [[ -n "$f" ]] || continue
+    # `**/` must also match zero directories (a file directly under the
+    # prefix), as in gitignore/globstar; bash `case` treats `**` as `*`, which
+    # would otherwise demand at least one subdirectory.
+    flat="${glob//\/\*\*\//\/}"
     case "$f" in
-      $glob) matched="$matched$f"$'\n' ;;
+      $glob|$flat) matched="$matched$f"$'\n' ;;
     esac
   done <<<"$changed"
 done < <({ cat "$conf" 2>/dev/null; echo; cat "$content_conf" 2>/dev/null; })

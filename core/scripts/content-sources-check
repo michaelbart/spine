@@ -60,7 +60,8 @@ matches_conf() { # $1 = path, $2 = conf file; 0 if any glob matches
     glob="${line%%#*}"
     glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
     [[ -z "$glob" ]] && continue
-    case "$f" in $glob) return 0 ;; esac
+    # `**/` also matches zero directories (see ui-touch).
+    case "$f" in $glob|${glob//\/\*\*\//\/}) return 0 ;; esac
   done <"$conf"
   return 1
 }

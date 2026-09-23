@@ -2226,6 +2226,18 @@ if csc_run >/dev/null; then pass "content-sources-check: non-UI plan -> not appl
 out="$("$SCRIPT_DIR/ui-touch" --project "$csc_proj" 2>/dev/null | sed '/^ui-touch:/d')"
 if [[ "$(jq -r .ui_touched <<<"$out")" == "true" ]]; then pass "ui-touch: content-only diff (ui-content-paths.conf) -> ui_touched=true"; else fail "ui-touch: content-only diff not detected: $out"; fi
 
+# `**/` matches zero directories: a file directly under the prefix must match.
+printf 'apps/web/src/**/*.tsx\n' >"$csc_proj/.spine/ui-paths.conf"
+(cd "$csc_proj" && mkdir -p apps/web/src && echo x >apps/web/src/main.tsx)
+out="$("$SCRIPT_DIR/ui-touch" --project "$csc_proj" 2>/dev/null | sed '/^ui-touch:/d')"
+if jq -e '.matched_paths | index("apps/web/src/main.tsx")' <<<"$out" >/dev/null 2>&1; then
+  pass "ui-touch: 'dir/**/*.ext' also matches a file directly under dir"
+else
+  fail "ui-touch: apps/web/src/main.tsx not matched by apps/web/src/**/*.tsx: $out"
+fi
+{ echo '<!-- MACHINE: predicted-touch -->'; echo '- apps/web/src/main.tsx — x'; echo '<!-- /MACHINE -->'; } >"$csc_proj/work/T1/plan.md"
+if ! csc_run >/dev/null; then pass "content-sources-check: direct-child view file matched by '**/' glob -> applies"; else fail "content-sources-check: direct-child view file not treated as UI"; fi
+
 # ---------------------------------------------------------------------------
 # next-milestone-task: TBD/BLOCKED/WAITING/NONE resolution, numeric
 # milestone ordering

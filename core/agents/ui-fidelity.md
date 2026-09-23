@@ -21,7 +21,9 @@ captured state `<state>.render.png`, `<state>.reference.png` and
 rect, computed fill/border/colors/font, visible text; plus declared
 components that never rendered). View the PNGs with Read.
 
-For each `captured` state, compare `<state>.render.png` to
+If `coverage.json` marks a state `reference_kind: "crop"`, its render is the
+overlay element alone — compare it only to that crop, never against
+surrounding page chrome. For each `captured` state, compare `<state>.render.png` to
 `<state>.reference.png` — never one state's reference against another
 state's render — and check, in this order:
 

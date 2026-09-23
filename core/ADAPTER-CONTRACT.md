@@ -655,7 +655,13 @@ and for every state in that screen's `states[]` that has a
 `screenshots[<state>]` entry, render the route for real, drive it into that
 state, and write under `$SPINE_UI_CAPTURE_DIR/<screen-id>/`:
 
-- `<state>.render.png` — screenshot at the reference PNG's own pixel dimensions;
+- `<state>.render.png` — screenshot comparable to the reference. For a
+  full-screen reference, a page screenshot at the reference's pixel
+  dimensions. For a **crop** reference (a popover, drawer or modal image much
+  smaller than the screen), a screenshot of that overlay's own element, so the
+  pair is like-for-like; coverage records `reference_kind: "full" | "crop"`
+  and both images' dimensions. If the overlay element can't be resolved, the
+  state is `driver_failed`, never a mismatched full-page render;
 - `<state>.reference.png` — a copy of `screenshots[<state>]`;
 - `<state>.facts.json` — per component element the project's marker
   convention exposes (the same marker `ui-conformance` checks): name,
@@ -674,7 +680,7 @@ captured in a signed-in browser context; the adapter reuses whatever
 signed-in context the project's own `ui-render`/`ui-conformance` establish
 rather than building a second one, and must never rely on a test-only auth
 bypass. Reaching a non-default state is done one of two ways, recorded per
-state in `coverage.json` as `driver: "gallery" | "steps"`: (a) a project
+state in `coverage.json` as `driver: "real" | "gallery" | "steps"` (`real` = the signed-in route itself): (a) a project
 **state gallery** — a development-only route rendering a screen's view for a
 named state from typed test data (e.g. `/__ui/<screen>?state=<state>`),
 preferred where it exists because it needs no interaction scripting; or (b) a
