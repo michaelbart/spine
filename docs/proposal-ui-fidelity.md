@@ -23,6 +23,12 @@ in spine reads `docs/ui/screenshots/*.png` after the agent's own
 write-time grounding step. That is the hole 20260923-home-make-ready-board
 fell through.
 
+> Update: turnpilot is building a signed-in Playwright context and a
+> dev-only state gallery (`/__ui/<screen>?state=<state>`). `ui-capture`
+> consumes those instead of its own auth/step files where they exist; see
+> contract §3.10 "Authentication and state driving". The text-provenance
+> check is reviewer mandate 6 plus the plan's `## Content sources` gate.
+
 ## Facts that constrain the design
 
 1. **The unit is a state, not a screen.** Each `screens/<id>.json` lists

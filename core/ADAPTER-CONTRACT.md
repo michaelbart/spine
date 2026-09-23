@@ -668,12 +668,23 @@ state, and write under `$SPINE_UI_CAPTURE_DIR/<screen-id>/`:
   no way to reach the state), or `driver_failed` (a step could not find its
   target — the message is recorded).
 
-**State driving.** Reaching a non-default state is a stack-specific detail
-the adapter owns, like route-driving in §3.3. The convention this contract
-names is a per-screen `docs/ui/states/<id>.json` mapping each state name to
-an ordered list of steps (`click`/`fill`/`press`, addressed by role and name
-or visible text — never product-side test hooks — plus an optional
-`wait_for` text) run from a fresh load of the route; `default` needs none.
+**Authentication and state driving.** Both are stack-specific details the
+adapter owns, like route-driving in §3.3. A screen that needs a session is
+captured in a signed-in browser context; the adapter reuses whatever
+signed-in context the project's own `ui-render`/`ui-conformance` establish
+rather than building a second one, and must never rely on a test-only auth
+bypass. Reaching a non-default state is done one of two ways, recorded per
+state in `coverage.json` as `driver: "gallery" | "steps"`: (a) a project
+**state gallery** — a development-only route rendering a screen's view for a
+named state from typed test data (e.g. `/__ui/<screen>?state=<state>`),
+preferred where it exists because it needs no interaction scripting; or (b) a
+per-screen `docs/ui/states/<id>.json` mapping each state name to ordered
+steps (`click`/`fill`/`press`, addressed by role and name or visible text,
+plus an optional `wait_for` text) run from a fresh load of the route.
+`default` should be captured from the real, signed-in route, not the
+gallery, so at least one state per screen proves the shipped screen renders.
+A gallery state renders test data, not the live endpoint — it shows the view
+can look right in that state, not that the app reaches it.
 
 **Pass criterion.** Exit 0 means every in-scope screen's route rendered and
 `coverage.json` was written for it. Non-zero means a capture itself failed

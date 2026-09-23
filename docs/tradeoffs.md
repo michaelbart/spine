@@ -351,6 +351,13 @@ no step could see.
   autonomy level — a deliberate exception to `checkpointed`/`auto`'s
   no-scheduled-stop rule, since this is the only check that notices a
   wrong-looking screen.
+- **Gallery routes or step files, adapter's choice.** A project that builds a
+  dev-only state gallery (`/__ui/<screen>?state=<state>`, from typed test
+  data) uses it and skips step files; `default` is still captured from the
+  real signed-in route. A gallery proves the view can look right in a state,
+  not that the app reaches it — disclosed in the contract. The capture
+  adapter consumes the project's signed-in context and gallery rather than
+  building its own.
 - **Every declared state is compared, or reported not compared with a
   reason** (`no_screenshot`, `no_driver`, `driver_failed`). Reaching a state
   needs hand-authored `docs/ui/states/<id>.json` steps, which go stale when
