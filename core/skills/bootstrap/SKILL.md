@@ -113,7 +113,12 @@ ask how the `ui-render` adapter will reach a real rendered state — for a
 browser app, the dev-server start command + port; for a native
 mobile/desktop app, the simulator/emulator boot command, the built app's
 bundle/package id, and however it's driven to the relevant screen (a deep
-link, or scripted login/navigation). If no: leave `.spine/ui-paths.conf`
+link, or scripted login/navigation). Also ask where **user-visible content
+lives that isn't a view file** — fixtures, seed/demo data, copy or i18n
+strings — and write those globs to `<project>/.spine/ui-content-paths.conf`
+(same format; absent means none). A diff touching one counts as a UI touch,
+so the render/conformance/fidelity checks and the plan's content-sources
+check fire for content-only changes. If no: leave `.spine/ui-paths.conf`
 absent (mirrors `.spine/install-command-patterns.conf`'s own "absent means
 no-op" rule) and mark `ui-render` `not-applicable` in
 `.spine/capabilities.json` with reason "no UI surface to render in this
@@ -124,12 +129,12 @@ library, per-screen specs, screenshots — `docs/ui/`,
 `core/templates/ui-handoff.md`) exists or is planned.** If not yet:
 mention **`/prompts ui-handoff`** — the staged prompts for producing
 one from Claude Design (or a comparable tool) — rather than letting the
-engineer assume none exists. This doesn't block anything here: `ui-render`
-and `ui-conformance` are independent capabilities, and a project can
+engineer assume none exists. This doesn't block anything here: `ui-render`,
+`ui-conformance` and `ui-capture` (the visual-fidelity check, §3.10) are independent capabilities, and a project can
 add the bundle later, any time before it matters (the next `/adopt`-style
 recalibration will pick it up).
 
-For each of the 19 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
+For each of the 20 capabilities in `core/ADAPTER-CONTRACT.md §1`: if a real
 invocation exists for the confirmed stack, write
 `<project>/.spine/adapters/<name>` as a real, executable script — exit
 0/non-zero, one line on success, full diagnostics on failure, plus a working

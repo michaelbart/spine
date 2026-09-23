@@ -1,0 +1,129 @@
+#!/bin/bash
+# content-sources-check — for a UI-touching plan, mechanically checks the
+# plan's `## Content sources` section (a MACHINE fence, like `## Predicted
+# touch`) so no block of user-visible copy or numbers reaches code without a
+# named origin. Closes the gap where research grounded only on code and
+# decisions, the plan had nowhere to say where content came from, and no
+# verify step could see content at all.
+#
+# Applies only when the plan's `## Predicted touch` intersects
+# `.spine/ui-paths.conf` or `.spine/ui-content-paths.conf` (same globs
+# ui-touch reads). Otherwise: exit 0, "not applicable" — non-UI tasks pay
+# nothing.
+#
+# Section grammar (one entry per line inside the fence):
+#   - <block or file> — source: <path>[#anchor]     a real file in the repo
+#   - <block or file> — source: human — <note>       the human supplied it when asked
+#   - <block or file> — source: none                 NOT resolved: stop and ask
+#
+# Checks, each a violation (exit 1) if unmet:
+#   1. the section exists and has at least one entry;
+#   2. no entry says `source: none` — the caller must stop and ask the human,
+#      then either rewrite the entry with a real path or `source: human — ...`;
+#   3. every cited path exists (anchor stripped);
+#   4. every predicted-touch file matching ui-content-paths.conf appears at
+#      the start of some entry, so a fixture file can't be edited unlisted;
+#   5. every cited path is in research.md's `files:` header list, which is
+#      what makes the handoff spec/screenshots hash-tracked by check-stale
+#      instead of being read once and forgotten.
+#
+# Usage: content-sources-check <task-id> [--project <path>]
+# Exit: 0 ok / not applicable, 1 violations (printed), 2 usage/missing input.
+set -uo pipefail
+
+usage() { echo "usage: content-sources-check <task-id> [--project <path>]" >&2; exit 2; }
+[[ $# -ge 1 ]] || usage
+task_id="$1"; shift
+project="$(pwd)"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="$2"; shift 2 ;;
+    *) usage ;;
+  esac
+done
+
+plan="$project/work/$task_id/plan.md"
+research="$project/work/$task_id/research.md"
+[[ -f "$plan" ]] || { echo "content-sources-check: $plan not found" >&2; exit 2; }
+
+fence() { # $1 = fence name; prints lines between the MACHINE markers
+  awk -v n="$1" '
+    $0 ~ "<!-- MACHINE: " n " -->" {on=1; next}
+    on && /<!-- \/MACHINE -->/ {exit}
+    on {print}' "$plan"
+}
+
+matches_conf() { # $1 = path, $2 = conf file; 0 if any glob matches
+  local f="$1" conf="$2" line glob
+  [[ -f "$conf" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    glob="${line%%#*}"
+    glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
+    [[ -z "$glob" ]] && continue
+    case "$f" in $glob) return 0 ;; esac
+  done <"$conf"
+  return 1
+}
+
+ui_conf="$project/.spine/ui-paths.conf"
+content_conf="$project/.spine/ui-content-paths.conf"
+
+predicted="$(fence predicted-touch | sed -n 's/^- \([^ ]*\) .*/\1/p; s/^- \([^ ]*\)$/\1/p' | sed 's/^[A-Za-z0-9_.-]*://')"
+applies=0
+content_files=""
+while IFS= read -r f; do
+  [[ -n "$f" ]] || continue
+  if matches_conf "$f" "$ui_conf" || matches_conf "$f" "$content_conf"; then applies=1; fi
+  if matches_conf "$f" "$content_conf"; then content_files="$content_files$f"$'\n'; fi
+done <<<"$predicted"
+
+if [[ $applies -eq 0 ]]; then
+  echo "content-sources-check: not applicable (predicted touch matches no UI or content path)"
+  exit 0
+fi
+
+entries="$(fence content-sources | grep '^- ' || true)"
+violations=()
+if [[ -z "$entries" ]]; then
+  violations+=("plan has no '## Content sources' MACHINE fence with entries, but predicted touch includes UI/content paths")
+fi
+
+research_files=""
+if [[ -f "$research" ]]; then
+  research_files="$(awk '/^files:/{on=1; next} on && /^  - /{sub(/^  - /,""); print; next} on{exit}' "$research")"
+else
+  violations+=("research.md not found — content sources must be grounded in it")
+fi
+
+while IFS= read -r e; do
+  [[ -n "$e" ]] || continue
+  src=""
+  [[ "$e" == *"source:"* ]] && src="$(printf '%s' "${e#*source:}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  if [[ -z "$src" ]]; then
+    violations+=("entry has no 'source:' — $e")
+  elif [[ "$src" == none* ]]; then
+    violations+=("STOP AND ASK: no source for — $e")
+  elif [[ "$src" == human* ]]; then
+    :
+  else
+    path="${src%% *}"; path="${path%%#*}"
+    if [[ ! -e "$project/$path" ]]; then
+      violations+=("cited source does not exist: $path — $e")
+    elif ! grep -qxF -- "$path" <<<"$research_files"; then
+      violations+=("cited source not in research.md 'files:' (so it is not staleness-tracked): $path")
+    fi
+  fi
+done <<<"$entries"
+
+while IFS= read -r cf; do
+  [[ -n "$cf" ]] || continue
+  grep -qF -- "- $cf" <<<"$entries" || violations+=("content file in predicted touch is not listed in Content sources: $cf")
+done <<<"$content_files"
+
+if [[ ${#violations[@]} -gt 0 ]]; then
+  echo "content-sources-check: FAIL (${#violations[@]})"
+  printf '  - %s\n' "${violations[@]}"
+  exit 1
+fi
+echo "content-sources-check: ok ($(grep -c . <<<"$entries") entries)"
+exit 0

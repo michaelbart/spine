@@ -2134,6 +2134,98 @@ else
   fail "verdict-filter: missing agent -> expected exit 2, got $vf_code3"
 fi
 
+# verdict-filter: `render` evidence (ui-fidelity) resolves against the
+# task's capture dir; fabricated quote, missing artifact, traversal and
+# malformed shape are all dropped.
+mkdir -p "$vf_proj/work/T1/artifacts/ui-fidelity/board"
+echo '{"component":"ContextualAction","backgroundColor":"rgba(0, 0, 0, 0)","text":"Reassign"}' \
+  >"$vf_proj/work/T1/artifacts/ui-fidelity/board/default.facts.json"
+vf_r_input="$tmp_root/vf-render-input.json"
+cat >"$vf_r_input" <<'EOF'
+{
+  "agent": "ui-fidelity",
+  "task_id": "T1",
+  "attacked": ["board/default"],
+  "verdicts": [
+    {"claim":"real render fact","severity":"medium","evidence":{"kind":"render","screen_id":"board","state":"default","artifact":"board/default.facts.json","quote":"\"backgroundColor\":\"rgba(0, 0, 0, 0)\""}},
+    {"claim":"fabricated quote","severity":"medium","evidence":{"kind":"render","screen_id":"board","state":"default","artifact":"board/default.facts.json","quote":"\"backgroundColor\":\"rgb(0, 90, 200)\""}},
+    {"claim":"missing artifact","severity":"medium","evidence":{"kind":"render","screen_id":"board","state":"open","artifact":"board/open.facts.json","quote":"x"}},
+    {"claim":"path traversal","severity":"medium","evidence":{"kind":"render","screen_id":"board","state":"default","artifact":"../../../../docs/decisions/D-5-example.md","quote":"quoted span"}},
+    {"claim":"malformed no state","severity":"low","evidence":{"kind":"render","screen_id":"board","artifact":"board/default.facts.json","quote":"Reassign"}}
+  ]
+}
+EOF
+vf_r_out="$tmp_root/vf-render-out.json"
+"$VERDICT_FILTER" "$vf_r_input" --out "$vf_r_out" --project "$vf_proj" >/dev/null 2>&1 || true
+vf_r_kept="$(jq -r '.verdicts[].claim' "$vf_r_out" 2>/dev/null)"
+if [[ "$vf_r_kept" == "real render fact" ]]; then
+  pass "verdict-filter: render evidence kept only when its quote resolves inside the capture dir"
+else
+  fail "verdict-filter: render evidence expected only 'real render fact' kept, got '$vf_r_kept'"
+fi
+
+# ---------------------------------------------------------------------------
+# content-sources-check + ui-touch content paths
+# ---------------------------------------------------------------------------
+
+CSC="$SCRIPT_DIR/content-sources-check"
+csc_proj="$(mktemp -d "$tmp_root/cscproj.XXXXXX")"
+mkdir -p "$csc_proj/.spine" "$csc_proj/docs/ui/screens" "$csc_proj/work/T1"
+echo 'apps/web/src/**/*.tsx' >"$csc_proj/.spine/ui-paths.conf"
+echo 'apps/web/src/**/*.fixtures.ts' >"$csc_proj/.spine/ui-content-paths.conf"
+echo '{}' >"$csc_proj/docs/ui/screens/home.json"
+write_csc_plan() { # $1 = content-sources body ("" = omit fence)
+  {
+    echo '<!-- MACHINE: predicted-touch -->'
+    echo '## Predicted touch'
+    echo '- apps/web/src/home/home.fixtures.ts — seed content'
+    echo '<!-- /MACHINE -->'
+    if [[ -n "$1" ]]; then
+      echo '<!-- MACHINE: content-sources -->'
+      echo '## Content sources'
+      printf '%s\n' "$1"
+      echo '<!-- /MACHINE -->'
+    fi
+  } >"$csc_proj/work/T1/plan.md"
+}
+printf '<!-- spine:research\nsha: abc\nfiles:\n  - docs/ui/screens/home.json\n-->\n' >"$csc_proj/work/T1/research.md"
+
+csc_run() { "$CSC" T1 --project "$csc_proj" 2>&1; }
+
+write_csc_plan '- apps/web/src/home/home.fixtures.ts — source: docs/ui/screens/home.json#content'
+if csc_run >/dev/null; then pass "content-sources-check: cited, existing, research-grounded source -> ok"; else fail "content-sources-check: valid plan rejected"; fi
+
+write_csc_plan ""
+if ! csc_run >/dev/null; then pass "content-sources-check: UI plan with no Content sources fence -> fails"; else fail "content-sources-check: missing fence accepted"; fi
+
+write_csc_plan '- apps/web/src/home/home.fixtures.ts — source: none'
+out="$(csc_run || true)"
+if [[ "$out" == *"STOP AND ASK"* ]]; then pass "content-sources-check: 'source: none' -> STOP AND ASK"; else fail "content-sources-check: none not flagged: $out"; fi
+
+write_csc_plan '- apps/web/src/home/home.fixtures.ts — source: docs/ui/screens/missing.json'
+if ! csc_run >/dev/null; then pass "content-sources-check: nonexistent cited path -> fails"; else fail "content-sources-check: nonexistent path accepted"; fi
+
+write_csc_plan '- apps/web/src/home/home.fixtures.ts — source: human — PM said use 12'
+if csc_run >/dev/null; then pass "content-sources-check: 'source: human' accepted"; else fail "content-sources-check: human source rejected"; fi
+
+write_csc_plan '- some other block — source: docs/ui/screens/home.json'
+out="$(csc_run || true)"
+if [[ "$out" == *"not listed in Content sources"* ]]; then pass "content-sources-check: unlisted content file in predicted touch -> fails"; else fail "content-sources-check: unlisted fixture accepted: $out"; fi
+
+printf '<!-- spine:research\nsha: abc\nfiles:\n  - README.md\n-->\n' >"$csc_proj/work/T1/research.md"
+write_csc_plan '- apps/web/src/home/home.fixtures.ts — source: docs/ui/screens/home.json'
+out="$(csc_run || true)"
+if [[ "$out" == *"not in research.md"* ]]; then pass "content-sources-check: source absent from research files: -> fails"; else fail "content-sources-check: untracked source accepted: $out"; fi
+
+{ echo '<!-- MACHINE: predicted-touch -->'; echo '- lib/util.ts — x'; echo '<!-- /MACHINE -->'; } >"$csc_proj/work/T1/plan.md"
+if csc_run >/dev/null; then pass "content-sources-check: non-UI plan -> not applicable, exit 0"; else fail "content-sources-check: non-UI plan blocked"; fi
+
+# ui-touch: a diff touching only a content-conf path counts as UI touched
+(cd "$csc_proj" && git init -q . && git add -A && git -c user.email=t@t -c user.name=t commit -qm base --allow-empty \
+  && mkdir -p apps/web/src/home && echo x >apps/web/src/home/home.fixtures.ts)
+out="$("$SCRIPT_DIR/ui-touch" --project "$csc_proj" 2>/dev/null | sed '/^ui-touch:/d')"
+if [[ "$(jq -r .ui_touched <<<"$out")" == "true" ]]; then pass "ui-touch: content-only diff (ui-content-paths.conf) -> ui_touched=true"; else fail "ui-touch: content-only diff not detected: $out"; fi
+
 # ---------------------------------------------------------------------------
 # next-milestone-task: TBD/BLOCKED/WAITING/NONE resolution, numeric
 # milestone ordering

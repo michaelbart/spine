@@ -8,12 +8,12 @@ a language, framework, or tool — this document, like the core, is stack-blind.
 
 A capability is an executable at `.spine/adapters/<name>` in the installed
 project. The core never calls a tool directly; it calls a capability name.
-Nineteen capabilities exist:
+Twenty capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
 `clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`
 (§3.8), `migrate-rehearse` (§3.7), `contract-check` (Extension B — §3.2),
-`ui-render` (§3.3), `ui-conformance` (§3.9), `ticket-fetch` (intake —
+`ui-render` (§3.3), `ui-conformance` (§3.9), `ui-capture` (§3.10), `ticket-fetch` (intake —
 §3.4), `open-pr` (ship — §3.5), `worktree-prep` (falsifier — §3.6).
 
 `contract-check` only ever exists in a repo that is a workspace member and
@@ -53,6 +53,12 @@ is. Like
 `core/skills/verify/SKILL.md`'s own orchestration invokes it directly,
 gated by the same `core/scripts/ui-touch` result §3.3 already uses. See
 §3.9.
+
+`ui-capture` only ever exists in a project whose `ui-render` is implemented
+and whose handoff bundle carries reference screenshots. Like `ui-conformance`
+it is never invoked by `floor`'s dispatch loop — `/verify` step 1e runs it,
+gated by `ui-touch` and its own class opt-in, and hands its output to the
+`ui-fidelity` reviewer. See §3.10.
 
 `ticket-fetch` only ever exists in a project whose engineers work from an issue
 tracker (`/intake`, `core/skills/intake/SKILL.md`) — a project with no tracker,
@@ -598,7 +604,9 @@ the handoff declared," never "does it look right." A screenshot under
 `docs/ui/screenshots/` (`core/templates/ui-handoff.md`) is
 grounding material for the agent while it writes the code, and for a
 human skimming the task's briefing — it is deliberately never the input
-to this capability's pass/fail decision. Pixel- or perceptual-diffing a
+to *this* capability's pass/fail decision. Comparing a render against the
+screenshots is a separate, reviewed (not scripted, not a floor gate)
+step: `ui-capture` (§3.10) plus the `ui-fidelity` agent. Pixel- or perceptual-diffing a
 real render against a golden screenshot is exactly the kind of gate that's
 flaky across font rendering, anti-aliasing, and dynamic content without
 dedicated image-diff infrastructure this core does not ship; a flaky
@@ -627,6 +635,79 @@ never the project's real bundle. `pass`: the fixture's render actually
 contains its declared component and token. `fail`: the fixture is built
 to be missing one on purpose, and the adapter's real check must catch it
 — same "route both modes through the same check" rule §4 states generally.
+
+### 3.10 `ui-capture` — real renders of every state, captured for review, never judged
+
+Conditional existence, same shape as `ui-conformance` (§3.9): only exists in
+a project whose `ui-render` is `implemented` *and* whose handoff bundle has
+screenshots (`docs/ui/screenshots/`); otherwise `not-applicable` with reason
+"no UI render capability or no reference screenshots in this project." Sits
+in §3's "operates on nothing" row, plus one environment variable, following
+the `SPINE_BASE_REF` / `SPINE_CONTRACT_NAME` precedent (§3.2), not a
+positional argument:
+
+| Variable | Carries |
+|---|---|
+| `SPINE_UI_CAPTURE_DIR` | Absolute path of the directory the adapter writes its captures into (`work/<task-id>/artifacts/ui-fidelity`, resolved by `/verify`). |
+
+**What it does.** For every in-scope screen (the built-screens list below),
+and for every state in that screen's `states[]` that has a
+`screenshots[<state>]` entry, render the route for real, drive it into that
+state, and write under `$SPINE_UI_CAPTURE_DIR/<screen-id>/`:
+
+- `<state>.render.png` — screenshot at the reference PNG's own pixel dimensions;
+- `<state>.reference.png` — a copy of `screenshots[<state>]`;
+- `<state>.facts.json` — per component element the project's marker
+  convention exposes (the same marker `ui-conformance` checks): name,
+  variant if exposed, bounding rect, computed fill/border/text color/font,
+  visible text; plus the viewport, and every declared `components_used[]`
+  entry (with props) that had no rendered node (`declared_missing`);
+- `spec.json` — the screen's `docs/ui/screens/<id>.json`, verbatim;
+- `coverage.json` — every state in `states[]` with a status:
+  `captured`, `no_screenshot` (declared, no image), `no_driver` (image, but
+  no way to reach the state), or `driver_failed` (a step could not find its
+  target — the message is recorded).
+
+**State driving.** Reaching a non-default state is a stack-specific detail
+the adapter owns, like route-driving in §3.3. The convention this contract
+names is a per-screen `docs/ui/states/<id>.json` mapping each state name to
+an ordered list of steps (`click`/`fill`/`press`, addressed by role and name
+or visible text — never product-side test hooks — plus an optional
+`wait_for` text) run from a fresh load of the route; `default` needs none.
+
+**Pass criterion.** Exit 0 means every in-scope screen's route rendered and
+`coverage.json` was written for it. Non-zero means a capture itself failed
+(route did not render, browser error, no capture dir). `no_screenshot`,
+`no_driver` and `driver_failed` are **recorded, not exit-code failures** —
+the reviewer reports them. **This capability never judges fidelity.** The
+judgment is `ui-fidelity` (`core/agents/ui-fidelity.md`), dispatched by
+`/verify` step 1e, whose findings must cite a captured fact as `render`
+evidence (§5) — a judgment call cannot honestly be a self-testable boolean,
+and this is why the deterministic capture and the model's review are split.
+
+**Scope: the built-screens list.** `.spine/ui-built-screens.txt`, when
+present and non-empty, names one `screen_id` per line
+(`docs/ui/screens/<id>.json`) and limits `ui-render`, `ui-conformance` and
+`ui-capture` to those screens; absent or empty means every screen with a
+spec. This is a contract convention shared by all three, not a per-adapter
+one — a screen is added to the file when a task builds it.
+
+**Eligibility, not always-on.** Never invoked by `floor`. `/verify` step 1e
+runs it only when `ui-touch` reports a declared UI or content path was
+touched, gated by its own class opt-in `ui_fidelity_class1_optin` (default
+`false`; Class 2 always eligible), separate from the other two UI opt-ins
+because it is the costliest and most opinionated of the three (it runs a
+multimodal review per screen).
+
+**Self-test**: `--self-test pass`/`--self-test fail` build a throwaway page,
+throwaway screen spec, 1x1 reference PNG per state and a state-step file
+with one click-reached state inside scratch space, and run the same capture
+path normal mode uses. `pass`: PNG magic bytes present, `facts.json` per
+state lists the marked components with non-zero rects, and the clicked
+state's facts differ from `default`'s. `fail`: a state step targets a
+control that does not exist (must exit non-zero or record `driver_failed`
+distinctly), and separately an empty-body route must exit non-zero. It
+proves the capture works, not that any UI is right.
 
 ## 4. The self-test convention (what makes conformance possible)
 
@@ -734,8 +815,8 @@ its own suite by construction).
 
 ## 5. Verdict schema (adversary output, validated by `verdict-filter`)
 
-Falsifier and security adversary subagents (Phase C) write one JSON object
-per run:
+Falsifier and security adversary subagents (Phase C), and the `ui-fidelity`
+reviewer (§3.10), write one JSON object per run:
 
 ```json
 {
@@ -771,7 +852,16 @@ per run:
 `attacked` is mandatory and non-empty even when `verdicts` is empty — it's
 the clean-bill enumeration ("what was attacked") this schema requires.
 `evidence.kind` is `file_line` (requires non-empty `file` and integer
-`line`), `command` (requires non-empty `command` and `output`), or
+`line`), `command` (requires non-empty `command` and `output`),
+`render` (`ui-fidelity` only — requires non-empty `screen_id`, `state`,
+`artifact` and `quote`: `{"kind":"render","screen_id":"<id>","state":
+"<state>","artifact":"<path relative to the capture directory>","quote":
+"<verbatim span>"}`; `verdict-filter`'s pass 2 requires `artifact` to
+resolve to a real file inside `work/<task-id>/artifacts/ui-fidelity/` (no
+absolute path, no `..`) and `quote` to appear verbatim in it — a model may
+misread a captured fact, but cannot cite one the capture never recorded; a
+visual difference no captured fact expresses has no valid evidence shape and
+is dropped, deliberately trading recall for trust), or
 `decision` (design-stage extension, Extension A — requires non-empty
 `decision_id` and `quote`: `{"kind":"decision","decision_id":"D-<n>",
 "quote":"<verbatim span>"}`). Any verdict missing a required field, with an

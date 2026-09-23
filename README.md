@@ -252,7 +252,11 @@ time you're unsure which step comes next.
    visual drift compounds.
 4. Want the deterministic `ui-conformance` check enforced at `/verify`
    time, not just grounding? Re-run `/adopt` to recalibrate once the
-   bundle exists.
+   bundle exists. For a real visual comparison of each built screen state
+   against its screenshot, the project also needs a `ui-capture` adapter and
+   `docs/ui/states/<id>.json` step files (`core/ADAPTER-CONTRACT.md` §3.10);
+   Class 1 tasks run it only if `ui_fidelity_class1_optin` is `true` in
+   `~/.spine/user-config.json`.
 
 ## Working with other engineers
 

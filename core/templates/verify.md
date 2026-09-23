@@ -84,6 +84,20 @@ Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
      — never folded into it even though both gate on the same ui-touch
      result; they check different things. -->
 
+## UI fidelity
+
+<!-- Omitted entirely under the same condition as "UI render" (no UI path
+     touched). When it applied: the ui-capture result (PASS, or FAIL with
+     the adapter's diagnostics — a failed capture is never "no findings");
+     per screen, states compared and states NOT compared with
+     coverage.json's reason (no_screenshot / no_driver / driver_failed);
+     each kept ui-fidelity finding with severity, state, claim and render
+     evidence; kept/dropped counts. Or `SKIPPED (Class 1,
+     ui_fidelity_class1_optin not set)`, or DEGRADED with capabilities.json's
+     recorded reason if ui-capture isn't implemented. Findings never change
+     PASS/FAIL; /ship §3a requires a human disposition for each unfixed
+     one. -->
+
 ## Conformance
 
 <!-- Verbatim from core/scripts/conformance against this task's plan.md.

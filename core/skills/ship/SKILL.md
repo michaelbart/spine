@@ -314,7 +314,7 @@ handling) — it stayed fully documented in this task's own `verify.md`/
 
 **Gather.** Read every `work/<task-id>/artifacts/<agent>-verdict.json` this
 task's `/verify` produced (falsifier always, security per §2's adversary
-count). Collect every kept verdict whose `disposition`
+count) **and `ui-fidelity-verdict.json` when step 1e produced one**. Collect every kept verdict whose `disposition`
 (`core/ADAPTER-CONTRACT.md §5`) is `"not_fixed"` or absent — absent is
 never treated as resolved, same discipline as everywhere else in this
 system a gate could otherwise silently read as passing.
@@ -348,7 +348,20 @@ gap from re-triaging it twice.
 already tracked): nothing further to do, no section in the briefing (§4)
 — this is a gate that correctly never applied, not a degraded one.
 
-**One or more candidates remain — branch on `work/<task-id>/autonomy`**
+**`ui-fidelity` findings always need a human disposition, at every
+autonomy.** Unlike the branch below, a kept `not_fixed` (or absent
+`disposition`) `ui-fidelity` finding — including a `driver_failed` state —
+is never deferred to post-hoc PR review and never dropped as not
+"cross-task-relevant": stop and show each one (severity, state, claim,
+evidence) and require one of three answers — *fix now* (return to
+implementation, then re-run `/verify`), *carry* into `milestone.md` Known
+gaps (same `gap-<n>` mechanics as below), or *decline* with a stated reason
+recorded in `notes.md`. The visual-fidelity check is the only place a
+screen that looks wrong gets noticed; a finding nobody answered is exactly
+the miss it exists to prevent. `checkpointed`/`auto` tasks stop here too —
+this is a deliberate exception to their no-scheduled-stop rule.
+
+**One or more other candidates remain — branch on `work/<task-id>/autonomy`**
 (absent = `guided`, same convention §5's PR-opening step already uses):
 
 - **`guided`** — ask now, interactively, before proceeding to §3b/§4: for

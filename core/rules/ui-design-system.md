@@ -73,5 +73,16 @@ deterministically, that the components and tokens declared in its
 check's premise true in the first place — an agent that actually read and
 used the handoff while writing the code — not a substitute for having it
 run. `ui-conformance` never compares against a screenshot (see
-`core/templates/ui-handoff.md`'s own header for why); the screenshot's
-role stays entirely upstream, in this rule's "Read before you write" step.
+`core/templates/ui-handoff.md`'s own header for why). The screenshot is
+used a second time, after the code exists, by the separate `ui-capture` +
+`ui-fidelity` review (`core/ADAPTER-CONTRACT.md` §3.10, `/verify` step 1e):
+a reviewed comparison of each state's real render against its screenshot,
+with a human disposition required at `/ship` — not a pixel diff, not a
+gate.
+
+**Never invent content.** Every user-visible string, label and number you
+write must come from the screen's spec JSON or its screenshots. If they
+don't define it, stop and ask — the plan's `## Content sources` section
+(`core/templates/plan.md`, checked by `core/scripts/content-sources-check`)
+makes that a hard stop before code, and the fidelity review flags any text
+in the render that appears in neither source.

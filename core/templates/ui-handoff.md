@@ -42,8 +42,19 @@ labor:
   image-diff infrastructure spine's core doesn't ship, and a flaky
   floor-adjacent gate erodes trust in every other gate next to it — so
   the deterministic check stays narrowly scoped to what JSON can settle
-  unambiguously, and the screenshot's job stays upstream, as grounding a
-  human and an agent both look at, never as a blocking gate's input.
+  unambiguously, and never uses the screenshot as a blocking gate's input.
+- **The `ui-capture` capability and the `ui-fidelity` reviewer**
+  (`core/ADAPTER-CONTRACT.md` §3.10, `/verify` step 1e) are where the
+  screenshots are used after the code is written: for each state a screen
+  declares (`states[]` with a `screenshots[<state>]` image), a real render
+  is captured and a fresh reviewer compares it to that state's screenshot
+  and the spec, reporting concrete layout/variant/content discrepancies. It
+  is a reviewed judgment, not a pixel diff and not a floor gate — findings
+  need a human disposition at `/ship`. A state the review can only reach
+  with a step file goes in `docs/ui/states/<id>.json` (state name to
+  ordered click/fill/press steps, addressed by role+name or visible text);
+  a declared state with no screenshot, or no step entry, is reported as
+  not compared, never silently skipped.
 
 Regenerate this index (never hand-patch it into disagreement with the
 bundle) whenever the underlying design changes meaningfully — a stale

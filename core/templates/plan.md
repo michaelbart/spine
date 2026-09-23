@@ -140,6 +140,29 @@ grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan
 - <path/to/file2> — <why>
 <!-- /MACHINE -->
 
+<!-- MACHINE: content-sources -->
+## Content sources
+
+<!-- REQUIRED only when Predicted touch includes a UI path
+     (.spine/ui-paths.conf) or a content path (.spine/ui-content-paths.conf:
+     fixtures, seed data, copy). Omit the whole fence otherwise.
+     One line per block of user-visible copy or numbers, or per content
+     file, saying where it comes from:
+       - <block or file> — source: <path>[#anchor]    a real repo file, normally
+                                                       docs/ui/screens/<id>.json
+                                                       or its screenshot
+       - <block or file> — source: human — <note>     the human supplied it when asked
+       - <block or file> — source: none               nobody has said: STOP AND ASK
+     Every fixture/content file in Predicted touch must start an entry.
+     Every cited path must also be in research.md's `files:` header.
+     Checked by core/scripts/content-sources-check; a `none` (or any other
+     violation) means this plan is not presented for approval yet. Never
+     invent content and cite it to "the design" — if the spec and
+     screenshots don't define it, that is a `none`. -->
+
+- <apps/web/src/.../x.fixtures.ts> — source: <docs/ui/screens/<id>.json#content>
+<!-- /MACHINE -->
+
 ## How we'll know it worked
 
 <!-- One short paragraph: what the floor, the adversaries, and (if

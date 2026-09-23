@@ -18,6 +18,15 @@
 # get, because a decision id is trivially cheap to fabricate compared to a
 # real file:line or a real command's captured output.
 #
+# `render` (ui-fidelity, ADAPTER-CONTRACT.md §5):
+# `{"kind":"render","screen_id":"<id>","state":"<state>","artifact":"<path
+# relative to work/<task-id>/artifacts/ui-fidelity/>","quote":"<verbatim
+# span>"}` — same second-pass bar as `decision`: `artifact` must resolve to
+# a real file inside that capture directory (no absolute path, no `..`) and
+# `quote` must appear verbatim in it, or the verdict is dropped. A model
+# can still misread a captured fact, but cannot cite one the capture never
+# recorded.
+#
 # Usage: verdict-filter <verdicts.json> [--out <filtered.json>] [--project <path>]
 set -uo pipefail
 
@@ -64,6 +73,9 @@ filtered_and_report="$(jq '
       (.evidence.command // "" | length > 0) and (.evidence.output // "" | length > 0)
     elif .evidence.kind == "decision" then
       (.evidence.decision_id // "" | length > 0) and (.evidence.quote // "" | length > 0)
+    elif .evidence.kind == "render" then
+      (.evidence.screen_id // "" | length > 0) and (.evidence.state // "" | length > 0)
+      and (.evidence.artifact // "" | length > 0) and (.evidence.quote // "" | length > 0)
     else false end;
   def valid_verdict:
     (.claim // "" | length > 0)
@@ -75,7 +87,7 @@ filtered_and_report="$(jq '
   }
 ' "$input")"
 
-# Pass 2 — resolution check for kind=="decision" survivors of pass 1. A
+# Pass 2 — resolution check for kind=="decision" and kind=="render" survivors of pass 1. A
 # shape-valid decision verdict whose id doesn't resolve to exactly one
 # docs/decisions/ record, or whose quote isn't found verbatim in it, moves
 # from kept to dropped here — plain bash + grep, not something jq alone
@@ -85,6 +97,18 @@ resolution_dropped="[]"
 while IFS= read -r verdict; do
   [[ -n "$verdict" ]] || continue
   kind="$(jq -r '.evidence.kind // empty' <<<"$verdict")"
+  if [[ "$kind" == "render" ]]; then
+    artifact="$(jq -r '.evidence.artifact' <<<"$verdict")"
+    quote="$(jq -r '.evidence.quote' <<<"$verdict")"
+    afile="$project/work/$task_id/artifacts/ui-fidelity/$artifact"
+    if [[ "$artifact" != /* && "$artifact" != *..* && -f "$afile" ]] \
+       && [[ "$(tr '\n\t' '  ' <"$afile" | tr -s ' ')" == *"$(printf '%s' "$quote" | tr '\n\t' '  ' | tr -s ' ')"* ]]; then
+      final_kept="$(jq --argjson v "$verdict" '. + [$v]' <<<"$final_kept")"
+    else
+      resolution_dropped="$(jq --argjson v "$verdict" '. + [$v]' <<<"$resolution_dropped")"
+    fi
+    continue
+  fi
   if [[ "$kind" != "decision" ]]; then
     final_kept="$(jq --argjson v "$verdict" '. + [$v]' <<<"$final_kept")"
     continue

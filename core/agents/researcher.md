@@ -67,6 +67,14 @@ a workspace-root decision unqualified. Never assume a `D-<n>` id is unique
 across stores — `bookmarks:D-7` and an unqualified `D-7` (if the workspace
 root had one) would be two unrelated records.
 
+**UI handoff grounding.** If the delegation message says the task touches
+UI or content paths, open and cite in `files:` the named screen's
+`docs/ui/screens/<id>.json` and every screenshot in its `screenshots` map
+(view them with Read), and note in your findings which copy, numbers and
+states they define and which they leave undefined — the planner needs that
+list to write `## Content sources` honestly. Never fill an undefined block
+in yourself.
+
 **SHA-grounding mandate.** Every claim you make must trace to a real file
 you actually read. Before writing anything, run `git rev-parse HEAD` and
 keep the exact list of every file path you cited evidence from — this

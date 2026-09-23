@@ -77,7 +77,9 @@ reading of the repo — present its `## Stack & commands` and `## Runtime
 shape` findings for confirmation rather than asking cold. The digest already
 answers **whether this project renders a UI a person looks at — browser or
 native mobile/desktop via simulator/emulator**; if yes, confirm its
-proposed view/component glob(s) for `.spine/ui-paths.conf` and how
+proposed view/component glob(s) for `.spine/ui-paths.conf` (and ask where
+non-view content lives — fixtures, seed data, copy — for
+`.spine/ui-content-paths.conf`) and how
 `ui-render` reaches a real rendered state (dev-server start command + port
 for a browser app; simulator/emulator boot, bundle/package id, and launch
 path for a native app). If no: mark `ui-render` `not-applicable`, reason
@@ -86,7 +88,7 @@ If yes and this project has no `docs/ui/` handoff bundle yet, mention
 **`/prompts ui-handoff`** the same way `core/skills/bootstrap/
 SKILL.md` does — an existing codebase adopting spine mid-life is exactly
 as likely to want one as a greenfield project.
-Generate `.spine/adapters/<name>` for each of the 19 capabilities per
+Generate `.spine/adapters/<name>` for each of the 20 capabilities per
 `core/ADAPTER-CONTRACT.md`, mark `unavailable`/`not-applicable` with real
 reasons where nothing viable exists, then:
 

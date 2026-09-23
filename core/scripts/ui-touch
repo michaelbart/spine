@@ -5,7 +5,9 @@
 # format `.spine/protected-paths.conf` already uses). This is what makes
 # `ui-render` (core/ADAPTER-CONTRACT.md §3.3) conditional on diff content
 # rather than always-on: a task whose diff never touches a view/component
-# file never pays that capability's cost.
+# file never pays that capability's cost. An optional
+# `.spine/ui-content-paths.conf` (same format) adds content-carrying files
+# — fixtures, seed data, copy — to the same test.
 #
 # Never blocks by itself (informational, like contract-touch) —
 # `core/skills/verify/SKILL.md`'s own step decides what to do with the
@@ -32,8 +34,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 conf="$project/.spine/ui-paths.conf"
+# Optional second glob file, same syntax: files that carry user-visible
+# content (fixtures, seed data, copy/i18n strings) but are not view files.
+# A diff touching one counts as a UI touch — otherwise a task that only
+# edits content never triggers ui-render/ui-conformance/ui-fidelity or the
+# plan's content-sources check.
+content_conf="$project/.spine/ui-content-paths.conf"
 
-if [[ ! -f "$conf" ]]; then
+if [[ ! -f "$conf" && ! -f "$content_conf" ]]; then
   output='{"ui_touched":false,"matched_paths":[],"reason":"no .spine/ui-paths.conf — this project has no declared UI paths"}'
   if [[ -n "$out_path" ]]; then echo "$output" >"$out_path"; else echo "$output"; fi
   echo "ui-touch: no .spine/ui-paths.conf — treating as no UI touched"
@@ -56,7 +64,7 @@ while IFS= read -r line; do
       $glob) matched="$matched$f"$'\n' ;;
     esac
   done <<<"$changed"
-done < "$conf"
+done < <({ cat "$conf" 2>/dev/null; echo; cat "$content_conf" 2>/dev/null; })
 
 matched_json="[]"
 matched_clean="$(printf '%s' "$matched" | awk 'NF' | sort -u)"
