@@ -48,6 +48,17 @@ defective question.
     names go in a file you point to ("the plan lists nine choices; the three
     you're most likely to change are in `plan.md`"), not in the message.
 
+12. **The recommendation is one clause, with no conditions.** Conditions
+    ("unless the plan touches a protected file...") go in the question or
+    `Need to know`, or aren't needed at all.
+13. **Send nothing around the block.** No status preamble ("approved, the
+    version check passed") and no closing line that repeats the question or
+    previews the next one ("if you pick this, I'll also ask...").
+14. **Tags only when they add something.** `next:` / `cost:` / `undo:` belong
+    to the full block, where options genuinely differ; a `confirm` block says
+    the consequence in a clause and mentions undo only when it can't be
+    undone.
+
 This standard changes how spine asks, never what it asks about or when.
 
 ## Before you send (the run-time check the lint cannot do)
@@ -60,6 +71,7 @@ sending any message in these forms, reread it as the human would and:
   `main:master`, a note about what earlier tasks did;
 - say what a thing *is called* (its title), not its ID;
 - move any second decision out into its own `confirm` block;
+- delete any sentence before or after the block that isn't the block;
 - cut the message to what changes what the reader does, and point to the
   file for the rest.
 
@@ -87,6 +99,8 @@ a confident recommendation, and the options don't differ in ways that need
 spelling out ("start the next task?", "keep or delete the scratch copy?").
 Use the full block when the consequences differ in time, risk or
 reversibility (plan approval, a change to protected files, anything final).
+When spine is confident and the alternative is only "do more of the same,
+higher", that is still a `confirm`.
 Three lines at most, no `next:`/`cost:`/`undo:` tags; mention undo or cost
 only where it isn't obvious, and always when an answer can't be undone.
 

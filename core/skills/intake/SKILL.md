@@ -165,12 +165,26 @@ escalation and scope-first.
   class you can't defend.
 
 In the menu, name flows in plain words ("routine change, review only the
-finished PR"), not `Class`/autonomy labels, unless each is glossed. Form (per `core/templates/human-touchpoint.md`):
+finished PR"), not `Class`/autonomy labels, unless each is glossed. Send
+nothing around the block: no status preamble, and no closing line that
+repeats the question or previews the next one. Forms (per
+`core/templates/human-touchpoint.md`):
+
+**Confident** — a `confirm` block. Put any condition in the question
+sentence; the recommendation itself is one clause:
+
+<!-- touchpoint:start confirm -->
+> **Run this as a <routine | high-risk> change?** <One sentence: what it touches, and what happens automatically if that turns out wrong.>
+> **Yes** (recommended) — <what happens>. **No, <the alternative flow in plain words>** — <what that costs you>.
+<!-- touchpoint:end -->
+
+**Torn or low confidence** — the full block, because the options differ in
+what they cost you:
 
 <!-- touchpoint:start -->
 > **Deciding:** how carefully to run this change. It's yours because it sets how much checking happens and how often I stop for you.
-> **Need to know:** <the change in one sentence>. I sized it as <routine | high-risk> because <the concrete reason: what it touches>.
-> **Recommend:** <recommended flow in plain words> — <one-line reason>
+> **Need to know:** <the change in one sentence>. I can't tell if it is <routine | high-risk> because <the one concrete reason>.
+> **Recommend:** <one flow, no conditions> — <one-line reason>
 > 1. **<recommended flow>** — next: <what happens>; cost: <your time>; undo: <yes/no/how>
 > 2. **<treat it as higher-risk>** — next: <what happens>; cost: <more of your time>; undo: yes
 > 3. **<scope it first>** — next: a short investigation with no code changes; cost: a few minutes; undo: yes
