@@ -116,7 +116,16 @@ Branch on its first token:
   the stalled tickets and their `Blocked-by` chains verbatim; this needs
   a human decision (re-scope one, drop a blocking relationship that
   turns out not to be real, or split a ticket) — never resolved by
-  picking one to work anyway. Stop and wait.
+  picking one to work anyway. Stop and wait, in this form (per `core/templates/human-touchpoint.md`):
+
+  <!-- touchpoint:start -->
+  > **Deciding:** how to get unstuck. It's yours because every open question here is waiting on another one, and only you can say which dependency is real.
+  > **Need to know:** <each stuck question in one plain sentence, and what it's waiting on>. Full chains are in the map file.
+  > **Recommend:** <re-scope | drop a dependency | split> <which one> — <one-line reason>
+  > 1. **Drop a dependency that isn't real** — next: I remove that link and the question becomes workable; cost: a minute; undo: yes
+  > 2. **Re-scope or split a question** — next: we reshape it so it stops waiting; cost: a short discussion; undo: yes
+  > **Safe to ignore:** the ticket ids; they're in the map file.
+  <!-- touchpoint:end -->
 - **`FRONTIER <id> <id> ...`** — go to §3.
 
 If `wayfinder-frontier` could not run at all (per the tooling-gap

@@ -95,7 +95,10 @@ check_target() {
     "$task_dir"/*) return 0 ;;
     *)
       if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$WSR_REL"; else display="$file_path"; fi
-      echo "phase-gate: '$display' is outside work/$task_id/. During the $phase phase, only artifacts inside the task folder may be written — implementation hasn't been approved yet." >&2
+      printf '%s\n' \
+        "What happened: I tried to edit '$display' while the task is still in its $phase step." \
+        "What it means for you: nothing was changed. Before you approve the plan, I may only write notes inside work/$task_id/, not project code." \
+        "To continue: approve the plan so I can start implementing, or ask me to keep working on the notes." >&2
       return 1
       ;;
   esac
@@ -117,7 +120,10 @@ case "$tool_name" in
       [[ -n "$line" ]] || continue
       case "$line" in
         UNRESOLVED:*)
-          echo "phase-gate: Bash command '$command' plausibly writes a file this gate can't confidently locate (${line#UNRESOLVED:}). During the $phase phase, only work/$task_id/ may be written — failing closed rather than passing an unresolvable write through." >&2
+          printf '%s\n' \
+            "What happened: I tried to run '$command', and I can't tell which file it writes to (${line#UNRESOLVED:})." \
+            "What it means for you: nothing was run. Before you approve the plan I may only write inside work/$task_id/, so I block a command I can't place." \
+            "To continue: rewrite the command so it names the file plainly, or approve the plan first." >&2
           exit 2
           ;;
         PATH:*)

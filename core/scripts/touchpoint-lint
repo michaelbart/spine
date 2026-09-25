@@ -1,0 +1,167 @@
+#!/bin/bash
+# touchpoint-lint — mechanical check of core/templates/human-touchpoint.md.
+#
+#   touchpoint-lint [<skill.md>...]   default: every core/skills/*/SKILL.md
+#   touchpoint-lint --stdin           lint a hook/script message from stdin
+#
+# In markdown files it checks only text between `<!-- touchpoint:start -->`
+# (or `... short`) and `<!-- touchpoint:end -->`; nothing outside a marked
+# block is judged, because "stop"/"ask"/"wait" in prose mean too many things
+# to grep reliably. Inside a block it requires:
+#   full block:  Deciding / Need to know / Recommend / Safe to ignore, and
+#                >= 2 numbered options each carrying `next:` and `undo:`
+#   short block: What happened / What it means for you / To continue
+#   report block: Bottom line / What I did / What you need to do / Worth knowing
+#   both:        every internal term from the glossary table in
+#                human-touchpoint.md, and every D-<n> / gap-<n> / M<n> id,
+#                must be followed directly by " (<gloss>)" at its first use.
+# A skill that references human-touchpoint.md but contains zero blocks fails
+# (the reference is a claim; the block is the evidence).
+#
+# Exit 0 clean, 1 findings, 2 usage/setup. Bash 3.2 + BSD awk safe.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STANDARD="$SCRIPT_DIR/../templates/human-touchpoint.md"
+[[ -f "$STANDARD" ]] || { echo "touchpoint-lint: $STANDARD not found" >&2; exit 2; }
+
+mode=files
+files=()
+for a in "$@"; do
+  case "$a" in
+    --stdin) mode=stdin ;;
+    -*) echo "usage: touchpoint-lint [--stdin | <file>...]" >&2; exit 2 ;;
+    *) files+=("$a") ;;
+  esac
+done
+if [[ "$mode" == files && ${#files[@]} -eq 0 ]]; then
+  for f in "$SCRIPT_DIR"/../skills/*/SKILL.md; do files+=("$f"); done
+fi
+
+lint_awk='
+function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+function fail(line, msg) { printf "touchpoint-lint: FAIL %s:%d: %s\n", FILENAME_SHOWN, line, msg; bad++ }
+function has(re) { return (block ~ re) }
+
+# first use of `t` (already located at 1-based pos, matched length n) must be
+# followed by " (".
+function glossed(after) {
+  if (substr(after, 1, 1) == "`") after = substr(after, 2)
+  return (substr(after, 1, 2) == " (")
+}
+
+function check_terms(line,    i, t, pos, after, rest, id, res) {
+  for (i = 1; i <= nterm; i++) {
+    t = term[i]
+    if (btick[i]) {
+      pos = index(block, "`" t "`")
+      if (pos) { after = substr(block, pos + length(t) + 2)
+        if (!glossed(after)) fail(line, "internal term `" t "` used without an inline gloss — write: `" t "` (" gloss[i] ")") }
+    } else {
+      pos = index(block, t)
+      if (pos) { after = substr(block, pos + length(t))
+        if (!glossed(after)) fail(line, "internal term \"" t "\" used without an inline gloss — write: " t " (" gloss[i] ")") }
+    }
+  }
+  rest = block
+  while (match(rest, /(^|[^A-Za-z0-9_-])(D-[0-9]+|gap-[0-9]+|M[0-9]+)([^A-Za-z0-9_-]|$)/)) {
+    res = substr(rest, RSTART, RLENGTH)
+    match(res, /(D-[0-9]+|gap-[0-9]+|M[0-9]+)/)
+    id = substr(res, RSTART, RLENGTH)
+    after = substr(rest, index(rest, id) + length(id))
+    if (!(id in seen)) {
+      seen[id] = 1
+      if (!glossed(after)) fail(line, "internal id " id " used without saying what it is — write: " id " (<what that one is>)")
+    }
+    rest = substr(rest, index(rest, id) + length(id))
+  }
+}
+
+function check_block(kind, line,    n, i, lines, opt, nopt) {
+  delete seen
+  if (kind == "report") {
+    if (!has("(\\*\\*)?Bottom line:(\\*\\*)?")) fail(line, "report missing \"Bottom line:\" (one plain sentence: the state, and whether anything waits on the human)")
+    if (!has("(\\*\\*)?What I did:(\\*\\*)?")) fail(line, "report missing \"What I did:\"")
+    if (!has("(\\*\\*)?What you need to do:(\\*\\*)?")) fail(line, "report missing \"What you need to do:\" (\"nothing\" is allowed)")
+    if (!has("(\\*\\*)?Worth knowing:(\\*\\*)?")) fail(line, "report missing \"Worth knowing:\" (\"nothing\" is allowed)")
+  } else if (kind == "short") {
+    if (!has("(\\*\\*)?What happened:(\\*\\*)?")) fail(line, "short touchpoint missing \"What happened:\"")
+    if (!has("(\\*\\*)?What it means for you:(\\*\\*)?")) fail(line, "short touchpoint missing \"What it means for you:\"")
+    if (!has("(\\*\\*)?To continue:(\\*\\*)?")) fail(line, "short touchpoint missing \"To continue:\"")
+  } else {
+    if (!has("(\\*\\*)?Deciding:(\\*\\*)?")) fail(line, "touchpoint missing \"Deciding:\" (what is decided, and why it is the human to decide)")
+    if (!has("(\\*\\*)?Need to know:(\\*\\*)?")) fail(line, "touchpoint missing \"Need to know:\"")
+    if (!has("(\\*\\*)?Recommend:(\\*\\*)?")) fail(line, "touchpoint missing \"Recommend:\" (say \"no recommendation\" and why if there is none)")
+    if (!has("(\\*\\*)?Safe to ignore:(\\*\\*)?")) fail(line, "touchpoint missing \"Safe to ignore:\" (\"nothing\" is allowed)")
+    n = split(block, lines, "\n"); nopt = 0
+    for (i = 1; i <= n; i++) {
+      opt = lines[i]; sub(/^[ \t]*>[ ]?/, "", opt)
+      if (opt ~ /^[0-9]+\. /) {
+        nopt++
+        if (opt !~ /next:/) fail(line, "option " nopt " has no \"next:\" (what happens if chosen)")
+        if (opt !~ /undo:/) fail(line, "option " nopt " has no \"undo:\" (can it be reversed)")
+      }
+    }
+    if (nopt < 2) fail(line, "touchpoint has " nopt " numbered option(s); need at least 2 (\"1. ...\", \"2. ...\")")
+  }
+  check_terms(line)
+  blocks++
+}
+
+# glossary
+FILENAME == STANDARD {
+  if ($0 ~ /^## Glossary/) ingl = 1
+  else if (ingl && $0 ~ /^\|/) {
+    split($0, c, "|"); t = trim(c[2]); g = trim(c[3])
+    if (t == "Term" || t ~ /^-+$/ || t == "") next
+    nterm++; term[nterm] = t; gloss[nterm] = g
+    btick[nterm] = !(t ~ /[-0-9]/ || t ~ /^[A-Z]/)
+  }
+  next
+}
+
+{
+  FILENAME_SHOWN = FILENAME
+  if (STDIN_MODE) { block = block $0 "\n"; next }
+  if ($0 ~ /<!-- touchpoint:start( short| report)? -->/) {
+    if (inblk) fail(FNR, "touchpoint:start inside another block")
+    inblk = 1; bstart = FNR; kind = ($0 ~ / short -->/) ? "short" : (($0 ~ / report -->/) ? "report" : "full"); block = ""; next
+  }
+  if ($0 ~ /<!-- touchpoint:end -->/) {
+    if (!inblk) { fail(FNR, "touchpoint:end with no start"); next }
+    check_block(kind, bstart); inblk = 0; next
+  }
+  if (inblk) block = block $0 "\n"
+  if ($0 ~ /human-touchpoint\.md/) refs[FILENAME] = 1
+}
+END {
+  if (STDIN_MODE) { FILENAME_SHOWN = "<stdin>"; check_block("short", 1) }
+  else if (inblk) fail(bstart, "touchpoint:start never closed")
+  if (bad) exit 1
+  printf "touchpoint-lint: ok — %d block(s) checked\n", blocks + 0
+}
+'
+
+# Per-file block counting for the "references the standard but has no block"
+# rule is done in bash so awk stays a single pass.
+rc=0
+if [[ "$mode" == stdin ]]; then
+  # Machine-read lines (tokens like HALT/STALE, "<script>: ..." prefixes) come
+  # before the human-facing part; only the latter is judged.
+  sed -n '/^What happened:/,$p' | awk -v STANDARD="$STANDARD" -v STDIN_MODE=1 "$lint_awk" "$STANDARD" - || rc=$?
+  exit "$rc"
+fi
+
+checked=0
+for f in "${files[@]}"; do
+  [[ -f "$f" ]] || { echo "touchpoint-lint: $f not found" >&2; exit 2; }
+  out="$(awk -v STANDARD="$STANDARD" -v STDIN_MODE=0 "$lint_awk" "$STANDARD" "$f" 2>&1)" || { printf '%s\n' "$out"; rc=1; continue; }
+  n="$(printf '%s' "$out" | sed -n 's/.*ok — \([0-9]*\) block.*/\1/p')"
+  if [[ "${n:-0}" -eq 0 ]] && grep -q 'human-touchpoint\.md' "$f"; then
+    echo "touchpoint-lint: FAIL $f: references human-touchpoint.md but contains no <!-- touchpoint:start --> block"
+    rc=1
+  fi
+  checked=$((checked + ${n:-0}))
+done
+[[ "$rc" -eq 0 ]] && echo "touchpoint-lint: ok — $checked block(s) across ${#files[@]} file(s)"
+exit "$rc"

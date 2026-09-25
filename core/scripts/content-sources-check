@@ -124,6 +124,12 @@ done <<<"$content_files"
 if [[ ${#violations[@]} -gt 0 ]]; then
   echo "content-sources-check: FAIL (${#violations[@]})"
   printf '  - %s\n' "${violations[@]}"
+  if printf '%s\n' "${violations[@]}" | grep -q '^STOP AND ASK'; then
+    printf '%s\n' \
+      "What happened: the plan puts text on screen that nothing in the project defines (the STOP AND ASK lines above)." \
+      "What it means for you: I won't present the plan until every piece of text has a source, so no invented wording ships." \
+      "To continue: tell me what each piece of text should say, or where it comes from."
+  fi
   exit 1
 fi
 echo "content-sources-check: ok ($(grep -c . <<<"$entries") entries)"

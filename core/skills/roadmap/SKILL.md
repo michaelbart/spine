@@ -88,14 +88,14 @@ entry, **verify its shape**:
 **If any entry is malformed** (plain prose bullet, no fence, no `id:`
 line, or counter missing):
 
-> Found malformed Known-gap entries in `work/<id>/milestone.md` that
-> can't be machine-cited by future tasks. Before planning, I need to fix
-> their format:
-> [list each malformed entry, quoted]
-> Can I reformat these into the proper `gap-<n>` shape now? Content stays
-> identical — this is shape-only. Or I can note them as non-machine-citable
-> and leave them as-is.
-
+<!-- touchpoint:start -->
+> **Deciding:** whether I may tidy the formatting of some leftover-issue entries in `work/<id>/milestone.md`. It's yours because it edits a shared file.
+> **Need to know:** <n> entries there are written as plain notes, so later tasks can't look them up automatically: <each entry, quoted>. Tidying changes only their layout, never their words.
+> **Recommend:** Tidy them — otherwise these issues are invisible to future planning.
+> 1. **Tidy them** — next: I reformat the entries in place; cost: a few seconds; undo: yes, git can revert it
+> 2. **Leave them** — next: I skip them when planning; cost: they won't be picked up by any later task; undo: yes
+> **Safe to ignore:** the entry format details.
+<!-- touchpoint:end -->
 Wait for the human's answer. If reformatting: edit in place now. If
 leaving as-is: note each in the output as "not absorbed — non-machine-
 citable format" and exclude them from placement below.
@@ -130,14 +130,14 @@ its shape**: a well-formed entry has an `id: issue-<n>` line and a
 `status:` field, and the section carries a `<!-- next-issue-id: N -->`
 counter. If any entry is malformed:
 
-> Found malformed entries in `docs/known-issues.md` that can't be
-> machine-cited by future tasks. Before planning, I need to fix their
-> format:
-> [list each malformed entry, quoted]
-> Can I reformat these into the proper `issue-<n>` shape now? Content
-> stays identical — this is shape-only. Or I can note them as
-> non-machine-citable and leave them as-is.
-
+<!-- touchpoint:start -->
+> **Deciding:** whether I may tidy the formatting of some entries in `docs/known-issues.md`. It's yours because it edits a shared file.
+> **Need to know:** <n> entries there are written as plain notes, so later tasks can't look them up automatically: <each entry, quoted>. Tidying changes only their layout, never their words.
+> **Recommend:** Tidy them — otherwise these issues are invisible to future planning.
+> 1. **Tidy them** — next: I reformat the entries in place; cost: a few seconds; undo: yes, git can revert it
+> 2. **Leave them** — next: I skip them when planning; cost: they won't be picked up by any later task; undo: yes
+> **Safe to ignore:** the entry format details.
+<!-- touchpoint:end -->
 Wait for the human's answer, same as §1a's own malformed-entry flow. If
 leaving as-is: note each in the output as "not absorbed —
 non-machine-citable format" and exclude them from placement below.
@@ -207,9 +207,16 @@ M<n>: <title>
   Structural dependency: M<k> must be complete first (or "none")
 ```
 
-Then ask: **"Does this sequence look right? Any reordering, splits,
-merges, or title changes before I write the files?"**
+Then ask (per `core/templates/human-touchpoint.md`):
 
+<!-- touchpoint:start -->
+> **Deciding:** whether this order of milestones is right before I write the plan files. It's yours because it sets what gets built first.
+> **Need to know:** <one line per milestone: its number, what it delivers, and what must come first>
+> **Recommend:** Approve — <one-line reason for the order>
+> 1. **Looks right** — next: I write the milestone files; cost: none; undo: yes, files can be edited later
+> 2. **Change it** (reorder, split, merge, retitle) — next: you tell me what, and I show only the changed entries again; cost: a minute; undo: n/a
+> **Safe to ignore:** the wording of each entry; you can polish it later.
+<!-- touchpoint:end -->
 Wait for explicit confirmation. Iterate until the human says to proceed.
 A partial approval ("looks right except swap M2 and M3") is fine — revise
 and re-present only the changed entries, then confirm again.

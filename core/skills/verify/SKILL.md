@@ -385,7 +385,13 @@ exceeds its budget, **stop it** (cancel the subagent) and record it in
 silently treat a killed or timed-out adversary as PASS. In `guided`/
 `checkpointed` that's a note for the human to act on; **in `auto` a budget breach
 is an exception-stop** (`core/skills/task/SKILL.md` §5) — pull the human in
-rather than shipping on an incomplete adversarial pass.
+rather than shipping on an incomplete adversarial pass. Say it in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start short -->
+> **What happened:** a reviewer (`<name>`) ran past its time limit and I stopped it.
+> **What it means for you:** that review is incomplete, so I haven't counted it as a pass and won't ship on it.
+> **To continue:** tell me to re-run just that review, or tell me how you'd like to handle it.
+<!-- touchpoint:end -->
 
 - `subagent_type: falsifier` — delegation message points at
   `work/<task-id>/plan.md`, the diff, and `work/<task-id>/artifacts/
@@ -617,4 +623,12 @@ ran, see verify.md" is not a FAIL by itself — adversary *findings* don't
 fail verify, they inform `/ship` and the briefing; a secret in the
 adversary's own *evidence* is a different thing entirely and does fail
 verify). `/task` decides what happens next; this skill's job ends at
-`verify.md` plus that one-line verdict.
+`verify.md` plus that one-line verdict. When a human ran `/verify` directly,
+also leave them this report form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start report -->
+> **Bottom line:** <checks passed | checks failed>, in one plain sentence, and whether anything waits on you.
+> **What I did:** <2-3 short lines: what was checked and by whom, in plain words>
+> **What you need to do:** <`/ship <task-id>` | fix <the one thing> and re-run>
+> **Worth knowing:** <problems found but not blocking, and when each would matter, one line each; or "nothing">. Details: `work/<task-id>/verify.md`.
+<!-- touchpoint:end -->

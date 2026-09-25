@@ -28,8 +28,18 @@ this by talking it through, or by reading the code" is no — the question
 is genuinely "what does this feel like" or "does this actually work," not
 "what's correct." If `$ARGUMENTS` reads more like an implementation
 request than an open question (a clear behavior, just not built yet), say
-so plainly and ask: continue as a prototype anyway, or stop here and
-suggest `/task` instead? This is a one-line sanity check, not a gate —
+so plainly and ask, in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** whether to build this as a throwaway prototype or as real work. It's yours because it sounds like a task with a known answer rather than an open question.
+> **Need to know:** You described <the behaviour> clearly, so a prototype may add little; a prototype is for questions like "what does this feel like".
+> **Recommend:** Use `/task` — <one-line reason>
+> 1. **Prototype anyway** — next: I build a quick disposable version; cost: a little time; undo: yes, it's thrown away
+> 2. **Use `/task` instead** — next: I stop here and you run `/task`; cost: none; undo: yes
+> **Safe to ignore:** nothing.
+<!-- touchpoint:end -->
+
+Then, as before: This is a one-line sanity check, not a gate —
 proceed on the human's word either way. Don't run this check at all if
 the question is obviously genuine (a real visual/behavioral unknown) —
 this step exists to catch the mismatch, not to interrogate every request.
@@ -82,8 +92,16 @@ to diverge from.
 
 Once the question has a real answer, fill in `findings.md`'s `## What was
 built` and `## What was learned` sections — the conclusion stated
-plainly, not a narrative of the process. Ask the human: **kept or
-discarded?**
+plainly, not a narrative of the process. Ask the human, in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** whether to keep the prototype's files or delete them. It's yours because only you know if you'll want to look at it again.
+> **Need to know:** The question is answered: <the conclusion in one plain sentence>. That conclusion is saved in `findings.md` either way.
+> **Recommend:** Delete it — the answer is what matters; keep it only if it's a real reference worth revisiting.
+> 1. **Delete it** — next: I remove the prototype's files and keep `findings.md`; cost: none; undo: no, though the answer is kept
+> 2. **Keep it** — next: the files stay next to `findings.md`; cost: some clutter; undo: yes, delete later
+> **Safe to ignore:** the details of how it was built.
+<!-- touchpoint:end -->
 
 - **Discarded** (the common case) — delete everything under
   `work/prototypes/<id>/` except `findings.md` itself. The artifact did

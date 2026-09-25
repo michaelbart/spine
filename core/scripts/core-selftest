@@ -2908,3 +2908,98 @@ else
 fi
 
 
+
+# ---------------------------------------------------------------------------
+# touchpoint-lint: the human-touchpoint standard (core/templates/human-touchpoint.md)
+# holds for every marked block in the real skills, the lint itself rejects
+# each defect class it claims to catch, and the messages hooks/scripts show a
+# human parse as compliant when run against real fixtures.
+# ---------------------------------------------------------------------------
+
+TPL="$SCRIPT_DIR/touchpoint-lint"
+
+if "$TPL" >/dev/null 2>&1 </dev/null; then
+  pass "touchpoint-lint: every marked touchpoint block in core/skills is compliant"
+else
+  fail "touchpoint-lint: a skill's touchpoint block is non-compliant: $("$TPL" 2>&1 </dev/null | head -5)"
+fi
+
+tpl_case() {
+  # tpl_case <desc> <expect:pass|fail> <expected-substring-on-fail> <block-body>
+  local desc="$1" expect="$2" sub="$3" body="$4" f out code=0
+  f="$(mktemp "$tmp_root/tpl.XXXXXX")"
+  printf '%s\n' "$body" >"$f"
+  out="$("$TPL" "$f" 2>&1 </dev/null)" || code=$?
+  if [[ "$expect" == "pass" ]]; then
+    [[ "$code" == "0" ]] && pass "touchpoint-lint: $desc" || fail "touchpoint-lint: $desc (expected clean, got: $out)"
+  else
+    [[ "$code" == "1" && "$out" == *"$sub"* ]] && pass "touchpoint-lint: $desc" || fail "touchpoint-lint: $desc (expected exit 1 containing '$sub', got exit=$code: $out)"
+  fi
+}
+
+TPL_OK='<!-- touchpoint:start -->
+> **Deciding:** whether to redo research.
+> **Need to know:** `check-stale` (the check that notices my notes are out of date) flagged one file, gap-3 (a leftover issue).
+> **Recommend:** Keep — nothing relevant changed.
+> 1. **Keep** — next: I plan now; cost: none; undo: yes
+> 2. **Redo** — next: I re-research; cost: 10 minutes; undo: n/a
+> **Safe to ignore:** the banner.
+<!-- touchpoint:end -->'
+
+tpl_case "a complete, glossed block passes" pass "" "$TPL_OK"
+tpl_case "missing Recommend is caught" fail 'missing "Recommend:"' "${TPL_OK/> **Recommend:** Keep — nothing relevant changed.
+/}"
+tpl_case "an option with no undo: is caught" fail 'no "undo:"' "${TPL_OK/; undo: yes/}"
+tpl_case "an unglossed internal id is caught" fail "internal id gap-3" "${TPL_OK/gap-3 (a leftover issue)/gap-3}"
+tpl_case "an unglossed internal term is caught" fail 'internal term "check-stale"' "${TPL_OK/ (the check that notices my notes are out of date)/}"
+tpl_case "a Class 2 mention with no gloss is caught" fail 'internal term "Class 2"' "${TPL_OK/flagged one file/flagged one file in a Class 2 task}"
+tpl_case "an unclosed block is caught" fail "never closed" "${TPL_OK/<!-- touchpoint:end -->/}"
+tpl_case "a report block missing Worth knowing is caught" fail 'missing "Worth knowing:"' '<!-- touchpoint:start report -->
+> **Bottom line:** done.
+> **What I did:** a thing.
+> **What you need to do:** nothing.
+<!-- touchpoint:end -->'
+
+# A skill that cites the standard but contains no block is claiming compliance with nothing.
+tpl_case "a skill citing the standard with no block is caught" fail "contains no" 'See core/templates/human-touchpoint.md for how to ask.'
+
+# Negative control: the same defect in a message the lint is never shown must
+# not be mistaken for a pass — an empty stdin is a failure, not a clean bill.
+if printf '' | "$TPL" --stdin >/dev/null 2>&1; then
+  fail "touchpoint-lint: negative control — empty --stdin input passed, so the message check may be vacuous"
+else
+  pass "touchpoint-lint: negative control — empty --stdin input fails (the message check is not vacuous)"
+fi
+
+tpl_msg() {
+  # tpl_msg <desc> <message-text>
+  local desc="$1" msg="$2" out code=0
+  out="$(printf '%s\n' "$msg" | "$TPL" --stdin 2>&1)" || code=$?
+  [[ "$code" == "0" ]] && pass "touchpoint-lint: $desc reads as a compliant message" || fail "touchpoint-lint: $desc is non-compliant: $out"
+}
+
+hf="$(new_hook_fixture)"; tpl_real="${hf%%|*}"
+r="$(hook_run "$PATH_ESCALATE" "$tpl_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$tpl_real"'/src/auth/secret.txt"}}')"
+tpl_msg "path-escalate's protected-path halt" "${r#*|}"
+r="$(hook_run "$PHASE_GATE" "$tpl_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$tpl_real"'/src/other/x.txt"}}')"
+tpl_msg "phase-gate's before-approval halt" "${r#*|}"
+r="$(hook_run "$DEP_GATE" "$tpl_real" '{"tool_name":"Write","tool_input":{"file_path":"'"$tpl_real"'/pkg/manifest.json"}}')"
+tpl_msg "dep-gate's package-change question" "$(jq -r '.hookSpecificOutput.permissionDecisionReason // empty' <<<"${r#*|}")"
+r="$(hook_run "$DEP_GATE" "$tpl_real" '{"tool_name":"Bash","tool_input":{"command":"npm install left-pad"}}')"
+tpl_msg "dep-gate's install question" "$(jq -r '.hookSpecificOutput.permissionDecisionReason // empty' <<<"${r#*|}")"
+
+for sac_case in "" '{}' '{"approver":"alice"}'; do
+  r="$(sac_run "$(sac_fixture "alice" "$sac_case")")"
+  tpl_msg "second-approver-check's halt (${sac_case:-no approval file})" "${r#*|}"
+done
+
+write_csc_plan '- apps/web/src/home/home.fixtures.ts — source: none'
+tpl_msg "content-sources-check's stop-and-ask" "$(csc_run || true)"
+
+cf="$(new_check_stale_fixture)"; cs_proj="${cf%%|*}"; cs_sha="${cf#*|}"
+doc="$cs_proj/work/T1/research.md"
+cs_write_research "$doc" "$cs_sha" "  - src/grounded.ts"
+echo "changed after research was written" >>"$cs_proj/src/grounded.ts"
+tpl_msg "check-stale's stale report" "$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1 || true)"
+
+exit "$overall"

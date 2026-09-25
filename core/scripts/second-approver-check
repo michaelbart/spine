@@ -38,7 +38,10 @@ approval_file="$project/work/$task_id/approval.json"
 [[ -f "$owner_file" ]] || { echo "second-approver-check: $owner_file not found" >&2; exit 2; }
 
 if [[ ! -f "$approval_file" ]]; then
-  echo "second-approver-check: HALT — no approval.json for $task_id. Class 2 plan was never approved (see core/skills/task/SKILL.md §3)." >&2
+  printf '%s\n' \
+    "What happened: HALT — no approval.json for $task_id, so the plan was never approved." \
+    "What it means for you: this is a Class 2 (the highest-risk kind of change: needs a second person's approval) task, so I can't start implementing." \
+    "To continue: have a colleague read work/$task_id/plan.md and record their approval, or record your own with a stated reason." >&2
   exit 1
 fi
 
@@ -48,12 +51,18 @@ override="$(jq -r '.override // false' "$approval_file")"
 reason="$(jq -r '.override_reason // empty' "$approval_file")"
 
 if [[ -z "$approver" ]]; then
-  echo "second-approver-check: HALT — approval.json has no 'approver' field for $task_id." >&2
+  printf '%s\n' \
+    "What happened: HALT — approval.json for $task_id has no 'approver' field, so I can't tell who approved the plan." \
+    "What it means for you: I can't start implementing until the approval names a person." \
+    "To continue: have the approver re-record their approval with their name filled in." >&2
   exit 1
 fi
 
 if [[ "$approver" == "$owner" && "$override" != "true" ]]; then
-  echo "second-approver-check: HALT — approver ($approver) is the same identity as owner, and no override is recorded. Class 2 requires a different git identity to approve, or an explicit, reasoned override (see core/skills/task/SKILL.md §3)." >&2
+  printf '%s\n' \
+    "What happened: HALT — the approver ($approver) is the same identity as owner, and no override is recorded." \
+    "What it means for you: a Class 2 (the highest-risk kind of change: needs a second person's approval) plan can't be approved by the person who owns it." \
+    "To continue: have a different person approve, or the owner can record a self-approval with a stated reason." >&2
   exit 1
 fi
 

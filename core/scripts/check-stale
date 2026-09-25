@@ -307,4 +307,9 @@ else
   echo "check-stale: quarantine banner already present in $doc"
 fi
 
+printf '%s\n' \
+  "What happened: files my research was based on have changed since I wrote it (listed above)." \
+  "What it means for you: the research may no longer match the code, so I won't plan on it as it is. If the only change is my own placeholder edit in the milestone file, it isn't a real change and I keep the research; otherwise I redo it." \
+  "To continue: nothing — I handle this myself and won't ask you unless something else needs a decision."
+
 exit 1

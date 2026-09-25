@@ -177,11 +177,19 @@ if [[ ${#blocking[@]} -gt 0 ]]; then
   if [[ -n "$diff_base" ]]; then
     echo "claims-check --diff: ${#blocking[@]} real-diff collision(s) with another open task:"
     printf '  - %s\n' "${blocking[@]}"
+    printf '%s\n' \
+      "What happened: while checking the finished work, I found it changes something another open task also changes (listed above)." \
+      "What it means for you: the work touches an area the plan never mentioned, and that area collides with the other task. I've recorded it as a deviation you need to resolve before shipping." \
+      "To continue: tell me whether to narrow this task's change, wait for the other task, or accept the overlap on the record."
     echo "claims-check --diff: any [UNDECLARED] entry above is the narrow-claims defeat caught late — this task's real diff touched a surface it never declared, and that surface collides with another open task. core/skills/ship/SKILL.md §0 treats this as a halt-tier deviation, same as a stale check-stale result."
   else
     echo "claims-check: BLOCKED — ${#blocking[@]} conflict(s):"
     printf '  - %s\n' "${blocking[@]}"
     echo "claims-check: resolve by waiting, renegotiating scope (revise the plan, re-run this check), or an explicit --override (recorded in both tasks' folders and both eventual briefings, same trust model as /ship --bypass)."
+    printf '%s\n' \
+      "What happened: another open task is about to change the same things this one plans to change (listed above)." \
+      "What it means for you: if both go ahead, one will overwrite or break the other. Nothing has been changed yet." \
+      "To continue: wait for the other task to finish, shrink this task so they no longer overlap, or override the check (recorded in both tasks' notes and briefings)."
   fi
   exit 1
 fi

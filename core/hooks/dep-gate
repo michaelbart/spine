@@ -61,7 +61,7 @@ check_manifest_target() {
   # protected-paths.conf #manifest tag (workspace_route resolves which root
   # that is; single-repo projects always resolve to $project itself).
   local file_path="$1" rel display conf line glob
-  workspace_route "$project" "$file_path" || ask "Project root could not be safely resolved — forced to a human decision since a dependency manifest can't be ruled out."
+  workspace_route "$project" "$file_path" || ask "What happened: I'm about to edit a file, but I can't tell where the project root is, so I can't rule out that it changes the list of packages. What it means for you: nothing has changed yet, and any package change is always your call. To continue: allow the edit, or deny it and tell me what to do instead."
   [[ -n "$WSR_OWNER_ROOT" ]] || return 0
   conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
   [[ -f "$conf" ]] || return 0
@@ -75,7 +75,7 @@ check_manifest_target() {
     glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
     [[ -z "$glob" ]] && continue
     if _wsr_glob_eq "$rel" "$glob"; then
-      ask "Editing dependency manifest '$display' — package changes always require a human decision (supply-chain and accretion control)."
+      ask "What happened: I'm about to edit '$display', which lists the packages the project depends on. What it means for you: adding or changing a package is always your call — it affects security and how much the project has to maintain. Nothing has changed yet. To continue: allow this edit, or deny it and tell me what to do instead."
     fi
   done < "$conf"
 }
@@ -97,7 +97,7 @@ case "$tool_name" in
       [[ -n "$line" ]] || continue
       case "$line" in
         UNRESOLVED:*)
-          ask "Bash command '$command' plausibly writes a file this gate can't confidently locate (${line#UNRESOLVED:}) — forced to a human decision since a dependency manifest can't be ruled out."
+          ask "What happened: I'm about to run '$command', and I can't tell which file it writes (${line#UNRESOLVED:}). What it means for you: I can't rule out that it changes the list of packages, which is always your call. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
           ;;
         PATH:*)
           check_manifest_target "${line#PATH:}"
@@ -119,7 +119,7 @@ case "$tool_name" in
       [[ -f "$pf" ]] || continue
       any_exist=1
       if grep -qEf "$pf" <<<"$command"; then
-        ask "Command looks like a dependency install/change: '$command' — forced to a human decision."
+        ask "What happened: I'm about to run '$command', which looks like it installs or changes a package. What it means for you: any package change is always your call — it affects security and how much the project has to maintain. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
       fi
     done
     [[ "$any_exist" -eq 1 ]] || exit 0

@@ -38,7 +38,16 @@ that already looked complete. Its one-line output branches four ways:
   had typed `<that description> --milestone <that-milestone-id>`. On
   rejection or a correction, use what the human says instead (a different
   entry, a different milestone, or a hand-typed description) — don't
-  re-guess.
+  re-guess. Ask it in this form (per `core/templates/human-touchpoint.md`):
+
+  <!-- touchpoint:start -->
+  > **Deciding:** whether to start the next planned task in `<milestone name>`. It's yours because I'm guessing that's what you want, and nothing exists yet, so a wrong guess costs one keystroke now instead of a redo later.
+  > **Need to know:** The milestone's plan lists this as its next task: "<description>". You didn't type a description, so I picked the next queued one.
+  > **Recommend:** Start it — it is next in the plan's own order.
+  > 1. **Start it** — next: I begin researching that task; cost: none; undo: yes, nothing is created until you confirm
+  > 2. **Something else** — next: you type a different task or milestone; cost: a few seconds; undo: n/a
+  > **Safe to ignore:** the other queued tasks; I won't touch them.
+  <!-- touchpoint:end -->
 - **`BLOCKED <milestone-id> <blocking-token>`** — that milestone's next
   queued task can't start yet: its immediate predecessor (`<blocking-token>`
   is a task-id, or the literal `TBD` if that predecessor hasn't even been
@@ -101,9 +110,18 @@ and confirm with the human rather than silently creating an unplanned
 milestone.** This is the point `/roadmap`'s own sequencing and gap-absorption
 (`core/skills/roadmap/SKILL.md` §1a/§3) would normally already have run —
 skipping straight to task creation is exactly the path that lets Known Gaps
-entries never get absorbed anywhere. Say plainly: `"<id>` has no
-`milestone.md` yet — `/roadmap` hasn't planned it. Run `/roadmap` first, or
-proceed here and I'll create it directly?"` This is informational, not a
+entries never get absorbed anywhere. Ask it in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** whether to plan this milestone first or create it here. It's yours because creating one with no plan is allowed, but it skips the step that normally sorts out leftover issues.
+> **Need to know:** `<id>` (the milestone this task belongs to) has no plan file yet; the planning command, `/roadmap`, hasn't been run for it.
+> **Recommend:** Plan it first — that step also sweeps up leftover known issues; skip it only for a one-off.
+> 1. **Plan it first** — next: you run `/roadmap`, then come back; cost: a few minutes; undo: yes
+> 2. **Create it here** — next: I make a minimal milestone file and ask about leftover issues from finished milestones; cost: none now; undo: yes, delete the file
+> **Safe to ignore:** nothing.
+<!-- touchpoint:end -->
+
+This is informational, not a
 hard block — same "never a gate" stance `/ship` takes on the identical
 suggestion — the human may legitimately want an ad hoc milestone id. If the
 human says proceed: **also check every already-shipped milestone**, not
@@ -118,7 +136,22 @@ completeness standard `/roadmap` §4 holds itself to), or defer it — leave
 it exactly where it is and say nothing more now. Deferring is a safe,
 legitimate answer here (unlike declining, it isn't final): the gap stays in
 its original milestone's own Known Gaps section and this same stop will
-re-ask about it at the next new-milestone creation. Only then create
+re-ask about it at the next new-milestone creation.
+
+Ask once per leftover issue, in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** what to do with one problem an earlier milestone knowingly left open. It's yours because nobody fixed it, and only you can say whether it belongs to this work.
+> **Need to know:** "<the issue in one plain sentence>", left by `<earlier task>`. Nothing is lost; it stays listed in its old milestone until you decide.
+> **Recommend:** <carry it | fold it in | ask me later> — <one-line reason>
+> 1. **Carry it forward** — next: I copy it unchanged into this milestone's list of known issues; cost: none; undo: yes
+> 2. **Fold it into this task** — next: this task's scope grows to fix it; cost: extra work in this task; undo: yes, until the plan is approved
+> 3. **Decline it** — next: I record that you chose not to fix it; cost: it stays unfixed for good; undo: no, this one is final
+> 4. **Ask me later** — next: it stays where it is and I ask again when the next milestone starts; cost: none; undo: yes
+> **Safe to ignore:** the other leftover issues; each is asked separately.
+<!-- touchpoint:end -->
+
+Only then create
 `work/<id>/milestone.md` at the workspace root, seeded from
 `core/templates/milestone.md` plus whatever gap entries were carried
 forward (bump `next-gap-id` past the highest carried id). **If
@@ -186,7 +219,13 @@ below (research→plan, plan→implement, implement→verify), read
 `work/<task-id>/flags.json` first. If any entry has `"acknowledged":
 false`, refuse to advance: tell the human exactly what changed, when, by
 whom, and which grounding entry it hit (the flag's own fields — quote
-them, don't paraphrase), and stop. The human resolves it the same way any
+them, don't paraphrase), in this form (per `core/templates/human-touchpoint.md`), and stop:
+
+<!-- touchpoint:start short -->
+> **What happened:** <who> changed <what> at <when>, and the plan relied on it (flag fields quoted).
+> **What it means for you:** I paused before the next step because the plan may no longer match reality. Nothing has been changed.
+> **To continue:** look at that change; if it doesn't matter, mark the flag acknowledged in `work/<task-id>/flags.json` and tell me to continue.
+<!-- touchpoint:end --> The human resolves it the same way any
 halt-tier deviation resolves — by acting on the information, then editing
 that flag entry (`"acknowledged": true`, `"acknowledged_at"`,
 `"acknowledged_by"` set) — never by silently clearing it or advancing
@@ -413,7 +452,17 @@ higher-blast-radius is exactly the kind to keep a human in the loop on, even at
 the class they chose. Cap the offer at `.spine/profile.json`'s `autonomy_ceiling`
 if set. You'll write the result to `work/<task-id>/autonomy` in the setup step
 below, the same place the class file is written. (`/intake` proposes this from
-its pre-scan; a direct `/task` does none, so it simply asks.)
+its pre-scan; a direct `/task` does none, so it simply asks.) Ask it in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** how often I should stop and check with you on this task. It's yours because it trades your attention against how closely you watch the work.
+> **Need to know:** The three settings are `guided` (I stop after every phase and wait for you), `checkpointed` (I stop for plan approval, then once more at the finish) and `auto` (I run without scheduled stops; you review the finished PR).
+> **Recommend:** The setting called guided — it is the safe default; pick less stopping only if the change is small and easy to review.
+> 1. **Stop after every phase** — next: I pause after research, plan and each step for your go-ahead; cost: the most of your attention; undo: yes, you can switch later
+> 2. **Approve the plan, then one finish check** — next: I run to the end after you approve the plan, then ask once; cost: two stops; undo: yes
+> 3. **No scheduled stops** — next: I run everything and you review the finished PR; cost: you find problems late; undo: yes, nothing merges without you
+> **Safe to ignore:** the setting names; I'll use plain words.
+<!-- touchpoint:end -->
 
 Once confirmed, for Class 1/2: generate the task ID
 `<YYYYMMDD>-<kebab-slug>` (today's date, a short slug from the description),
@@ -430,10 +479,13 @@ evaluate, not an exemption it has to special-case). Only after that: write `work
 **Registry init (Extension C §2.2), same step, before the first
 `registry-sync`:** resolve owner identity —
 `git config user.name` and `git config user.email`. **If either is empty,
-stop before creating the task folder** and tell the human plainly: "spine's
-ownership model reads git identity, it does not invent one — run `git
-config --global user.name '<you>'` and `--global user.email
-'<you@example.com>'` first." (A fresh machine genuinely has neither set;
+stop before creating the task folder** and tell the human in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start short -->
+> **What happened:** I can't find your git name and email, and I don't make one up.
+> **What it means for you:** I haven't created anything yet; the task's records are signed with that identity.
+> **To continue:** run `git config --global user.name '<you>'` and `git config --global user.email '<you@example.com>'`, then tell me to go on.
+<!-- touchpoint:end --> (A fresh machine genuinely has neither set;
 never fall back to `$USER`, hostname, or any other guess.) Otherwise write
 `work/<task-id>/owner` = `<name> <email>`, one line. Write
 `work/<task-id>/claims.json` from `core/templates/claims.json` with
@@ -486,12 +538,26 @@ here, before anything else in this step. Write `state` = `plan`,
 `registry-sync <task-id>`. First run
 `${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md`
 — if it reports stale, the grounding drifted since it was written; regenerate
-research (back to step 2) before planning on it. If `check-stale` could not
+research (back to step 2) before planning on it — **unless every drifted item
+is this task's own bookkeeping** (false-positive rule, next paragraph).
+Whether to redo research is spine's call, never the human's: don't ask. If `check-stale` could not
 run at all (see the tooling-gap discipline above), do not treat that as
 "assume fresh" — record the gap ("research staleness unmeasured for this
 task") and proceed on the assumption research *might* be stale, noting that
 explicitly when you present the plan for approval so the human's review
 accounts for it.
+
+**False-positive rule (own bookkeeping is not drift).** If the only drifted
+items are `work/<id>/milestone.md` for this task's own milestone, and every
+changed line in `git diff <sha> -- work/<id>/milestone.md` is this task's own
+classify-time replacement of the milestone's first `TBD` line with its task
+id (the same clause-(d) reading `core/skills/ship/SKILL.md` §0 applies at ship
+time), it is not drift. Keep the research: delete the `> **STALE**` banner
+`check-stale` wrote into `research.md`, append one line to `notes.md`
+("check-stale flagged only my own TBD-to-task-id edit in milestone.md;
+treated as a false positive, research kept"), and go on to write the plan. Any
+other drifted item, or any changed line you cannot attribute to that one edit,
+means regenerate as above — never guess.
 
 Write `work/<task-id>/plan.md` yourself, following
 `${CLAUDE_SKILL_DIR}/../../templates/plan.md`'s structure exactly, and
@@ -597,7 +663,16 @@ content is or where it comes from (halt tier — the same stop-and-ask a
 `halt` deviation is), then rewrite the entry as a real path or
 `source: human — <what they said>` and re-run. This applies at every
 class and autonomy, `auto` included: there is no self-approving your way
-past content nobody defined.
+past content nobody defined. Ask it in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** what a piece of on-screen text should say, or where it comes from. It's yours because nothing in the project defines it, and I won't invent wording or sample data.
+> **Need to know:** The plan puts "<the text or file>" on screen, and I found no source for it.
+> **Recommend:** Just tell me the wording — it's the fastest way to be right.
+> 1. **Give me the text** — next: I record it as your answer and carry on to the plan; cost: a minute; undo: yes
+> 2. **Point me to where it lives** (a file or link) — next: I read it, cite it, and carry on; cost: a minute; undo: yes
+> **Safe to ignore:** every entry that already has a source.
+<!-- touchpoint:end -->
 
 **Run `claims-check` before presenting the plan** (Extension C §2.3 — "invoked
 by the plan-approval step of `/task`"):
@@ -631,7 +706,16 @@ longer applies and you fall through to the stop below. For `checkpointed` and
 touchpoint.** Do not proceed to implementation in the same turn. Wait for
 explicit approval. If the human requests changes, revise and re-present;
 this doesn't count against the deviation circuit breaker, it's pre-approval
-iteration.
+iteration. Present it in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** whether I may start building this plan. It's yours because nothing changes until you approve, and after that I edit real files.
+> **Need to know:** <the plan's bottom line in one plain sentence>. <If research staleness went unmeasured: "One caveat: I couldn't check whether my research notes are still current.">
+> **Recommend:** <Approve | Revise> — <one-line reason from the plan's own risks>
+> 1. **Approve** — next: I start building; cost: none; undo: yes, git can revert everything until it ships
+> 2. **Ask for changes** — next: you tell me what to change and I show the plan again; cost: a few minutes; undo: n/a
+> **Safe to ignore:** the file lists and internal labels in `plan.md`; the summary above is the whole decision.
+<!-- touchpoint:end -->
 
 **Record the approval** (Extension C §2.6) — `work/<task-id>/approval.json`:
 `{"approver": "<git identity>", "at": "<iso8601>", "override": false,
@@ -646,13 +730,14 @@ iteration.
   `work/<task-id>/owner`. This session cannot manufacture that identity —
   it can only ever resolve its own `git config`. So: if this session's own
   identity equals `owner`, **do not write `approver` as this session's own
-  identity and call it approved.** Tell the human plainly: "Class 2 needs a
-  second approver. Have a colleague pull this project, read
-  `work/<task-id>/plan.md` (already on the shared mainline — that's what
-  makes this possible without a separate review tool), and if they
-  approve, run their own session and write
-  `work/<task-id>/approval.json` themselves (their own `git config`
-  identity, not typed/asserted) + `registry-sync`." Then stop — this
+  identity and call it approved.** Tell the human in this form (per `core/templates/human-touchpoint.md`):
+
+  <!-- touchpoint:start short -->
+  > **What happened:** this is a Class 2 (the highest-risk kind of change: needs a second person's approval) task and you own it, so you can't approve your own plan.
+  > **What it means for you:** I've stopped before writing any code. Nothing is lost; I'll wait.
+  > **To continue:** ask a colleague to pull this project, read `work/<task-id>/plan.md`, and record their approval from their own session (it uses their own git identity, so it can't be typed on their behalf); then tell me. Working solo? You can instead record a self-approval with a stated reason; it is flagged loudly in the briefing.
+  <!-- touchpoint:end -->
+  Then stop — this
   session waits (pull periodically, or the human says when it's done)
   rather than proceeding to implement on an unapproved Class 2 plan.
   **Override** (a genuine solo/vacation-coverage situation, same trust
@@ -708,10 +793,19 @@ literal, not judgment-call vocabulary translation:
 - **I'll stop and ask before** (`halt`) — schema, public contracts, new
   dependencies, auth logic, or anything protected-path (the hooks enforce
   the file-level cases independently). Append a deviations.md record with
-  status `open`, stop implementing, and tell the human what you need
-  resolved. This is a legitimate non-recurring touchpoint — it does not
+  status `open`, stop implementing, and ask the human in the form below. This is a legitimate non-recurring touchpoint — it does not
   happen on every task, only when reality diverges from the plan in a
-  halt-tier way.
+  halt-tier way. Ask it in this form (per `core/templates/human-touchpoint.md`). Cite no decision, gap or class
+  id unless you say in a few words what it is:
+
+  <!-- touchpoint:start -->
+  > **Deciding:** <the specific thing that came up, e.g. "whether I may change the database layer">. It's yours because the plan said I'd check with you before touching <schema | public contracts | packages | login logic | protected files>.
+  > **Need to know:** <what I found while building, in plain words>. <Why the plan didn't cover it>. <What each path would touch>. Nothing has been changed for this yet.
+  > **Recommend:** <option> — <one-line reason>
+  > 1. **<the smaller path>** — next: <what happens>; cost: <time or risk>; undo: <yes/no/how>
+  > 2. **<the larger path>** — next: <what happens>; cost: <time or risk>; undo: <yes/no/how>
+  > **Safe to ignore:** <records I'll update either way>
+  <!-- touchpoint:end -->
 
 **Circuit breaker:** count every deviations.md record regardless of tier.
 On the third for this task, the plan is invalidated — `git stash push -u -m
@@ -747,7 +841,24 @@ same waiting posture step 3 uses for a Class-2 second approver. When resumed,
 **read `work/<task-id>/verify.md` directly** (its `Result:` line reads `PASS` or
 `FAIL` verbatim). If `FAIL`: fix it (back to implementation, same task) and ask
 the human to re-run `/verify`. If `PASS`: write `state` = `ship`, `registry-sync`,
-then ask the human to run `/ship <task-id>` and wait the same way.
+then ask the human to run `/ship <task-id>` and wait the same way. Say
+it in this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start short -->
+> **What happened:** the work is built and ready to be checked.
+> **What it means for you:** I can't start the check myself; only you typing the command can, so I'm paused and nothing more happens until you do.
+> **To continue:** type `/verify <task-id>`; after it passes I'll ask you to type `/ship <task-id>` the same way.
+<!-- touchpoint:end -->
+
+When you report that implementation is done (and again after `/ship`
+completes), use this form; it replaces any freeform summary:
+
+<!-- touchpoint:start report -->
+> **Bottom line:** <where things stand in one plain sentence, and whether anything waits on you>
+> **What I did:** <2-4 short lines: what now works or behaves differently, in user terms, not file names>
+> **What you need to do:** <the next step and exact command, or "nothing">
+> **Worth knowing:** <anything surprising, left open on purpose, or not proven, in plain words; or "nothing">
+<!-- touchpoint:end -->
 
 **checkpointed** — one human action closes out the task instead of two. Present a
 single **finish** confirmation ("implementation's ready and the plan's acceptance

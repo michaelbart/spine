@@ -96,7 +96,10 @@ check_target() {
 
   if [[ "$is_migration" -eq 1 ]]; then
     if [[ "$class" != "2" ]]; then
-      echo "path-escalate: '$display' matches migration-tagged protected path '$matched_glob'. Migration edits are denied outside a confirmed Class 2 task (current class: $class) — this is a flat deny, not an escalation prompt." >&2
+      printf '%s\n' \
+        "What happened: I tried to edit '$display', which is inside '$matched_glob' — a database-migration area you marked as protected." \
+        "What it means for you: nothing was changed. Edits there are blocked unless the task is Class 2 (the highest-risk kind of change: needs a second person's approval), and this one is not. This is a hard block, not a question." \
+        "To continue: tell me to raise this task to Class 2 (you confirm it), or drop the edit." >&2
       return 1
     fi
     return 0
@@ -106,7 +109,10 @@ check_target() {
     return 0
   fi
 
-  echo "path-escalate: '$display' matches protected path '$matched_glob' but the current task is Class $class. Halting — escalate to Class 2 (engineer confirms, work/<task-id>/class is set to 2) before editing protected paths." >&2
+  printf '%s\n' \
+    "What happened: I tried to edit '$display', which is inside '$matched_glob' — a place you marked as needing extra care." \
+    "What it means for you: nothing was changed. This task is not yet marked as Class 2 (the highest-risk kind of change: needs a second person's approval), and edits there require it." \
+    "To continue: tell me to raise this task to Class 2 (you confirm it), or drop the edit." >&2
   return 1
 }
 
@@ -126,7 +132,10 @@ case "$tool_name" in
       [[ -n "$line" ]] || continue
       case "$line" in
         UNRESOLVED:*)
-          echo "path-escalate: Bash command '$command' plausibly writes a file this gate can't confidently locate (${line#UNRESOLVED:}). Protected-path membership can't be ruled out — failing closed rather than passing an unresolvable write through." >&2
+          printf '%s\n' \
+            "What happened: I tried to run '$command', and I can't tell which file it writes to (${line#UNRESOLVED:})." \
+            "What it means for you: nothing was run. Because it might touch a protected file, I block it rather than guess." \
+            "To continue: rewrite the command so it names the file plainly, or run it yourself if you know it is safe." >&2
           exit 2
           ;;
         PATH:*)

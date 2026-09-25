@@ -105,6 +105,10 @@ fi
 echo "registry-sync: push rejected, pulling --rebase and retrying once"
 if ! git -C "$project" pull --rebase --quiet "$remote" "$branch" 2>/dev/null; then
   echo "registry-sync: pull --rebase failed — a real conflict, resolve by hand (git status in $project)" >&2
+  printf '%s\n' \
+    "What happened: saving this task's records to the shared history clashed with someone else's changes." \
+    "What it means for you: your work here is safe, but the records are not shared yet." \
+    "To continue: open the project folder, run \`git status\`, and sort out the conflicting files (or ask me to walk you through it)." >&2
   exit 1
 fi
 if git -C "$project" push --quiet "$remote" "$branch" 2>/dev/null; then
@@ -113,4 +117,8 @@ if git -C "$project" push --quiet "$remote" "$branch" 2>/dev/null; then
 fi
 
 echo "registry-sync: push still rejected after one rebase retry — resolve by hand" >&2
+printf '%s\n' \
+  "What happened: the shared history refused this task's records twice, even after I merged in the latest changes." \
+  "What it means for you: your work here is safe, but the records are not shared yet." \
+  "To continue: check whether you have permission to push, or whether someone else is pushing at the same time, then tell me to retry." >&2
 exit 1

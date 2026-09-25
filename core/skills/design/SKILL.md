@@ -190,7 +190,14 @@ or self-test-required; it's a lighter, opt-in, `/design`-only check).
   path> --project <project root>`. Non-zero exit: show its diagnostics
   verbatim to the human and stop — don't propose a single decision until
   this is resolved, the same "collision blocks everything downstream"
-  posture a real id collision deserves. Zero exit: continue.
+  posture a real id collision deserves. Zero exit: continue. Say it in this
+  form (per `core/templates/human-touchpoint.md`):
+
+  <!-- touchpoint:start short -->
+  > **What happened:** the design registry check found a conflict between this handoff and what's already recorded: <the script's message, quoted>.
+  > **What it means for you:** I've made no design decisions yet, because anything I proposed could clash with the existing record.
+  > **To continue:** resolve the conflict quoted above (edit the handoff or the registry entry it names), then tell me to re-run the check.
+  <!-- touchpoint:end -->
 - **If it doesn't exist**, offer to draft one — this project's own
   handoff shape and canonical registry files are never something spine
   itself knows (it has no vocabulary for "screen" or "component"; that's
@@ -315,6 +322,18 @@ include, inline, in addition to the verdict itself:
 - **What breaks in practice if this stays as-is** — one concrete sentence:
   a specific user action or scenario and its bad outcome, not a repeat of
   the verdict's own abstract claim.
+
+Present each finding in this form (per `core/templates/human-touchpoint.md`); the two bullets above are its
+`Need to know`:
+
+<!-- touchpoint:start -->
+> **Deciding:** whether to change the design or keep it as is, for <the concern in plain words>. It's yours because the design review can flag a risk but only you decide whether it's worth changing the design.
+> **Need to know:** The charter promises <the guarantee at stake>. If the design stays as it is, <one concrete scenario and its bad outcome>.
+> **Recommend:** <Revise | Keep as designed> — <one-line reason>
+> 1. **Revise the decision** — next: I write a replacement decision and mark the old one superseded; cost: <time>; undo: yes, records are append-only
+> 2. **Keep it as designed** — next: I record your reason in the design review notes and move on; cost: the risk stays; undo: yes, you can revise later
+> **Safe to ignore:** the reviewers' internal labels; they're in `design-review.md` if you want them.
+<!-- touchpoint:end -->
 
 Group related kept verdicts (e.g. a paired citation from the same
 scenario, or two adversaries independently flagging the same gap from

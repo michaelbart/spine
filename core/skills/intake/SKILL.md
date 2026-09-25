@@ -76,6 +76,17 @@ confirmed by the ticket vs. what you're inferring**. Ask the engineer only
 and batch them into a single `AskUserQuestion`; don't interrogate. This brief
 is the task description research will ground on; it lives in this session (and,
 for a Class 1/2 route, in the handoff at §7), never in a `docs/` file.
+Each question in that batch takes this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** <the one thing whose answer changes scope, risk or approach>. It's yours because <only you know X>.
+> **Need to know:** <what the ticket says, and what I'm guessing>
+> **Recommend:** <my best guess> — <why>
+> 1. **<answer A>** — next: <how scope or approach changes>; cost: <time or risk>; undo: <yes/no/how>
+> 2. **<answer B>** — next: <...>; cost: <...>; undo: <...>
+> **Safe to ignore:** <what doesn't matter for this>
+<!-- touchpoint:end -->
+
 
 ## 4. Ground the size in the real code — bounded
 
@@ -152,6 +163,19 @@ escalation and scope-first.
 - **Low confidence** (you couldn't size it in §4): **lead** with "let me scope
   it first" — propose the bounded spike honestly rather than pretending to a
   class you can't defend.
+
+In the menu, name flows in plain words ("routine change, review only the
+finished PR"), not `Class`/autonomy labels, unless each is glossed. Form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** how carefully to run this change. It's yours because it sets how much checking happens and how often I stop for you.
+> **Need to know:** <the change in one sentence>. I sized it as <routine | high-risk> because <the concrete reason: what it touches>.
+> **Recommend:** <recommended flow in plain words> — <one-line reason>
+> 1. **<recommended flow>** — next: <what happens>; cost: <your time>; undo: <yes/no/how>
+> 2. **<treat it as higher-risk>** — next: <what happens>; cost: <more of your time>; undo: yes
+> 3. **<scope it first>** — next: a short investigation with no code changes; cost: a few minutes; undo: yes
+> **Safe to ignore:** the internal names for these flows; I'll use plain words.
+<!-- touchpoint:end -->
 
 Always offer escalate-up. If the engineer chooses a class **below** your
 recommendation, that's their call — note it plainly now so it's visible at

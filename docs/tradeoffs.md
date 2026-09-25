@@ -443,3 +443,40 @@ surprise:
 | Conformance-gated pin bumps | `core/skills/update/SKILL.md` §3 offers to bump `.spine/core-pin.json` after only a human skim of the changelog (`git log <old>..<new>`) — unlike an adapter (`adapter-conformance`) or a profile (`profile-check`), nothing re-validates this project's own adapters/hooks against the *new* core before the bump is committed. A core change that alters a hook's argument shape or an adapter-contract expectation would only surface later, as a confusing task-time failure, not at the bump itself. |
 | Immediate local notice of a pin bump | The only detection point is `setup --check`, run at the top of `/task`/`/spine` — a machine that's behind a just-bumped pin finds out at its next spine command, which could be well after the bump landed, not right after its own next `git pull` of the project. Closing this needs a mechanism outside Claude Code's own hook system entirely — an ordinary git `post-merge` hook calling `setup --check` — which itself isn't distributable today the way `.claude/hooks` is (`.git/hooks` isn't version-controlled; it would need its own install step, e.g. `setup` writing it or a committed `core.hooksPath` dir). |
 | Committing `.claude/hooks/` for real instead of symlinking it | Symlinking is why `hook-guard` and the whole core-pin/skew-check machinery need to exist at all — a committed hook can't be silently absent or version-mismatched the way a symlink into an unset-up or out-of-date spine clone can. Real cost: hooks stop auto-updating with `git pull spine`, becoming per-project update friction instead. Full proposal, migration path, and open questions: `docs/proposal-committed-hooks.md`. |
+
+## Human touchpoints (`human-touchpoint.md`, `touchpoint-lint`)
+
+Design rationale: questions and end-of-phase reports were reaching the
+human full of spine's own vocabulary (`check-stale`, `D-24`, `gap-10`,
+`Class 2`) and option labels that described mechanism, not consequence.
+Most of the worst ones were not written anywhere in spine: at a stop where
+a skill only said "tell the human what you need resolved," the model
+improvised the question, jargon included. The fix therefore puts fixed
+wording (a marked block: decision, why it's yours, what to know, a
+recommendation, options by consequence) at every stop site, and a
+matching `report` block for the messages that end a phase.
+
+What is checked mechanically, and what is not:
+
+- **Checked** (`core/scripts/touchpoint-lint`, run by `core-selftest`):
+  every marked block in `core/skills/*/SKILL.md` has its required labels,
+  every option states `next:` and `undo:`, and every glossary term and
+  `D-<n>` / `gap-<n>` / `M<n>` id is glossed inline at first use. The
+  messages hooks and scripts show a human are run on fixtures and linted
+  the same way; a skill that cites the standard but contains no block
+  fails.
+- **Not checked**, deliberately: whether an *unmarked* stop exists (the
+  words "stop", "ask" and "wait" mean too many things in these skills for
+  a grep to be reliable, and a noisy lint gets ignored), whether the
+  wording is actually clear, and what the model says at run time. The
+  block gives the model fixed text to fill in instead of composing its
+  own, which is the mitigation; a stop added without a block is caught in
+  review, or by `/ratchet` if it recurs.
+- **Plain-word limit:** the glossary is a closed list, so a new internal
+  term is invisible to the lint until someone adds it.
+
+Two behavior changes rode along, both approved: `/task` no longer asks the
+human whether to redo research when `check-stale` flags only the task's own
+placeholder-to-task-id edit in `milestone.md` (it keeps the research and
+notes the false positive); and `core-selftest` now exits non-zero when a
+case fails (it previously ended with whatever its last command returned).

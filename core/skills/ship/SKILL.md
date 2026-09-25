@@ -182,7 +182,14 @@ Two deterministic checks, both must pass:
 Either check failing: stop, tell the human specifically which check and
 why, do not proceed to §2–6. This is not a touchpoint you invent — it's the
 same plan-approval-adjacent judgment the human already exercised; you're
-just not allowed to walk past a gate they haven't cleared.
+just not allowed to walk past a gate they haven't cleared. Say it in this
+form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start short -->
+> **What happened:** shipping stopped because <the checks haven't passed | a question is still open>: <the specific one, in a sentence>.
+> **What it means for you:** nothing has been merged or committed; this is a stop, not a failure.
+> **To continue:** <fix it and re-run `/verify <task-id>` | answer the open question and I'll mark it resolved>.
+<!-- touchpoint:end -->
 
 **Multi-repo (Extension B): a third check.** If `plan.md` has a `##
 Ship order` section, validate it against `workspace.json`'s contract
@@ -359,7 +366,18 @@ gaps (same `gap-<n>` mechanics as below), or *decline* with a stated reason
 recorded in `notes.md`. The visual-fidelity check is the only place a
 screen that looks wrong gets noticed; a finding nobody answered is exactly
 the miss it exists to prevent. `checkpointed`/`auto` tasks stop here too —
-this is a deliberate exception to their no-scheduled-stop rule.
+this is a deliberate exception to their no-scheduled-stop rule. Ask it in
+this form (per `core/templates/human-touchpoint.md`):
+
+<!-- touchpoint:start -->
+> **Deciding:** what to do about a visual mismatch the screenshot review found. It's yours because only you know whether it matters to the design.
+> **Need to know:** <the finding in one plain sentence>. Screenshot: `<path>`.
+> **Recommend:** <Fix now | Carry it | Decline> — <one-line reason>
+> 1. **Fix now** — next: I go back and fix it, then re-run the checks; cost: about <n> minutes; undo: yes
+> 2. **Carry it** — next: it merges as is and is logged as a known issue for a later task to see; cost: the mismatch ships for now; undo: yes, fix later
+> 3. **Decline it** — next: it merges as is and I record your reason; cost: nobody tracks it further; undo: no, it is dropped
+> **Safe to ignore:** the technical evidence; the screenshot shows it.
+<!-- touchpoint:end -->
 
 **One or more other candidates remain — branch on `work/<task-id>/autonomy`**
 (absent = `guided`, same convention §5's PR-opening step already uses):
@@ -372,7 +390,16 @@ this is a deliberate exception to their no-scheduled-stop rule.
   and the Class 2 second-approver stop already block; it is not a merge
   gate (§1's two checks are unchanged, adversary findings still never fail
   `/verify` by that skill's own report step), just a question that has to
-  be asked before this task's ship completes.
+  be asked before this task's ship completes. Ask it in this form (per `core/templates/human-touchpoint.md`):
+
+  <!-- touchpoint:start -->
+  > **Deciding:** which of the problems found during checking should be written down for future tasks to see. It's yours because it decides what the next person here is warned about.
+  > **Need to know:** <n> findings survived review: <for each: how serious, one plain sentence, where to look>. None of them blocked this task.
+  > **Recommend:** <carry these | carry none> — <one-line reason>
+  > 1. **Carry the ones you pick** — next: I add each to the milestone's list of known issues; cost: one line each; undo: yes, delete the line
+  > 2. **Carry none** — next: I move on; cost: nothing is recorded, so the next task won't know; undo: yes, until this ship finishes
+  > **Safe to ignore:** the ones you don't pick; they stay in `verify.md`.
+  <!-- touchpoint:end -->
 - **`checkpointed` / `auto`** — no scheduled stop exists here, so don't
   manufacture one. Draft the candidate entries (same shape the "apply the
   human's picks" step below produces for `guided`) into a new "Proposed
@@ -702,6 +729,16 @@ behavior below regardless of the task's own autonomy:
   hand-opened PRs, is Phase 5.)
 
 ## 6. Close out
+
+Whatever else this section does, the message you leave the human with is
+the report form (per `core/templates/human-touchpoint.md`), never a freeform summary:
+
+<!-- touchpoint:start report -->
+> **Bottom line:** <shipped or not, in one plain sentence, and whether anything waits on you (a push, a PR to open)>
+> **What I did:** <2-4 short lines: what now works or behaves differently, in user terms>
+> **What you need to do:** <push and open the PR by hand, with the command, or "nothing">
+> **Worth knowing:** <what was left open on purpose and when it would matter, one line each; anything not proven; or "nothing">. Details: `work/<task-id>/briefing.md`.
+<!-- touchpoint:end -->
 
 Write `work/<task-id>/state` = `done` (this is the transition out of
 `shipping (n of n)` for a multi-repo task — every repo's commit from §5

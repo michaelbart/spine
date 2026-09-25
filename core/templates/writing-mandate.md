@@ -4,6 +4,8 @@ Referenced by /task's plan-writing step (core/skills/task/SKILL.md §3),
 core/templates/plan.md, and core/templates/pr-description.md — edit here
 when this needs to change, not in any of them; one place, referenced
 everywhere else, never duplicated prose.
+For the moments spine stops and asks the human, or reports at the end of a
+phase, see core/templates/human-touchpoint.md instead.
 -->
 
 # Writing mandate — plan.md and briefing.md prose
