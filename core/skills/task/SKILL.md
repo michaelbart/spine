@@ -38,7 +38,7 @@ that already looked complete. Its one-line output branches four ways:
   had typed `<that description> --milestone <that-milestone-id>`. On
   rejection or a correction, use what the human says instead (a different
   entry, a different milestone, or a hand-typed description) — don't
-  re-guess. Ask it in this form (per `core/templates/human-touchpoint.md`):
+  re-guess. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
   <!-- touchpoint:start confirm -->
   > **Start the next planned task in `<milestone title>`: "<description>"?** It's next in the plan's order, and nothing is created until you say yes.
@@ -106,7 +106,7 @@ and confirm with the human rather than silently creating an unplanned
 milestone.** This is the point `/roadmap`'s own sequencing and gap-absorption
 (`core/skills/roadmap/SKILL.md` §1a/§3) would normally already have run —
 skipping straight to task creation is exactly the path that lets Known Gaps
-entries never get absorbed anywhere. Ask it in this form (per `core/templates/human-touchpoint.md`):
+entries never get absorbed anywhere. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start confirm -->
 > **Create `<milestone title>` here, or plan it first with `/roadmap`?** It has no plan file yet, and creating it here skips the step that sorts out leftover issues.
@@ -130,7 +130,7 @@ legitimate answer here (unlike declining, it isn't final): the gap stays in
 its original milestone's own Known Gaps section and this same stop will
 re-ask about it at the next new-milestone creation.
 
-Ask once per leftover issue, in this form (per `core/templates/human-touchpoint.md`):
+Ask once per leftover issue, with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start -->
 > **Deciding:** what to do with one problem an earlier milestone knowingly left open. It's yours because nobody fixed it, and only you can say whether it belongs to this work.
@@ -438,6 +438,18 @@ confirm an autonomy right after the class — see "Autonomy for a direct
   later, at plan time, if the predicted-touch list turns out to intersect a
   protected path — see step 3.)
 
+Ask the class with `AskUserQuestion`, in this form (per
+`core/templates/human-touchpoint.md`) when you're confident; when you're torn
+between classes, use the full block `/intake` uses for that case (its "Torn or
+low confidence" form). Name the class in plain words ("a small edit, no
+ceremony" / "a standard change" / "a high-risk change: a second person
+approves the plan"), not by number, unless glossed:
+
+<!-- touchpoint:start confirm -->
+> **Run this as a <trivial | standard | high-risk> change?** <One sentence: what it touches, and what happens automatically if that reading turns out wrong.>
+> **Yes** (recommended) — <what happens>. **No, <the alternative in plain words>** — <what that costs you>.
+<!-- touchpoint:end -->
+
 **Autonomy for a direct `/task`** (no intake handoff; the choice only exists at
 Class 1 — Class 0 is `traced`, Class 2 is always `guided`, the ceiling). Once the
 class is confirmed, ask the human how autonomous the flow should run: `guided`
@@ -450,7 +462,7 @@ higher-blast-radius is exactly the kind to keep a human in the loop on, even at
 the class they chose. Cap the offer at `.spine/profile.json`'s `autonomy_ceiling`
 if set. You'll write the result to `work/<task-id>/autonomy` in the setup step
 below, the same place the class file is written. (`/intake` proposes this from
-its pre-scan; a direct `/task` does none, so it simply asks.) Ask it in this form (per `core/templates/human-touchpoint.md`):
+its pre-scan; a direct `/task` does none, so it simply asks.) Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start -->
 > **Deciding:** how often I should stop and check with you on this task. It's yours because it trades your attention against how closely you watch the work.
@@ -661,7 +673,7 @@ content is or where it comes from (halt tier — the same stop-and-ask a
 `halt` deviation is), then rewrite the entry as a real path or
 `source: human — <what they said>` and re-run. This applies at every
 class and autonomy, `auto` included: there is no self-approving your way
-past content nobody defined. Ask it in this form (per `core/templates/human-touchpoint.md`):
+past content nobody defined. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start -->
 > **Deciding:** what a piece of on-screen text should say, or where it comes from. It's yours because nothing in the project defines it, and I won't invent wording or sample data.
@@ -704,7 +716,7 @@ longer applies and you fall through to the stop below. For `checkpointed` and
 touchpoint.** Do not proceed to implementation in the same turn. Wait for
 explicit approval. If the human requests changes, revise and re-present;
 this doesn't count against the deviation circuit breaker, it's pre-approval
-iteration. Present it in this form (per `core/templates/human-touchpoint.md`):
+iteration. Present it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start -->
 > **Deciding:** whether I may start building this plan. It's yours because nothing changes until you approve, and after that I edit real files.
@@ -793,7 +805,7 @@ literal, not judgment-call vocabulary translation:
   the file-level cases independently). Append a deviations.md record with
   status `open`, stop implementing, and ask the human in the form below. This is a legitimate non-recurring touchpoint — it does not
   happen on every task, only when reality diverges from the plan in a
-  halt-tier way. Ask it in this form (per `core/templates/human-touchpoint.md`). Cite no decision, gap or class
+  halt-tier way. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`). Cite no decision, gap or class
   id unless you say in a few words what it is:
 
   <!-- touchpoint:start -->

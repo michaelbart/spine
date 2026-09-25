@@ -372,8 +372,8 @@ gaps (same `gap-<n>` mechanics as below), or *decline* with a stated reason
 recorded in `notes.md`. The visual-fidelity check is the only place a
 screen that looks wrong gets noticed; a finding nobody answered is exactly
 the miss it exists to prevent. `checkpointed`/`auto` tasks stop here too —
-this is a deliberate exception to their no-scheduled-stop rule. Ask it in
-this form (per `core/templates/human-touchpoint.md`):
+this is a deliberate exception to their no-scheduled-stop rule. Ask it with
+`AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start -->
 > **Deciding:** what to do about a visual mismatch the screenshot review found. It's yours because only you know whether it matters to the design.
@@ -396,7 +396,7 @@ this form (per `core/templates/human-touchpoint.md`):
   and the Class 2 second-approver stop already block; it is not a merge
   gate (§1's two checks are unchanged, adversary findings still never fail
   `/verify` by that skill's own report step), just a question that has to
-  be asked before this task's ship completes. Ask it in this form (per `core/templates/human-touchpoint.md`):
+  be asked before this task's ship completes. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
   <!-- touchpoint:start -->
   > **Deciding:** which of the problems found during checking should be written down for future tasks to see. It's yours because it decides what the next person here is warned about.

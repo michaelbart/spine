@@ -170,16 +170,16 @@ nothing around the block: no status preamble, and no closing line that
 repeats the question or previews the next one. Forms (per
 `core/templates/human-touchpoint.md`):
 
-**Confident** — a `confirm` block. Put any condition in the question
-sentence; the recommendation itself is one clause:
+**Confident** — a `confirm` block, asked with `AskUserQuestion`. Put any
+condition in the question sentence; the recommendation itself is one clause:
 
 <!-- touchpoint:start confirm -->
 > **Run this as a <routine | high-risk> change?** <One sentence: what it touches, and what happens automatically if that turns out wrong.>
 > **Yes** (recommended) — <what happens>. **No, <the alternative flow in plain words>** — <what that costs you>.
 <!-- touchpoint:end -->
 
-**Torn or low confidence** — the full block, because the options differ in
-what they cost you:
+**Torn or low confidence** — the full block, asked with `AskUserQuestion`,
+because the options differ in what they cost you:
 
 <!-- touchpoint:start -->
 > **Deciding:** how carefully to run this change. It's yours because it sets how much checking happens and how often I stop for you.

@@ -115,6 +115,23 @@ Fill every placeholder with a plain title, never an ID: say "Home,
 assignment candidates and vendor reads", not `M2` or `gap-10`. The lint can't
 see what gets filled in at run time, so this one is a rule for the writer.
 
+## Delivery: pick, don't type
+
+A full or `confirm` block is a *pick*, so ask it with `AskUserQuestion`, not
+as text the human has to type an answer to. Map it like this:
+
+- the question text is the `Deciding` sentence plus `Need to know` (full), or
+  the bold question plus its sentence (`confirm`);
+- each answer is one option, the recommended one first and labelled
+  "(Recommended)", with its consequence as the option's description;
+- a short label (12 characters or fewer) goes in the header.
+
+`AskUserQuestion` takes 2–4 options and adds an "Other" for free text. Stay
+with plain text for: short and report blocks (nothing to pick), requests for
+information, and anything with more than four answers (group them or split
+the question). `touchpoint-lint` fails a full or `confirm` block whose lead-in
+doesn't mention `AskUserQuestion`.
+
 ## The short block (a plain "do this" or a blocked action)
 
 For a stop that isn't a choice — a script/hook halting, or spine asking the

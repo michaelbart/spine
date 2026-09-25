@@ -205,7 +205,7 @@ implementation, the floor, the falsifier, the security adversary,
 - **Worktree cleanup** (`ship/SKILL.md` §6, Extension D) — if this task
   happens to be running in a spine-created worktree, still ask the human at
   the end of `/autopilot`'s whole run whether to keep or remove it (fold
-  it into §6's summary, don't ask mid-run) using this form (per `core/templates/human-touchpoint.md`):
+  it into §6's summary, don't ask mid-run) using `AskUserQuestion` in this form (per `core/templates/human-touchpoint.md`):
 
   <!-- touchpoint:start confirm -->
   > **Keep or remove the temporary copy of the project this run used, at `<path>`?** It's the only place to inspect the run's changes before anything reaches a remote; nothing has been pushed.

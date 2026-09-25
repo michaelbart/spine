@@ -28,7 +28,7 @@ this by talking it through, or by reading the code" is no — the question
 is genuinely "what does this feel like" or "does this actually work," not
 "what's correct." If `$ARGUMENTS` reads more like an implementation
 request than an open question (a clear behavior, just not built yet), say
-so plainly and ask, in this form (per `core/templates/human-touchpoint.md`):
+so plainly and ask, with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start confirm -->
 > **Build this as a throwaway prototype, or as real work with `/task`?** You described <the behaviour> clearly, so a prototype may add little.
@@ -88,7 +88,7 @@ to diverge from.
 
 Once the question has a real answer, fill in `findings.md`'s `## What was
 built` and `## What was learned` sections — the conclusion stated
-plainly, not a narrative of the process. Ask the human, in this form (per `core/templates/human-touchpoint.md`):
+plainly, not a narrative of the process. Ask the human, with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start confirm -->
 > **Keep the prototype's files or delete them?** The answer is saved in `findings.md` either way: <the conclusion in one plain sentence>.

@@ -323,7 +323,7 @@ include, inline, in addition to the verdict itself:
   a specific user action or scenario and its bad outcome, not a repeat of
   the verdict's own abstract claim.
 
-Present each finding in this form (per `core/templates/human-touchpoint.md`); the two bullets above are its
+Present each finding with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`); the two bullets above are its
 `Need to know`:
 
 <!-- touchpoint:start -->

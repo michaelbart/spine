@@ -11,6 +11,7 @@
 #   full block:  Deciding / Need to know / Recommend / Safe to ignore, and
 #                >= 2 numbered options each carrying `next:` and `undo:`
 #   short block: What happened / What it means for you / To continue
+#   full/confirm: lead-in (8 lines before the marker) mentions AskUserQuestion
 #   confirm block: bold question, >= 2 bold answers, one "(recommended)", <= 6 lines
 #   report block: Bottom line / What I did / What you need to do / Worth knowing
 #   both:        every internal term from the glossary table in
@@ -130,9 +131,15 @@ FILENAME == STANDARD {
 
 {
   FILENAME_SHOWN = FILENAME
+  hist[FNR % 8] = $0
   if (STDIN_MODE) { block = block $0 "\n"; next }
   if ($0 ~ /<!-- touchpoint:start( short| report| confirm)? -->/) {
     if (inblk) fail(FNR, "touchpoint:start inside another block")
+    if ($0 !~ / short -->/ && $0 !~ / report -->/) {
+      asked = 0
+      for (k = 1; k <= 8; k++) if (FNR - k >= 1 && hist[(FNR - k) % 8] ~ /AskUserQuestion/) asked = 1
+      if (!asked) fail(FNR, "question block is not introduced with AskUserQuestion (a pick, not a typed answer) — see \"Delivery\" in human-touchpoint.md")
+    }
     inblk = 1; bstart = FNR; kind = ($0 ~ / short -->/) ? "short" : (($0 ~ / report -->/) ? "report" : (($0 ~ / confirm -->/) ? "confirm" : "full")); block = ""; next
   }
   if ($0 ~ /<!-- touchpoint:end -->/) {

@@ -86,7 +86,7 @@ entry, **verify its shape**:
 - The section must have a `<!-- next-gap-id: N -->` counter.
 
 **If any entry is malformed** (plain prose bullet, no fence, no `id:`
-line, or counter missing):
+line, or counter missing), ask with `AskUserQuestion`:
 
 <!-- touchpoint:start confirm -->
 > **Tidy the layout of <n> leftover-issue entries in `work/<id>/milestone.md`?** They're plain notes, so later tasks can't look them up; tidying changes layout only, never wording. Entries: <each, quoted>.
@@ -124,7 +124,7 @@ script could not run at all (tooling-gap discipline), read
 `docs/known-issues.md` directly and, before absorbing any entry, **verify
 its shape**: a well-formed entry has an `id: issue-<n>` line and a
 `status:` field, and the section carries a `<!-- next-issue-id: N -->`
-counter. If any entry is malformed:
+counter. If any entry is malformed, ask with `AskUserQuestion`:
 
 <!-- touchpoint:start confirm -->
 > **Tidy the layout of <n> entries in `docs/known-issues.md`?** They're plain notes, so later tasks can't look them up; tidying changes layout only, never wording. Entries: <each, quoted>.
@@ -199,7 +199,7 @@ M<n>: <title>
   Structural dependency: M<k> must be complete first (or "none")
 ```
 
-Then ask (per `core/templates/human-touchpoint.md`):
+Then ask with `AskUserQuestion` (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start confirm -->
 > **Is this order of milestones right before I write the plan files?** It sets what gets built first.

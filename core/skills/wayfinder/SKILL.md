@@ -116,7 +116,7 @@ Branch on its first token:
   the stalled tickets and their `Blocked-by` chains verbatim; this needs
   a human decision (re-scope one, drop a blocking relationship that
   turns out not to be real, or split a ticket) — never resolved by
-  picking one to work anyway. Stop and wait, in this form (per `core/templates/human-touchpoint.md`):
+  picking one to work anyway. Stop and wait, with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
   <!-- touchpoint:start -->
   > **Deciding:** how to get unstuck. It's yours because every open question here is waiting on another one, and only you can say which dependency is real.
