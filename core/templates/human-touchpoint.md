@@ -39,7 +39,29 @@ defective question.
    to, never in the message. A number earns its place only if it changes what
    the reader does.
 
+9. **One message, one decision.** A side issue or a second question gets its
+   own `confirm` block, never a paragraph tucked in after `Safe to ignore`.
+10. **Surprises go first.** Anything spine did that the human didn't expect
+    (a push to a branch they don't use, a file touched outside the plan) is
+    in the first two lines, not the last paragraph.
+11. **`Need to know` is four lines at most.** Lists of details, IDs and file
+    names go in a file you point to ("the plan lists nine choices; the three
+    you're most likely to change are in `plan.md`"), not in the message.
+
 This standard changes how spine asks, never what it asks about or when.
+
+## Before you send (the run-time check the lint cannot do)
+
+`touchpoint-lint` checks the fixed wording, not what you fill in. So, before
+sending any message in these forms, reread it as the human would and:
+
+- gloss or drop every internal name: a class, a hook or script name, a
+  decision/gap/milestone ID, a commit hash, a branch mapping like
+  `main:master`, a note about what earlier tasks did;
+- say what a thing *is called* (its title), not its ID;
+- move any second decision out into its own `confirm` block;
+- cut the message to what changes what the reader does, and point to the
+  file for the rest.
 
 ## The block (skills)
 

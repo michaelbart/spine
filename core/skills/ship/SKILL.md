@@ -33,6 +33,12 @@ lives:
 6. **§5/§6 Commit and close-out** — including, multi-repo, a
    resumable staged commit sequence across repos.
 
+
+**Voice.** Every message this skill leaves for the human follows
+`core/templates/human-touchpoint.md`. Before sending one, run its "Before you
+send" list: gloss or drop internal names, IDs and commit hashes, keep one
+decision per message, and put surprises first.
+
 ## 0. Ship-time re-grounding (Extension C §2.4)
 
 The window between plan approval and ship is unguarded otherwise — a

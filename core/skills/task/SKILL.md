@@ -326,6 +326,12 @@ about the consequence. Never let a could-not-run script silently read as
 "nothing to report." This carries forward into `verify.md`'s own "Tooling
 gaps" section.
 
+
+**Voice.** Every message this skill leaves for the human follows
+`core/templates/human-touchpoint.md`. Before sending one, run its "Before you
+send" list: gloss or drop internal names, IDs and commit hashes, keep one
+decision per message, and put surprises first.
+
 ## 1. Classify — the first recurring human touchpoint
 
 **If `.spine/current-intake` exists, this task came through `/intake`**

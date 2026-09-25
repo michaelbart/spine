@@ -1871,6 +1871,38 @@ else
   fail "registry-sync: real remote, no conflict -> expected exit=0 'pushed T1 to origin/$rs_branch', got $r"
 fi
 
+# Case F2: a local branch tracking a differently-named remote branch (main
+# tracking origin/master) pushes to the tracked branch and never creates a
+# same-named one on the remote — the regression that created a stray
+# origin/main. Then a remote with no tracking branch commits locally only.
+rs_bare2="$(mktemp -d "$tmp_root/rsbare2.XXXXXX")"
+git init -q --bare "$rs_bare2"
+rs_proj2="$(new_registry_sync_fixture)"
+git -C "$rs_proj2" remote add origin "$rs_bare2"
+git -C "$rs_proj2" branch -M main
+git -C "$rs_proj2" push -q -u origin main:master
+echo '{"owner":"alice"}' >"$rs_proj2/work/T1/claims.json"
+r="$(rs_run "$rs_proj2" T1)"
+remote_heads="$(git -C "$rs_bare2" for-each-ref --format='%(refname:short)' refs/heads | sort | tr '\n' ' ')"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"pushed T1 to origin/master"* && "$remote_heads" == "master " ]]; then
+  pass "registry-sync: local main tracking origin/master pushes to master and creates no stray origin/main"
+else
+  fail "registry-sync: tracked-branch push -> expected 'pushed T1 to origin/master' and only 'master' on the remote, got $r (remote branches: $remote_heads)"
+fi
+
+rs_bare3="$(mktemp -d "$tmp_root/rsbare3.XXXXXX")"
+git init -q --bare "$rs_bare3"
+rs_proj3="$(new_registry_sync_fixture)"
+git -C "$rs_proj3" remote add origin "$rs_bare3"
+git -C "$rs_proj3" config "branch.$(git -C "$rs_proj3" rev-parse --abbrev-ref HEAD).remote" origin
+echo '{"owner":"alice"}' >"$rs_proj3/work/T1/claims.json"
+r="$(rs_run "$rs_proj3" T1)"
+if [[ "${r%%|*}" == "0" && "${r#*|}" == *"no tracking branch"* && -z "$(git -C "$rs_bare3" for-each-ref refs/heads)" ]]; then
+  pass "registry-sync: a remote with no tracking branch commits locally and pushes nothing"
+else
+  fail "registry-sync: no tracking branch -> expected exit 0 'no tracking branch' and an empty remote, got $r"
+fi
+
 # Case G: the shared mainline moved (a second engineer pushed an unrelated
 # commit to origin) before this sync's own push — the initial push is
 # rejected, registry-sync pulls --rebase and retries once, and (since the

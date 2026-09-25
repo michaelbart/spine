@@ -58,6 +58,12 @@ failure mode this fix exists to close:
   without proof this diff didn't need it" and skip step 1c, loudly, rather
   than silently defaulting to not-touched.
 
+
+**Voice.** Every message this skill leaves for the human follows
+`core/templates/human-touchpoint.md`. Before sending one, run its "Before you
+send" list: gloss or drop internal names, IDs and commit hashes, keep one
+decision per message, and put surprises first.
+
 ## 1. Floor
 
 Single-repo:

@@ -97,13 +97,24 @@ if [[ -z "$remote" ]]; then
   exit 0
 fi
 
-if git -C "$project" push --quiet "$remote" "$branch" 2>/dev/null; then
-  echo "registry-sync: pushed $task_id to $remote/$branch"
+# Push to the branch this one is configured to track, which need not share its
+# name (a local `main` tracking `origin/master`). Pushing to a same-named
+# branch would silently create a second, unwanted branch on the remote. With
+# no tracking branch configured we don't guess one: commit locally, say so.
+merge_ref="$(git -C "$project" config "branch.$branch.merge" 2>/dev/null || true)"
+if [[ -z "$merge_ref" ]]; then
+  echo "registry-sync: $branch has a remote ($remote) but no tracking branch — committed locally only; set one with 'git branch --set-upstream-to' so I know where to push"
+  exit 0
+fi
+target="${merge_ref#refs/heads/}"
+
+if git -C "$project" push --quiet "$remote" "HEAD:refs/heads/$target" 2>/dev/null; then
+  echo "registry-sync: pushed $task_id to $remote/$target"
   exit 0
 fi
 
 echo "registry-sync: push rejected, pulling --rebase and retrying once"
-if ! git -C "$project" pull --rebase --quiet "$remote" "$branch" 2>/dev/null; then
+if ! git -C "$project" pull --rebase --quiet "$remote" "$target" 2>/dev/null; then
   echo "registry-sync: pull --rebase failed — a real conflict, resolve by hand (git status in $project)" >&2
   printf '%s\n' \
     "What happened: saving this task's records to the shared history clashed with someone else's changes." \
@@ -111,8 +122,8 @@ if ! git -C "$project" pull --rebase --quiet "$remote" "$branch" 2>/dev/null; th
     "To continue: open the project folder, run \`git status\`, and sort out the conflicting files (or ask me to walk you through it)." >&2
   exit 1
 fi
-if git -C "$project" push --quiet "$remote" "$branch" 2>/dev/null; then
-  echo "registry-sync: pushed $task_id to $remote/$branch after rebase"
+if git -C "$project" push --quiet "$remote" "HEAD:refs/heads/$target" 2>/dev/null; then
+  echo "registry-sync: pushed $task_id to $remote/$target after rebase"
   exit 0
 fi
 
