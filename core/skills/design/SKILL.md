@@ -167,7 +167,12 @@ creates them, §8's handoff, not here). **Capability targets table**:
 planned status from §2 (`unavailable (no code yet — skeleton target)` for
 all four, typically, at this point) — the done-definition names these four
 reaching `implemented` as what "done" means; don't write a done-definition
-that's vaguer than that.
+that's vaguer than that. Keep the `smoke-run` row's planned status starting
+with `unavailable`, and `.spine/capabilities.json`'s `smoke-run` reason
+containing "skeleton target" (§2 already writes it): `floor`'s M0 bootstrap
+waiver of the Class 2 smoke hard gate (`core/ADAPTER-CONTRACT.md` §3.8) keys
+on exactly those two declarations, and without them M0's first Class 2 task
+cannot pass the floor before smoke exists.
 
 ## Handoff re-entry mode
 

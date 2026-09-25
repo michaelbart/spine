@@ -573,6 +573,19 @@ these three capabilities specifically (§4) and fails conformance if it's
 missing or non-zero — a `smoke-seed`/`smoke-run`/`smoke-golden` that
 doesn't self-heal cannot stay `implemented`.
 
+**The Class 2 hard gate and the M0 bootstrap waiver.** At Class 2, `floor`
+fails if `smoke-run` is not `implemented` — smoke is a hard gate there, not
+a soft skip. One narrow exception exists so milestone 0 can build smoke at
+all: `floor` records `degraded:waived-bootstrap` (never a pass; smoke does
+not run) instead of failing when **all** of these hold — the run has a
+`--task` whose `work/<task-id>/milestone` is exactly `M0`; `capabilities.json`
+has `smoke-run` `unavailable` with a reason containing "skeleton target";
+and `work/M0/milestone.md`'s Capability targets row for `smoke-run` reads
+`unavailable*`. Any other status shape (`missing`, `not-applicable`), any
+other milestone, or a missing declaration keeps the hard gate. The waiver
+lapses the moment `smoke-run` is `implemented`. See `docs/tradeoffs.md`,
+"The M0 bootstrap waiver".
+
 ### 3.9 `ui-conformance` — declared tokens/components actually present, never visual similarity
 
 Conditional existence, same shape as `ticket-fetch`/`open-pr`/

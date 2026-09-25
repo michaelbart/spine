@@ -83,6 +83,43 @@ mkdir -p "$artifacts_dir"
 status_of() { jq -r --arg c "$1" '.[$c].status // "missing"' "$caps_json"; }
 reason_of() { jq -r --arg c "$1" '.[$c].reason // ""' "$caps_json"; }
 
+# M0 bootstrap waiver for the Class 2 smoke hard gate (ADAPTER-CONTRACT.md
+# §3.8, docs/tradeoffs.md "The M0 bootstrap waiver"). The hard gate is
+# circular for a walking skeleton: milestone 0's own job is to *build* the
+# smoke capability, yet its first tasks are Class 2 by necessity (dependency
+# manifests, db, auth are protected paths) and so cannot pass a floor whose
+# smoke layer doesn't exist yet. Returns 0 only when EVERY one of these
+# independently-declared facts holds — any one missing and the hard gate
+# stays a hard gate:
+#   1. the run names a task (--task) that belongs to milestone M0
+#      (work/<task-id>/milestone reads exactly `M0` — the id design-gate
+#      reserves for the walking skeleton; never M1+),
+#   2. capabilities.json marks smoke-run `unavailable` with a reason
+#      containing "skeleton target" (the marker /design §2 writes) — not
+#      `missing`, not `not-applicable`, the wrong-shape cases the hard
+#      gate's own audit rounds hardened it against,
+#   3. work/M0/milestone.md's Capability targets table has a smoke-run row
+#      whose planned status starts with "unavailable" — the milestone itself
+#      declares smoke as a not-yet-built target.
+# The waiver is never a pass: the caller records a degraded result and
+# prints a DEGRADED line, and it evaporates on its own the moment smoke-run
+# reads `implemented` (the gate then applies in full).
+bootstrap_smoke_waiver() {
+  [[ -n "$task_id" ]] || return 1
+  local st reason ms_task ms_file planned
+  st="$(status_of smoke-run)"
+  [[ "$st" == "unavailable" ]] || return 1
+  reason="$(reason_of smoke-run)"
+  [[ "$reason" == *"skeleton target"* ]] || return 1
+  ms_task="$project/work/$task_id/milestone"
+  [[ -f "$ms_task" && "$(head -n1 "$ms_task" | tr -d '[:space:]')" == "M0" ]] || return 1
+  ms_file="$project/work/M0/milestone.md"
+  [[ -f "$ms_file" ]] || return 1
+  planned="$(grep -E '^\| smoke-run \|' "$ms_file" | head -n1 | awk -F'|' '{print $3}' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  [[ "$planned" == unavailable* ]] || return 1
+  return 0
+}
+
 results="[]"
 add_result() {
   # add_result <capability> <status: pass|fail|degraded> <detail>
@@ -342,7 +379,11 @@ if [[ "${finish:-0}" -ne 1 ]]; then
     smoke_status="$(status_of smoke-run)"
     include_smoke=0
     if [[ "$class" == "2" ]]; then
-      if [[ "$smoke_status" != "implemented" ]]; then
+      if [[ "$smoke_status" != "implemented" ]] && bootstrap_smoke_waiver; then
+        echo "DEGRADED: smoke-run (waived: M0 bootstrap) — Class 2 smoke hard gate waived for milestone M0 task ${task_id}: smoke-run is a declared skeleton target in capabilities.json and work/M0/milestone.md, not yet built. NOT a pass — smoke did not run. Lapses automatically once smoke-run is implemented."
+        add_result "smoke-run" "degraded:waived-bootstrap" "Class 2 smoke hard gate waived (M0 bootstrap, task ${task_id}); smoke did not run"
+        include_smoke=0
+      elif [[ "$smoke_status" != "implemented" ]]; then
         echo "FAIL: smoke — not implemented ($smoke_status) at Class 2 — smoke is a hard gate at this class, not a soft skip" >&2
         add_result "smoke-run" "fail" "smoke not implemented at Class 2 (hard gate): ${smoke_status}"
         overall_fail=1

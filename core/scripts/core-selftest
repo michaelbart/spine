@@ -640,6 +640,53 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# floor: M0 bootstrap waiver for the Class 2 smoke hard gate. The waiver must
+# apply ONLY when every independently-declared fact holds (task in M0,
+# capabilities.json `unavailable` + "skeleton target" reason, milestone table
+# row `unavailable*`); each case below removes exactly one and must fall back
+# to the hard gate. The `not-applicable` case guards the original wrong-shape
+# bug the hard gate was hardened against.
+# ---------------------------------------------------------------------------
+
+# expect_bootstrap <label> <waived|fail> <task-milestone> <cap-status> <cap-reason> <milestone-table-planned-status>
+expect_bootstrap() {
+  local label="$1" expect="$2" task_ms="$3" cap_st="$4" cap_reason="$5" planned="$6"
+  local proj out log code st
+  proj="$(new_smoke_hardgate_fixture)"
+  jq --arg s "$cap_st" --arg r "$cap_reason" '.["smoke-run"] = {status:$s, reason:$r}' \
+    "$proj/.spine/capabilities.json" >"$proj/.spine/capabilities.json.new"
+  mv "$proj/.spine/capabilities.json.new" "$proj/.spine/capabilities.json"
+  mkdir -p "$proj/work/T-boot" "$proj/work/M0"
+  printf '%s\n' "$task_ms" >"$proj/work/T-boot/milestone"
+  printf '# Milestone `M0`: skeleton\n\n## Capability targets\n\n| Capability | Planned status |\n|---|---|\n| smoke-run | %s |\n' "$planned" >"$proj/work/M0/milestone.md"
+  out="$tmp_root/bootstrap-$RANDOM.json"
+  log="$tmp_root/logs/bootstrap-$RANDOM.log"
+  if ( cd "$proj" && "$FLOOR" 2 --task T-boot --out "$out" >"$log" 2>&1 ); then code=0; else code=$?; fi
+  st="$(result_status "$out" smoke-run)"
+  if [[ "$expect" == "waived" ]]; then
+    if [[ "$code" == "0" && "$st" == "degraded:waived-bootstrap" ]] && grep -q "waived: M0 bootstrap" "$log"; then
+      pass "$label"
+    else
+      fail "$label (exit=$code status=$st)"
+    fi
+  else
+    if [[ "$code" != "0" && "$st" == "fail" ]]; then pass "$label"; else fail "$label (exit=$code status=$st)"; fi
+  fi
+}
+
+SKEL="no code yet — skeleton target"
+expect_bootstrap "floor: class 2, M0 task + skeleton-target smoke-run -> waived as degraded, not pass" \
+  waived "M0" "unavailable" "$SKEL" "unavailable (no code yet — skeleton target)"
+expect_bootstrap "floor: class 2, task in M1 (not M0) -> hard gate still fails" \
+  fail "M1" "unavailable" "$SKEL" "unavailable (no code yet — skeleton target)"
+expect_bootstrap "floor: class 2, reason lacks 'skeleton target' marker -> hard gate still fails" \
+  fail "M0" "unavailable" "selftest: deliberately not implemented" "unavailable (no code yet — skeleton target)"
+expect_bootstrap "floor: class 2, milestone table does not declare smoke-run unavailable -> hard gate still fails" \
+  fail "M0" "unavailable" "$SKEL" "implemented"
+expect_bootstrap "floor: class 2, smoke-run not-applicable (wrong shape) even with marker -> hard gate still fails" \
+  fail "M0" "not-applicable" "$SKEL" "unavailable (no code yet — skeleton target)"
+
+# ---------------------------------------------------------------------------
 # hooks: phase-gate / path-escalate / dep-gate direct repro coverage
 # ---------------------------------------------------------------------------
 # Three separate real bypasses of this layer have each been found only by

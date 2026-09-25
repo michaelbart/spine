@@ -497,7 +497,9 @@ quotes, it doesn't re-derive:
   now true and why; deviations straight from `deviations.md`, one line
   each, resolution included ("Nothing — the plan held." if none).
 - **Verification, honestly** bullets — `Floor` from `verify.md`'s floor
-  result; `Re-grounding` quoted from what §0 recorded ("check-stale: ok,
+  result (a `degraded:waived-bootstrap` smoke-run line — the M0 bootstrap
+  waiver of the Class 2 smoke hard gate — is quoted here explicitly, never
+  folded into "pass": smoke did not run); `Re-grounding` quoted from what §0 recorded ("check-stale: ok,
   floor re-run: pass" is the unremarkable case, still shown); `Adversaries`
   as count + max severity + one-line gist each, pointer to `verify.md`,
   never compressed further (this file's own header note); `Capability
