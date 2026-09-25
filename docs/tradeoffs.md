@@ -472,8 +472,16 @@ What is checked mechanically, and what is not:
   block gives the model fixed text to fill in instead of composing its
   own, which is the mitigation; a stop added without a block is caught in
   review, or by `/ratchet` if it recurs.
+- **Placeholders are unchecked:** the lint reads the fixed wording, not what
+  gets filled into `<...>` at run time, so "say the milestone's title, not
+  `M2`" is a rule for the writer.
 - **Plain-word limit:** the glossary is a closed list, so a new internal
   term is invisible to the lint until someone adds it.
+
+Quick yes/no prompts (cheap to undo, confident recommendation) use a compact
+`confirm` block — a question, two answers, one marked recommended, six lines
+at most — after the full block proved too heavy for them; anything with
+real consequences keeps the full block.
 
 Two behavior changes rode along, both approved: `/task` no longer asks the
 human whether to redo research when `check-stale` flags only the task's own

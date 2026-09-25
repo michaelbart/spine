@@ -207,13 +207,9 @@ implementation, the floor, the falsifier, the security adversary,
   the end of `/autopilot`'s whole run whether to keep or remove it (fold
   it into §6's summary, don't ask mid-run) using this form (per `core/templates/human-touchpoint.md`):
 
-  <!-- touchpoint:start -->
-  > **Deciding:** whether to keep or remove the separate working copy this run used. It's yours because it's the only place the run's changes can be inspected before anything reaches a remote.
-  > **Need to know:** The run finished in a temporary copy of the project at `<path>`. Nothing has been pushed.
-  > **Recommend:** Keep it until you've reviewed the report — you can remove it afterwards.
-  > 1. **Keep it** — next: I leave it in place; cost: some disk space; undo: yes, remove it later
-  > 2. **Remove it** — next: I delete the copy; cost: you can't inspect it any more; undo: no
-  > **Safe to ignore:** nothing.
+  <!-- touchpoint:start confirm -->
+  > **Keep or remove the temporary copy of the project this run used, at `<path>`?** It's the only place to inspect the run's changes before anything reaches a remote; nothing has been pushed.
+  > **Keep** (recommended) — I leave it; remove it after you've reviewed the report. **Remove** — I delete it now, and that can't be undone.
   <!-- touchpoint:end -->
 
   A worktree left behind for a human to inspect is a feature here, not

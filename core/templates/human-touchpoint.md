@@ -58,6 +58,27 @@ at run time; everything else is fixed wording.
 <!-- touchpoint:end -->
 ```
 
+## The confirm block (a quick, low-stakes yes/no)
+
+Use it instead of the full block when the answer is cheap to undo, spine has
+a confident recommendation, and the options don't differ in ways that need
+spelling out ("start the next task?", "keep or delete the scratch copy?").
+Use the full block when the consequences differ in time, risk or
+reversibility (plan approval, a change to protected files, anything final).
+Three lines at most, no `next:`/`cost:`/`undo:` tags; mention undo or cost
+only where it isn't obvious, and always when an answer can't be undone.
+
+```
+<!-- touchpoint:start confirm -->
+> **<The question, in plain words?>** <One sentence: why I'm asking, or what's at stake.>
+> **<Answer>** (recommended) — <what happens>. **<Other answer>** — <what happens>.
+<!-- touchpoint:end -->
+```
+
+Fill every placeholder with a plain title, never an ID: say "Home,
+assignment candidates and vendor reads", not `M2` or `gap-10`. The lint can't
+see what gets filled in at run time, so this one is a rule for the writer.
+
 ## The short block (a plain "do this" or a blocked action)
 
 For a stop that isn't a choice — a script/hook halting, or spine asking the

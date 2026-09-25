@@ -40,13 +40,9 @@ that already looked complete. Its one-line output branches four ways:
   entry, a different milestone, or a hand-typed description) — don't
   re-guess. Ask it in this form (per `core/templates/human-touchpoint.md`):
 
-  <!-- touchpoint:start -->
-  > **Deciding:** whether to start the next planned task in `<milestone name>`. It's yours because I'm guessing that's what you want, and nothing exists yet, so a wrong guess costs one keystroke now instead of a redo later.
-  > **Need to know:** The milestone's plan lists this as its next task: "<description>". You didn't type a description, so I picked the next queued one.
-  > **Recommend:** Start it — it is next in the plan's own order.
-  > 1. **Start it** — next: I begin researching that task; cost: none; undo: yes, nothing is created until you confirm
-  > 2. **Something else** — next: you type a different task or milestone; cost: a few seconds; undo: n/a
-  > **Safe to ignore:** the other queued tasks; I won't touch them.
+  <!-- touchpoint:start confirm -->
+  > **Start the next planned task in `<milestone title>`: "<description>"?** It's next in the plan's order, and nothing is created until you say yes.
+  > **Yes** (recommended) — I begin researching it. **No** — tell me a different task or milestone instead.
   <!-- touchpoint:end -->
 - **`BLOCKED <milestone-id> <blocking-token>`** — that milestone's next
   queued task can't start yet: its immediate predecessor (`<blocking-token>`
@@ -112,13 +108,9 @@ milestone.** This is the point `/roadmap`'s own sequencing and gap-absorption
 skipping straight to task creation is exactly the path that lets Known Gaps
 entries never get absorbed anywhere. Ask it in this form (per `core/templates/human-touchpoint.md`):
 
-<!-- touchpoint:start -->
-> **Deciding:** whether to plan this milestone first or create it here. It's yours because creating one with no plan is allowed, but it skips the step that normally sorts out leftover issues.
-> **Need to know:** `<id>` (the milestone this task belongs to) has no plan file yet; the planning command, `/roadmap`, hasn't been run for it.
-> **Recommend:** Plan it first — that step also sweeps up leftover known issues; skip it only for a one-off.
-> 1. **Plan it first** — next: you run `/roadmap`, then come back; cost: a few minutes; undo: yes
-> 2. **Create it here** — next: I make a minimal milestone file and ask about leftover issues from finished milestones; cost: none now; undo: yes, delete the file
-> **Safe to ignore:** nothing.
+<!-- touchpoint:start confirm -->
+> **Create `<milestone title>` here, or plan it first with `/roadmap`?** It has no plan file yet, and creating it here skips the step that sorts out leftover issues.
+> **Plan it first** (recommended) — you run `/roadmap`, then come back. **Create it here** — I make a minimal milestone and ask about leftover issues from finished ones.
 <!-- touchpoint:end -->
 
 This is informational, not a

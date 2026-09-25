@@ -11,6 +11,7 @@
 #   full block:  Deciding / Need to know / Recommend / Safe to ignore, and
 #                >= 2 numbered options each carrying `next:` and `undo:`
 #   short block: What happened / What it means for you / To continue
+#   confirm block: bold question, >= 2 bold answers, one "(recommended)", <= 6 lines
 #   report block: Bottom line / What I did / What you need to do / Worth knowing
 #   both:        every internal term from the glossary table in
 #                human-touchpoint.md, and every D-<n> / gap-<n> / M<n> id,
@@ -79,7 +80,14 @@ function check_terms(line,    i, t, pos, after, rest, id, res) {
 
 function check_block(kind, line,    n, i, lines, opt, nopt) {
   delete seen
-  if (kind == "report") {
+  if (kind == "confirm") {
+    n = split(block, lines, "\n"); nl = 0
+    for (i = 1; i <= n; i++) if (lines[i] ~ /[^ \t>]/) nl++
+    if (nl > 6) fail(line, "confirm block has " nl " lines; a confirmation is at most 6 — use the full block if it needs more")
+    if (!has("\\(recommended\\)")) fail(line, "confirm block must mark one answer \"(recommended)\"")
+    tmp = block; nb = gsub(/\*\*[^*]+\*\*/, "", tmp)
+    if (nb < 3) fail(line, "confirm block needs a bold question and at least two bold answers (found " nb " bold parts)")
+  } else if (kind == "report") {
     if (!has("(\\*\\*)?Bottom line:(\\*\\*)?")) fail(line, "report missing \"Bottom line:\" (one plain sentence: the state, and whether anything waits on the human)")
     if (!has("(\\*\\*)?What I did:(\\*\\*)?")) fail(line, "report missing \"What I did:\"")
     if (!has("(\\*\\*)?What you need to do:(\\*\\*)?")) fail(line, "report missing \"What you need to do:\" (\"nothing\" is allowed)")
@@ -123,9 +131,9 @@ FILENAME == STANDARD {
 {
   FILENAME_SHOWN = FILENAME
   if (STDIN_MODE) { block = block $0 "\n"; next }
-  if ($0 ~ /<!-- touchpoint:start( short| report)? -->/) {
+  if ($0 ~ /<!-- touchpoint:start( short| report| confirm)? -->/) {
     if (inblk) fail(FNR, "touchpoint:start inside another block")
-    inblk = 1; bstart = FNR; kind = ($0 ~ / short -->/) ? "short" : (($0 ~ / report -->/) ? "report" : "full"); block = ""; next
+    inblk = 1; bstart = FNR; kind = ($0 ~ / short -->/) ? "short" : (($0 ~ / report -->/) ? "report" : (($0 ~ / confirm -->/) ? "confirm" : "full")); block = ""; next
   }
   if ($0 ~ /<!-- touchpoint:end -->/) {
     if (!inblk) { fail(FNR, "touchpoint:end with no start"); next }

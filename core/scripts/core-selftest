@@ -2960,6 +2960,21 @@ tpl_case "a report block missing Worth knowing is caught" fail 'missing "Worth k
 > **What you need to do:** nothing.
 <!-- touchpoint:end -->'
 
+TPL_CONFIRM='<!-- touchpoint:start confirm -->
+> **Start the next planned task?** Nothing is created until you say yes.
+> **Yes** (recommended) — I begin researching it. **No** — tell me a different one.
+<!-- touchpoint:end -->'
+tpl_case "a compact confirm block passes" pass "" "$TPL_CONFIRM"
+tpl_case "a confirm block with no (recommended) is caught" fail '"(recommended)"' "${TPL_CONFIRM/ (recommended)/}"
+tpl_case "a confirm block with one answer is caught" fail "at least two bold answers" "${TPL_CONFIRM/\*\*No\*\* — tell me a different one./No: tell me a different one.}"
+tpl_case "a confirm block that runs long is caught" fail "use the full block" "${TPL_CONFIRM/<!-- touchpoint:end -->/> a
+> b
+> c
+> d
+> e
+<!-- touchpoint:end -->}"
+tpl_case "a confirm block with an unglossed id is caught" fail "internal id M2" "${TPL_CONFIRM/next planned task/next planned task in M2}"
+
 # A skill that cites the standard but contains no block is claiming compliance with nothing.
 tpl_case "a skill citing the standard with no block is caught" fail "contains no" 'See core/templates/human-touchpoint.md for how to ask.'
 

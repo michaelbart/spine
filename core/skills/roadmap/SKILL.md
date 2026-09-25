@@ -88,13 +88,9 @@ entry, **verify its shape**:
 **If any entry is malformed** (plain prose bullet, no fence, no `id:`
 line, or counter missing):
 
-<!-- touchpoint:start -->
-> **Deciding:** whether I may tidy the formatting of some leftover-issue entries in `work/<id>/milestone.md`. It's yours because it edits a shared file.
-> **Need to know:** <n> entries there are written as plain notes, so later tasks can't look them up automatically: <each entry, quoted>. Tidying changes only their layout, never their words.
-> **Recommend:** Tidy them — otherwise these issues are invisible to future planning.
-> 1. **Tidy them** — next: I reformat the entries in place; cost: a few seconds; undo: yes, git can revert it
-> 2. **Leave them** — next: I skip them when planning; cost: they won't be picked up by any later task; undo: yes
-> **Safe to ignore:** the entry format details.
+<!-- touchpoint:start confirm -->
+> **Tidy the layout of <n> leftover-issue entries in `work/<id>/milestone.md`?** They're plain notes, so later tasks can't look them up; tidying changes layout only, never wording. Entries: <each, quoted>.
+> **Tidy them** (recommended) — I reformat them in place; git can revert it. **Leave them** — later planning will ignore these issues.
 <!-- touchpoint:end -->
 Wait for the human's answer. If reformatting: edit in place now. If
 leaving as-is: note each in the output as "not absorbed — non-machine-
@@ -130,13 +126,9 @@ its shape**: a well-formed entry has an `id: issue-<n>` line and a
 `status:` field, and the section carries a `<!-- next-issue-id: N -->`
 counter. If any entry is malformed:
 
-<!-- touchpoint:start -->
-> **Deciding:** whether I may tidy the formatting of some entries in `docs/known-issues.md`. It's yours because it edits a shared file.
-> **Need to know:** <n> entries there are written as plain notes, so later tasks can't look them up automatically: <each entry, quoted>. Tidying changes only their layout, never their words.
-> **Recommend:** Tidy them — otherwise these issues are invisible to future planning.
-> 1. **Tidy them** — next: I reformat the entries in place; cost: a few seconds; undo: yes, git can revert it
-> 2. **Leave them** — next: I skip them when planning; cost: they won't be picked up by any later task; undo: yes
-> **Safe to ignore:** the entry format details.
+<!-- touchpoint:start confirm -->
+> **Tidy the layout of <n> entries in `docs/known-issues.md`?** They're plain notes, so later tasks can't look them up; tidying changes layout only, never wording. Entries: <each, quoted>.
+> **Tidy them** (recommended) — I reformat them in place; git can revert it. **Leave them** — later planning will ignore these issues.
 <!-- touchpoint:end -->
 Wait for the human's answer, same as §1a's own malformed-entry flow. If
 leaving as-is: note each in the output as "not absorbed —
@@ -209,13 +201,9 @@ M<n>: <title>
 
 Then ask (per `core/templates/human-touchpoint.md`):
 
-<!-- touchpoint:start -->
-> **Deciding:** whether this order of milestones is right before I write the plan files. It's yours because it sets what gets built first.
-> **Need to know:** <one line per milestone: its number, what it delivers, and what must come first>
-> **Recommend:** Approve — <one-line reason for the order>
-> 1. **Looks right** — next: I write the milestone files; cost: none; undo: yes, files can be edited later
-> 2. **Change it** (reorder, split, merge, retitle) — next: you tell me what, and I show only the changed entries again; cost: a minute; undo: n/a
-> **Safe to ignore:** the wording of each entry; you can polish it later.
+<!-- touchpoint:start confirm -->
+> **Is this order of milestones right before I write the plan files?** It sets what gets built first.
+> **Looks right** (recommended) — I write the milestone files. **Change it** — tell me what to reorder, split, merge or retitle; I'll show only the changed entries.
 <!-- touchpoint:end -->
 Wait for explicit confirmation. Iterate until the human says to proceed.
 A partial approval ("looks right except swap M2 and M3") is fine — revise
