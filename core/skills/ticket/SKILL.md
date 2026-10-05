@@ -1,9 +1,15 @@
 ---
 name: ticket
-description: Generate a copy-paste JIRA ticket description from a built-and-verified task's own artifacts — summary, acceptance criteria, QA notes, files changed — reading plan.md/verify.md/deviations.md rather than re-summarizing the diff. Output only; no tracker integration. Run after /task's verify phase and before /ship.
+description: Generate a copy-paste JIRA ticket description from a built-and-verified task's own artifacts — summary, acceptance criteria, QA notes, files changed — reading plan.md/verify.md/deviations.md rather than re-summarizing the diff. Output only; no tracker integration. Optional step for tasks that have no upfront ticket (e.g. /intake was not used); /ship has no dependency on this having run.
 disable-model-invocation: true
 argument-hint: [<task-id>]
 ---
+
+**This command is optional.** If a ticket already existed before the task
+started (created via `/intake`), run `/ship` directly — the key is already
+recorded and this command adds nothing. `/ticket` is for tasks where no
+ticket existed upfront and one is needed for QA or stakeholder visibility.
+`/ship` has no dependency on this having run.
 
 You are running `/ticket`. `$ARGUMENTS` is an optional task ID. If given,
 use it directly. If omitted, read `.spine/current-task` (one line, the
