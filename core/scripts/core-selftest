@@ -3053,4 +3053,53 @@ cs_write_research "$doc" "$cs_sha" "  - src/grounded.ts"
 echo "changed after research was written" >>"$cs_proj/src/grounded.ts"
 tpl_msg "check-stale's stale report" "$("$CHECK_STALE" "$doc" --project "$cs_proj" 2>&1 || true)"
 
+
+# ---------------------------------------------------------------------------
+# spine-event, the hook-block log, and gap-age
+# ---------------------------------------------------------------------------
+SPINE_EVENT="$SCRIPT_DIR/spine-event"
+GAP_AGE="$SCRIPT_DIR/gap-age"
+
+ev_proj="$(mktemp -d "$tmp_root/evproj.XXXXXX")"
+mkdir -p "$ev_proj/.spine" "$ev_proj/work/EV1"
+echo EV1 >"$ev_proj/.spine/current-task"
+"$SPINE_EVENT" --project "$ev_proj" verify-result result=FAIL reason="a = b"
+ev_line="$(tail -1 "$ev_proj/.spine/events.jsonl" 2>/dev/null)"
+if [[ "$(jq -r '.event+"|"+.task+"|"+.result+"|"+.reason' <<<"$ev_line" 2>/dev/null)" == "verify-result|EV1|FAIL|a = b" ]]; then
+  pass "spine-event: appends one JSON line with the task, event and fields"
+else
+  fail "spine-event: unexpected line: $ev_line"
+fi
+if "$SPINE_EVENT" --project "$ev_proj"; then pass "spine-event: no event given exits 0"; else fail "spine-event: no event given should exit 0"; fi
+if "$SPINE_EVENT" --project "/nonexistent/$$" x; then pass "spine-event: unwritable project exits 0"; else fail "spine-event: unwritable project should exit 0"; fi
+
+echo "src/auth/**" >"$ev_proj/.spine/protected-paths.conf"
+echo 1 >"$ev_proj/work/EV1/class"
+ev_code=0
+printf '{"tool_name":"Write","tool_input":{"file_path":"%s/src/auth/x.ts"}}' "$ev_proj" \
+  | CLAUDE_PROJECT_DIR="$ev_proj" "$SCRIPT_DIR/../hooks/path-escalate" >/dev/null 2>&1 || ev_code=$?
+if [[ "$ev_code" == 2 ]] && tail -1 "$ev_proj/.spine/events.jsonl" | jq -e '.event=="hook-block" and .hook=="path-escalate"' >/dev/null 2>&1; then
+  pass "path-escalate: a block still exits 2 and is logged as hook-block"
+else
+  fail "path-escalate: expected exit 2 and a hook-block event (exit=$ev_code)"
+fi
+
+ga_proj="$(mktemp -d "$tmp_root/gaproj.XXXXXX")"
+mkdir -p "$ga_proj/.spine"
+echo '{"clone-scan":{"status":"unavailable","reason":"no code yet"},"lint":{"status":"implemented","reason":"x"}}' >"$ga_proj/.spine/capabilities.json"
+for n in 1 2 3 4 5 6; do
+  mkdir -p "$ga_proj/work/GA$n"
+  printf '| lint | PASS | ok |\n| clone-scan | DEGRADED (unavailable) | no code yet |\n' >"$ga_proj/work/GA$n/verify.md"
+done
+if "$GAP_AGE" --project "$ga_proj" | grep -q "^clone-scan: skipped in 6 of 6"; then
+  pass "gap-age: reports a check skipped in every verify"
+else
+  fail "gap-age: expected 'clone-scan: skipped in 6 of 6'"
+fi
+if [[ -z "$("$GAP_AGE" --project "$ga_proj" --min 7)" ]]; then
+  pass "gap-age: stays quiet below the threshold"
+else
+  fail "gap-age: should print nothing when fewer verifies than --min"
+fi
+
 exit "$overall"

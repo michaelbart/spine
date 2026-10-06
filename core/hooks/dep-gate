@@ -45,12 +45,14 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_workspace-route"
+source "$SCRIPT_DIR/_spine-event" 2>/dev/null
 declare -F workspace_route >/dev/null || { echo "dep-gate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 tool_name="$(jq -r '.tool_name // empty' <<<"$input")"
 
 ask() {
+  declare -F spine_event >/dev/null && spine_event "$project" hook-ask hook=dep-gate tool="$tool_name"
   jq -n --arg reason "$1" \
     '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"ask", permissionDecisionReason:$reason}}'
   exit 0

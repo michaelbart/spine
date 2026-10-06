@@ -225,7 +225,9 @@ order, second-approver) — loudly, never silently. Record the bypass in `notes.
 (production down, the fix touches auth) that can't wait on the harness —
 it is not a way to route around a check you disagree with. `--bypass` does
 not skip §0's ship-time re-grounding — that runs first, unconditionally;
-what it skips is acting on a stale result as a hard halt.
+what it skips is acting on a stale result as a hard halt. Also record it in
+the local event log: `${CLAUDE_SKILL_DIR}/../../scripts/spine-event bypass
+reason="<the reason given>"`.
 
 ## 2. Decisions
 
@@ -745,6 +747,10 @@ the report form (per `core/templates/human-touchpoint.md`), never a freeform sum
 > **What you need to do:** <push and open the PR by hand, with the command, or "nothing">
 > **Worth knowing:** <what was left open on purpose and when it would matter, one line each; anything not proven; or "nothing">. Details: `work/<task-id>/briefing.md`.
 <!-- touchpoint:end -->
+
+First log it: `${CLAUDE_SKILL_DIR}/../../scripts/spine-event shipped` (it reads
+the task from `.spine/current-task`, so it must run before that file is
+removed below).
 
 Write `work/<task-id>/state` = `done` (this is the transition out of
 `shipping (n of n)` for a multi-repo task — every repo's commit from §5

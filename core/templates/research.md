@@ -73,7 +73,9 @@ path)
 ## How it works today
 
 <!-- The actual current behavior, traced through real code, not assumed
-     from naming. Cite file:line. This is the bulk of the document. -->
+     from naming. Cite file:line. This is the bulk of the document. Where
+     behavior depends on a setting (config file, env var, flag), cite the
+     real setting, not the code's default. -->
 
 ## For a bug fix: root cause
 

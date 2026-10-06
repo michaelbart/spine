@@ -357,7 +357,7 @@ if [[ "$is_self_install" -eq 0 ]] && { [[ -d "$project/.git" ]] || git -C "$proj
 
   gitignore="$project/.gitignore"
   touch "$gitignore"
-  for pattern in ".claude/skills/" ".claude/agents/" ".claude/rules/" ".claude/hooks" ".claude/settings.local.json" ".claude/worktrees/" ".spine/.smoke-runtime-seconds" ".spine/current-task" ".spine/current-intake" ".spine/autopilot-active"; do
+  for pattern in ".claude/skills/" ".claude/agents/" ".claude/rules/" ".claude/hooks" ".claude/settings.local.json" ".claude/worktrees/" ".spine/.smoke-runtime-seconds" ".spine/current-task" ".spine/current-intake" ".spine/autopilot-active" ".spine/events.jsonl"; do
     grep -qxF "$pattern" "$gitignore" || echo "$pattern" >>"$gitignore"
   done
 fi

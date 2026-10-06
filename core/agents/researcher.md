@@ -103,6 +103,15 @@ trace backward through real code to the actual cause. Stop at the first
 plausible-looking line only if you've verified it's actually where behavior
 diverges, not because it's convenient.
 
+**Config-dependent behavior:** when how the code behaves depends on a
+setting (an auth or email option, an env var, a feature flag, a service's
+config file such as `supabase/config.toml`), read the real setting and cite
+that file in `files:`. Never infer it from the code's defaults or from what
+the feature seems to assume. If the setting lives outside the repo (a
+dashboard, a deployed environment) and you can't read it, say so under
+`## Open questions for planning` instead of guessing. A plan built on a wrong
+assumption about setup costs several rounds of rework later.
+
 **Your entire reply must be the complete contents of `research.md`,
 nothing before or after it** — the caller writes your reply verbatim to
 `work/<task-id>/research.md`. Open with exactly this header, filled in for

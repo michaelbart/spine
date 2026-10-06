@@ -147,6 +147,20 @@ or `docs/known-issues.md` doesn't exist yet: say nothing, same as a clean
 install-health check. If the script could not run at all, say so plainly
 ("couldn't check known-issues.md") rather than reporting a clean bill.
 
+## 4b. Checks that keep getting skipped (read-only, additive)
+
+A check declared `unavailable` in `.spine/capabilities.json` is skipped on
+every verify, and nothing asks again. Surface the ones that have been missing
+for a while, same additive, read-only stance as the checks above:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/gap-age --project <project root>
+```
+
+Any output: say it in one plain line per check ("`clone-scan` has been
+skipped in 67 of 70 checks — build it, or mark it not-applicable so it stops
+counting as a gap"). No output: say nothing.
+
 ## 5. Now report: idle, or a task in progress
 
 If `.spine/current-task` does **not** exist -> idle, show the menu (§5.1). If

@@ -95,6 +95,12 @@ in the spirit of `/adopt`'s survey — enough to size, not task-level research:
 
 - Locate where the change would land (grep/read the relevant area).
 - Check `<project root>/.spine/protected-paths.conf` against those paths.
+- Also check what the change *reads from*, not only where it lands. If it
+  shows or uses a value that comes from a protected module (a client or parser
+  that doesn't expose a field yet, an auth route it has to call), it will
+  probably need a small edit there. Count that file in the predicted files; if
+  it's protected, the task is Class 2 now, not after `path-escalate` catches
+  it mid-implementation.
 - Detect the Class-2 signals (§5) — auth, schema/migration, a public/declared
   contract, more than one owned system, anything irreversible.
 

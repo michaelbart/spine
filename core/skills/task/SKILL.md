@@ -477,7 +477,9 @@ its pre-scan; a direct `/task` does none, so it simply asks.) Ask it with `AskUs
 Once confirmed, for Class 1/2: generate the task ID
 `<YYYYMMDD>-<kebab-slug>` (today's date, a short slug from the description),
 `mkdir -p work/<task-id>`, write `.spine/current-task`, write
-`work/<task-id>/class`. **If `--milestone <id>` was given, do this next
+`work/<task-id>/class`, then log it:
+`${CLAUDE_SKILL_DIR}/../../scripts/spine-event class-set class=<0|1|2> autonomy=<mode>`
+(local event log; never fails, prints nothing). **If `--milestone <id>` was given, do this next
 step now, before writing `work/<task-id>/state`** — write
 `work/<task-id>/milestone` = `<id>` and replace this milestone's first
 still-`TBD` member-task entry with `<task-id>` in `work/<id>/milestone.md`,
@@ -645,7 +647,9 @@ which repo it belongs to. If any match and `work/<task-id>/class` is not
 already `2`, auto-escalate: rewrite the class file to `2` (one file, at the
 workspace root for a multi-repo task — one class for the whole task), **and
 rewrite `work/<task-id>/autonomy` = `guided`** (the ceiling — a Class 2 task
-is never `auto`/`checkpointed`; escalation pulls the human back in), and
+is never `auto`/`checkpointed`; escalation pulls the human back in), log it
+(`${CLAUDE_SKILL_DIR}/../../scripts/spine-event class-escalated from=<old> to=2
+when=plan`), and
 say so plainly when you present the plan — this is plan-triggered
 escalation; it does not need a separate confirmation prompt beyond the
 plan approval you're about to ask for anyway.
@@ -787,6 +791,9 @@ traces to a plan-time check the escalation itself proves was a miss** — a
 missed blast-radius call is exactly the "the plan's understanding of the
 product was wrong" signal the circuit breaker exists to catch; it stays a
 `halt`-tier deviation below, same as always.
+Whenever the class is rewritten mid-implementation, log it too:
+`${CLAUDE_SKILL_DIR}/../../scripts/spine-event class-escalated from=<old> to=2
+when=implement`.
 
 For everything that *is* a real deviation, match it against the plan's
 `## What I'll decide alone vs. stop and ask` section — its three lists
@@ -857,11 +864,12 @@ it in this form (per `core/templates/human-touchpoint.md`):
 <!-- touchpoint:start short -->
 > **What happened:** the work is built and ready to be checked.
 > **What it means for you:** I can't start the check myself; only you typing the command can, so I'm paused and nothing more happens until you do.
-> **To continue:** type `/verify <task-id>`; after it passes I'll ask you to type `/ship <task-id>` the same way.
+> **To continue:** type `/verify <task-id>`.
 <!-- touchpoint:end -->
 
 When you report that implementation is done (and again after `/ship`
-completes), use this form; it replaces any freeform summary:
+completes), use this form; it replaces any freeform summary. Show only the
+`>` lines, never the `<!-- touchpoint:... -->` marker lines:
 
 <!-- touchpoint:start report -->
 > **Bottom line:** <where things stand in one plain sentence, and whether anything waits on you>

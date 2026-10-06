@@ -621,6 +621,16 @@ this document quotes scripts, it doesn't paraphrase them:
 
 ## 6. Report
 
+Before replying, record this pass in the local event log (it never fails and
+prints nothing, so it can't stop `/verify`). One call for the result, and one
+per adversary that ran this pass, so a later recap can see which rounds found
+anything:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/spine-event verify-result result=<PASS|FAIL> reason="<one line, or none>"
+${CLAUDE_SKILL_DIR}/../../scripts/spine-event adversary agent=<falsifier|security> verdicts=<count in the filtered file> max_severity=<highest, or none>
+```
+
 Reply to the caller with exactly: `PASS` or `FAIL`, plus the one-line reason
 if FAIL (which capability, which repo's floor, an ungated consumer's failed
 `contract-check`, step 1b's breaking-change gate, step 1c's `ui-render`

@@ -1,0 +1,35 @@
+#!/bin/bash
+# gap-age — how long each declared-unavailable check has been missing.
+#
+# Usage: gap-age [--project <path>] [--min <n>]
+#
+# `.spine/capabilities.json` can mark a check `unavailable` (e.g. "no code yet
+# — skeleton target"). That is honest on day one, but nothing ever asks again,
+# so a project can run for dozens of tasks with `clone-scan` or `callers`
+# silently skipped. This counts, over the project's own `work/*/verify.md`
+# files, how many verifies recorded each capability as DEGRADED, and prints
+# the ones missing for at least --min tasks (default 5). Read-only; prints
+# nothing and exits 0 when there is nothing to report.
+set -uo pipefail
+project="$(pwd)"; min=5
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="${2:-}"; shift 2 ;;
+    --min) min="${2:-5}"; shift 2 ;;
+    *) echo "usage: gap-age [--project <path>] [--min <n>]" >&2; exit 2 ;;
+  esac
+done
+caps="$project/.spine/capabilities.json"
+[[ -f "$caps" ]] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+total=$(ls -d "$project"/work/*/verify.md 2>/dev/null | wc -l | tr -d ' ')
+[[ "$total" -ge "$min" ]] || exit 0
+
+jq -r 'to_entries[] | select(.value.status=="unavailable") | .key' "$caps" | while read -r cap; do
+  n=$(grep -l -E "^\| ${cap} \| (\*\*)?DEGRADED" "$project"/work/*/verify.md 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$n" -ge "$min" ]]; then
+    echo "$cap: skipped in $n of $total verifies — build its adapter, or mark it not-applicable in .spine/capabilities.json"
+  fi
+done
+exit 0

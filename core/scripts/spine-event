@@ -1,0 +1,16 @@
+#!/bin/bash
+# spine-event — append one line to .spine/events.jsonl (the local event log).
+#
+# Usage: spine-event [--project <path>] <event> [key=value ...]
+#
+# Skills call this to record what happened (class set, verify round result,
+# bypass, shipped). Always exits 0 and never prints: a log write must never
+# stop a task. The hooks write to the same file through core/hooks/_spine-event.
+set -uo pipefail
+project="$(pwd)"
+if [[ "${1:-}" == "--project" ]]; then project="${2:-$project}"; shift 2 2>/dev/null || shift $#; fi
+[[ $# -ge 1 ]] || exit 0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../hooks/_spine-event" 2>/dev/null || exit 0
+spine_event "$project" "$@"
+exit 0
