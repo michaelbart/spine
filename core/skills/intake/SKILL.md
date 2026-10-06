@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: <ticket-key-or-url> | (or paste the ticket text)
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/intake`. `$ARGUMENTS` is a ticket key/URL (e.g. `ABC-1234`)
 or, if empty, a signal that the engineer will paste the ticket. Your job is to
 turn a ticket into the *right* amount of spine — no ceremony an engineer has

@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: [--milestone <milestone-id>]
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/autopilot`. `$ARGUMENTS` optionally carries
 `--milestone <id>` to scope the whole run to one milestone instead of the
 entire backlog. Scripts live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`,

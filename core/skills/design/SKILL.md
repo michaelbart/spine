@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: [--project <path>] [--handoff <path>]
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/design` against `--project <path>` from `$ARGUMENTS`
 (default: current directory), plus an optional `--handoff <path>` (an
 external design document — what it means depends on whether decisions

@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: <task-id> [--bypass <reason>]
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/ship` for task ID and optional `--bypass <reason>` from
 `$ARGUMENTS`. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`,
 templates at `${CLAUDE_SKILL_DIR}/../../templates/<name>`. Hand

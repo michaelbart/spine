@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: [<task-id>]
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 **This command is optional.** If a ticket already existed before the task
 started (created via `/intake`), run `/ship` directly — the key is already
 recorded and this command adds nothing. `/ticket` is for tasks where no

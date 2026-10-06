@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: <task-id>
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/verify` for task `$ARGUMENTS` (the task ID). Scripts live
 at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`, the template at
 `${CLAUDE_SKILL_DIR}/../../templates/verify.md`. Hand

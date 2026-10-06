@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: [--after M<n>]
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/roadmap`. Templates at
 `${CLAUDE_SKILL_DIR}/../../templates/`, scripts at
 `${CLAUDE_SKILL_DIR}/../../scripts/`. Hand that path to the shell verbatim,

@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: [--map <map-id>]
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/wayfinder` against `$ARGUMENTS` (an optional `--map
 <map-id>` to target a specific map instead of the active one). Scripts at
 `${CLAUDE_SKILL_DIR}/../../scripts/<name>`, templates at

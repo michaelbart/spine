@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: <question to resolve>
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/prototype` against `$ARGUMENTS` — the question this
 session exists to answer. Templates at
 `${CLAUDE_SKILL_DIR}/../../templates/<name>`. Hand

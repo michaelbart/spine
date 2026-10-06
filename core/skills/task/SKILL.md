@@ -5,6 +5,8 @@ disable-model-invocation: true
 argument-hint: [description of the work] [--milestone <milestone-id>]
 ---
 
+**Output rule:** the `<!-- touchpoint:... -->` lines in this skill are lint markers; never print them. Show the human only the `>` lines between them.
+
 You are running `/task`, the spine. `$ARGUMENTS` is the
 task description as given, plus an optional `--milestone <milestone-id>`.
 
