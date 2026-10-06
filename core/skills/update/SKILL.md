@@ -16,10 +16,10 @@ symlink (e.g. `.claude/skills/update`) rather than the real spine
 checkout. Resolve it before using it:
 
 ```bash
-SPINE_ROOT=$(dirname $(dirname $(readlink -f "${CLAUDE_SKILL_DIR}")))
-# SPINE_ROOT is now the absolute path to the spine checkout root
-# (e.g. /Users/you/spine/core → /Users/you/spine)
-# SPINE_ROOT = $(readlink -f "${CLAUDE_SKILL_DIR}")/../..  resolved
+# CLAUDE_SKILL_DIR resolves to <spine>/core/skills/update — three levels
+# below the spine checkout root.
+SPINE_ROOT=$(cd "$(readlink -f "${CLAUDE_SKILL_DIR}")/../../.." && pwd)
+# e.g. /Users/you/spine/core/skills/update -> /Users/you/spine
 ```
 
 Use `$SPINE_ROOT` for all paths below. If `readlink -f` is unavailable,
