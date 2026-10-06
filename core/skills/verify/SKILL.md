@@ -640,7 +640,8 @@ fail verify, they inform `/ship` and the briefing; a secret in the
 adversary's own *evidence* is a different thing entirely and does fail
 verify). `/task` decides what happens next; this skill's job ends at
 `verify.md` plus that one-line verdict. When a human ran `/verify` directly,
-also leave them this report form (per `core/templates/human-touchpoint.md`):
+also leave them this report form (per `core/templates/human-touchpoint.md`;
+show only the `>` lines, never the `<!-- touchpoint:... -->` marker lines):
 
 <!-- touchpoint:start report -->
 > **Bottom line:** <checks passed | checks failed>, in one plain sentence, and whether anything waits on you.

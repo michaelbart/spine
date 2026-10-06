@@ -124,7 +124,8 @@ Print the filled template inside a Markdown code fence (triple backticks,
 no language tag) so the engineer can copy it cleanly without extra
 formatting.
 
-Then report:
+Then report (show only the `>` lines, never the `<!-- touchpoint:... -->`
+marker lines):
 
 <!-- touchpoint:start report -->
 > **Bottom line:** The ticket description is ready to copy into JIRA — paste it, create the ticket, then run `/ship <task-id>`.

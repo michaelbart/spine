@@ -739,7 +739,8 @@ behavior below regardless of the task's own autonomy:
 ## 6. Close out
 
 Whatever else this section does, the message you leave the human with is
-the report form (per `core/templates/human-touchpoint.md`), never a freeform summary:
+the report form (per `core/templates/human-touchpoint.md`), never a freeform summary.
+Show only the `>` lines, never the `<!-- touchpoint:... -->` marker lines:
 
 <!-- touchpoint:start report -->
 > **Bottom line:** <shipped or not, in one plain sentence, and whether anything waits on you (a push, a PR to open)>
