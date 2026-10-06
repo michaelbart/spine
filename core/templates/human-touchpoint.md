@@ -81,6 +81,9 @@ Wrap each touchpoint's wording in the markers below so `touchpoint-lint` can
 check it. Angle-bracket placeholders (`<...>`) are filled with the real facts
 at run time; everything else is fixed wording.
 
+The `<!-- touchpoint:... -->` lines are for the lint only. Never print them
+to the human: show just the `>` lines between them.
+
 ```
 <!-- touchpoint:start -->
 > **Deciding:** <what, and why it's yours>
