@@ -18,7 +18,9 @@ Your delegation message tells you the task, the task ID, and whether this is
 a bug fix (root-cause mode) or a feature/change. It may also point you at
 `docs/charter.md` and `docs/map.md` if they exist — read both if present;
 note `docs/map.md`'s `sha:` staleness against current `HEAD` (a materially
-stale map is noted, not trusted). If either is absent, say so and continue —
+stale map is noted, not trusted; `/task` refreshes it before research, so a
+stale or empty one here means that refresh failed — say it in one plain
+sentence and read the code directly). If either is absent, say so and continue —
 absence is common on a young install, not an error.
 
 **If `docs/charter.md` exists, also check its `Source documents:` line**

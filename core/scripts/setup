@@ -362,6 +362,15 @@ if [[ "$is_self_install" -eq 0 ]] && { [[ -d "$project/.git" ]] || git -C "$proj
   done
 fi
 
+# Older installs hid per-task state/owner/claims/approval from git, which
+# blinds registry-sync, claims-check and the second-approver check to every
+# other engineer's tasks. Only raw artifacts stay ignored; drop the rest.
+wgi="$project/work/.gitignore"
+if [[ "$is_self_install" -eq 0 && -f "$wgi" ]] && grep -qE '^\*/(state|class|owner|autonomy|flags\.json|claims\.json|approval\.json|ticket|milestone)$' "$wgi"; then
+  grep -vE '^\*/(state|class|owner|autonomy|flags\.json|claims\.json|approval\.json|ticket|milestone)$' "$wgi" >"$wgi.tmp" && mv "$wgi.tmp" "$wgi"
+  echo "setup: work/.gitignore no longer hides task state, owner, claims or approval — commit it, and the task files now showing as new, so teammates can see them"
+fi
+
 # .claude/settings.local.json: merge, never overwrite an engineer's own
 # pre-existing local entries (§2.1's known cost — this file is genuinely
 # machine-local, this is the one thing this script legitimately owns a

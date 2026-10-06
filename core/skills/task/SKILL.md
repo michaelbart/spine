@@ -486,7 +486,20 @@ still-`TBD` member-task entry with `<task-id>` in `work/<id>/milestone.md`,
 per this skill's own header note above (`phase-gate` only gates
 `Edit`/`Write` once a `state` file exists and reads `research`/`plan`; no
 `state` file yet means this edit is a genuine no-op for the hook to
-evaluate, not an exemption it has to special-case). Only after that: write `work/<task-id>/state` = `research`.
+evaluate, not an exemption it has to special-case). **Refresh the project map
+if it needs it — this is automatic, never a question for the human.** Run
+`${CLAUDE_SKILL_DIR}/../../scripts/map-age --project <project root>`. On
+`fresh`, do nothing. On `stale <n>`, `empty` or `missing`, spawn a
+`general-purpose` agent (Agent tool) told to follow
+`core/skills/remap/SKILL.md`'s steps and write `docs/map.md` (`/remap` itself
+can't be invoked by a skill, and it must run now, before `state` exists, because
+once `state` reads `research` the `phase-gate` hook only lets writes into
+`work/<task-id>/`). Say one plain line, "Refreshing the project map (about a
+minute)", and log the outcome:
+`${CLAUDE_SKILL_DIR}/../../scripts/spine-event map-refresh result=<ok|failed> was=<stale n|empty|missing>`.
+If the refresh fails or times out, carry on: the researcher reads the code
+directly, exactly as it did before, and nothing is reported to the human.
+`/ship` commits the refreshed map on its own. Only after that: write `work/<task-id>/state` = `research`.
 
 **Registry init (Extension C §2.2), same step, before the first
 `registry-sync`:** resolve owner identity —

@@ -3102,4 +3102,34 @@ else
   fail "gap-age: should print nothing when fewer verifies than --min"
 fi
 
+
+# ---------------------------------------------------------------------------
+# map-age, and setup's work/.gitignore migration
+# ---------------------------------------------------------------------------
+MAP_AGE="$SCRIPT_DIR/map-age"
+ma_proj="$(mktemp -d "$tmp_root/maproj.XXXXXX")"
+git -C "$ma_proj" init -q && git -C "$ma_proj" config user.email t@t && git -C "$ma_proj" config user.name t
+mkdir -p "$ma_proj/docs"
+git -C "$ma_proj" commit -q --allow-empty -m one
+ma_sha="$(git -C "$ma_proj" rev-parse HEAD)"
+[[ "$("$MAP_AGE" --project "$ma_proj")" == "missing" ]] && pass "map-age: no map -> missing" || fail "map-age: no map should be 'missing'"
+printf '<!-- spine:map\nsha: %s\n-->\n# Architecture map\n\n## Module boundaries\n\n<!-- fill me -->\n\n## Data flow\n' "$ma_sha" >"$ma_proj/docs/map.md"
+[[ "$("$MAP_AGE" --project "$ma_proj")" == "empty" ]] && pass "map-age: unfilled map -> empty" || fail "map-age: unfilled map should be 'empty'"
+printf '<!-- spine:map\nsha: %s\n-->\n# Architecture map\n\n## Module boundaries\n\napps own routes.\n\n## Data flow\n' "$ma_sha" >"$ma_proj/docs/map.md"
+[[ "$("$MAP_AGE" --project "$ma_proj")" == "fresh" ]] && pass "map-age: filled map at HEAD -> fresh" || fail "map-age: filled map at HEAD should be 'fresh'"
+for n in 1 2 3; do git -C "$ma_proj" commit -q --allow-empty -m "c$n"; done
+[[ "$("$MAP_AGE" --project "$ma_proj" --max 2)" == "stale 3" ]] && pass "map-age: 3 commits behind with --max 2 -> stale 3" || fail "map-age: expected 'stale 3'"
+sed -i.bak 's/^sha:.*/sha: (pending)/' "$ma_proj/docs/map.md"
+[[ "$("$MAP_AGE" --project "$ma_proj")" == "stale unknown" ]] && pass "map-age: unreadable stamp -> stale unknown" || fail "map-age: unreadable stamp should be 'stale unknown'"
+
+su_proj="$(new_setup_fixture)"
+mkdir -p "$su_proj/work"
+printf '*/state\n*/class\n*/claims.json\n*/artifacts/\n' >"$su_proj/work/.gitignore"
+"$SETUP" --project "$su_proj" --spine "$REAL_SPINE" >/dev/null 2>&1 || true
+if [[ "$(cat "$su_proj/work/.gitignore")" == "*/artifacts/" ]]; then
+  pass "setup: drops the old task-state patterns from work/.gitignore, keeps artifacts"
+else
+  fail "setup: work/.gitignore migration wrong: $(cat "$su_proj/work/.gitignore")"
+fi
+
 exit "$overall"

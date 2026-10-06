@@ -634,6 +634,17 @@ line on this task's commit(s) — every repo, in the multi-repo case — alongsi
 `Spine-Task:`, per `core/ADAPTER-CONTRACT.md` §6's composing-trailer rule. If it
 prints nothing (off-ticket), omit that line.
 
+**Commit a refreshed map on its own.** `/task` refreshes `docs/map.md` before
+research when it was stale or empty. If `git status --porcelain docs/map.md`
+shows a change (in each repo, for a multi-repo task), commit just that file
+first, so the refresh never lands inside the task's own diff or PR:
+
+```
+git add -- docs/map.md && git commit -m "chore: refresh project map"
+```
+
+No `Spine-Task:` trailer, same as a pin bump. Skip silently if unchanged.
+
 Then, **single-repo**:
 
 ```

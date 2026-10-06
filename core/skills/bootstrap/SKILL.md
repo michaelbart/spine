@@ -240,31 +240,24 @@ block taxes every future turn.
 Write `<project>/docs/map.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/map.md` — leave every section
 near-empty, stamp it with current `HEAD` (or a fresh initial commit if the
-project has none yet) and the current timestamp. An empty map with a fresh
-stamp is correct here; it grows through `/remap` as the codebase does.
+project has none yet) and the current timestamp. An empty map is correct here; the first `/task` that finds it empty fills it
+in automatically (`core/scripts/map-age`), and it is kept fresh the same way.
 
 `mkdir -p <project>/docs/decisions <project>/work` and touch `.gitkeep` in
 `docs/decisions`. Create `<project>/work/.gitignore` with this exact content
 (committed to the repo so every team member gets it):
 
 ```
-# Ignore task telemetry/tracking files — keep narrative docs (research.md,
-# plan.md, deviations.md, verify.md, briefing.md, notes.md) which are
-# committed by registry-sync and provide context for future sessions.
-*/state
-*/class
-*/owner
-*/autonomy
-*/flags.json
-*/claims.json
-*/approval.json
-*/ticket
-*/milestone
+# Raw tool output (verdict JSON, floor results, captures) is large and
+# per-run; verify.md summarizes it. Everything else in a task folder is
+# shared on purpose: state, owner, claims.json and approval.json are what
+# registry-sync, claims-check and the second-approver check read to see
+# other engineers' tasks, and the narrative docs give future sessions context.
 */artifacts/
 ```
 
-This lets `registry-sync` commit only the human-readable per-task docs while
-leaving internal tracking files off the PR diff entirely.
+This lets `registry-sync` share a task's state, claims and approval with the
+rest of the team and keeps only the bulky raw artifacts off the PR diff.
 
 ## 6. Commit the install and hand off
 

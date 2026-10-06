@@ -1,0 +1,38 @@
+#!/bin/bash
+# map-age — is docs/map.md fresh enough to use?
+#
+# Usage: map-age [--project <path>] [--max <commits>]
+#
+# Prints one word and exits 0 (a status, never a failure):
+#   fresh        stamped within --max commits (default 50) of HEAD, and filled in
+#   stale <n>    the stamped commit is n commits behind HEAD (n > --max), or
+#                is no longer in the history (n printed as "unknown")
+#   empty        the map still has no content under "## Module boundaries" —
+#                the near-empty map /bootstrap writes on a new project
+#   missing      no docs/map.md
+#
+# /task calls this before research and refreshes the map when it isn't "fresh",
+# so nobody has to remember to run /remap.
+set -uo pipefail
+project="$(pwd)"; max=50
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project) project="${2:-}"; shift 2 ;;
+    --max) max="${2:-50}"; shift 2 ;;
+    *) echo "usage: map-age [--project <path>] [--max <commits>]" >&2; exit 2 ;;
+  esac
+done
+map="$project/docs/map.md"
+[[ -f "$map" ]] || { echo missing; exit 0; }
+
+body="$(awk '/^## Module boundaries/{f=1;next} f&&/^## /{exit} f' "$map" | perl -0777 -pe 's/<!--.*?-->//gs' | tr -d '[:space:]')"
+if [[ -z "$body" ]]; then echo empty; exit 0; fi
+
+sha="$(grep -m1 -E '^sha:' "$map" | sed -E 's/^sha:[[:space:]]*//' | tr -d '[:space:]')"
+if [[ -z "$sha" ]] || ! git -C "$project" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+  echo "stale unknown"; exit 0
+fi
+n="$(git -C "$project" rev-list --count "${sha}..HEAD" 2>/dev/null || echo "")"
+if [[ -z "$n" ]]; then echo "stale unknown"; exit 0; fi
+if [[ "$n" -gt "$max" ]]; then echo "stale $n"; else echo fresh; fi
+exit 0
