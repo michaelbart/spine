@@ -209,19 +209,8 @@ the consumer before the producer, an additive change is never safe in
 that direction" — same non-negotiable framing as the floor/deviation
 checks above, not a soft warning.
 
-**Class 2 — a third check, second approver (Extension C §2.6):**
-
-```
-${CLAUDE_SKILL_DIR}/../../scripts/second-approver-check <task-id> --project <project root>
-```
-
-Exit 1 halts here, verbatim message. Exit 0: read its stdout — an
-`override` result is not a quiet pass, and gets its own unconditional line
-in the briefing (§4), same visibility standard as `--bypass`. An override result is still expected to be loud in the briefing; a real
-second-approver result is expected and non-remarkable.
-
 **`--bypass <reason>`** skips every check above (floor/deviations, ship
-order, second-approver) — loudly, never silently. Record the bypass in `notes.md` and give it its own visible section in the briefing (§4). Bypass is for a genuine emergency
+order) — loudly, never silently. Record the bypass in `notes.md` and give it its own visible section in the briefing (§4). Bypass is for a genuine emergency
 (production down, the fix touches auth) that can't wait on the harness —
 it is not a way to route around a check you disagree with. `--bypass` does
 not skip §0's ship-time re-grounding — that runs first, unconditionally;
@@ -395,7 +384,7 @@ this is a deliberate exception to their no-scheduled-stop rule. Ask it with
   command), and ask which should carry into `milestone.md`'s Known gaps
   for future member tasks to see — "none" is a complete, valid answer, not
   a thing to talk the human out of. This blocks the same way plan approval
-  and the Class 2 second-approver stop already block; it is not a merge
+  already blocks; it is not a merge
   gate (§1's two checks are unchanged, adversary findings still never fail
   `/verify` by that skill's own report step), just a question that has to
   be asked before this task's ship completes. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
@@ -544,11 +533,7 @@ quotes, it doesn't re-derive:
   "Setup events" section, same quote-don't-re-derive rule — distinct from
   `deviations.md`-sourced "What surprised us" above, per
   `core/skills/task/SKILL.md` §4's boundary test; `Plan accuracy` from
-  `conformance.json`'s score, in words. `Approver` (Class 2 only, omit for
-  Class 0/1): the
-  second-approver identity from `second-approver-check`'s real-approver
-  result — omit this bullet (not the fact) when an override put it in
-  "Overrides & bypasses" instead.
+  `conformance.json`'s score, in words.
 - **Contracts** (multi-repo only, omit entirely if `contract-touch.json`
   reported nothing touched): per touched contract, its
   `spec_change`/`registry_stale` and each gated consumer's `contract-check`
@@ -560,11 +545,7 @@ quotes, it doesn't re-derive:
 - **Overrides & bypasses** (omit entirely if none occurred): `--bypass`'s
   own line is not optional when used; a plan-time claims-check override
   (`work/<task-id>/deviations.md`'s own record of it, per
-  `core/skills/task/SKILL.md` §3) gets its own line here too; a
-  second-approver self-approval override (`.override == true` in
-  `approval.json`) gets its own line with the override reason, same
-  visibility standard as `--bypass` — never folded into a single
-  "approvals" line that could bury it. A ship-time `claims-check --diff`
+  `core/skills/task/SKILL.md` §3) gets its own line here too. A ship-time `claims-check --diff`
   `[UNDECLARED]` collision is a halt-tier deviation, not an override —
   it belongs in "What surprised us," not here.
 - **Milestone** (omit entirely if this task isn't part of one): §3b's

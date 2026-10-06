@@ -100,7 +100,7 @@ check_target() {
     if [[ "$class" != "2" ]]; then
       printf '%s\n' \
         "What happened: I tried to edit '$display', which is inside '$matched_glob' — a database-migration area you marked as protected." \
-        "What it means for you: nothing was changed. Edits there are blocked unless the task is Class 2 (the highest-risk kind of change: needs a second person's approval), and this one is not. This is a hard block, not a question." \
+        "What it means for you: nothing was changed. Edits there are blocked unless the task is Class 2 (the highest-risk kind of change: I check with you at every step), and this one is not. This is a hard block, not a question." \
         "To continue: tell me to raise this task to Class 2 (you confirm it), or drop the edit." >&2
       return 1
     fi
@@ -113,7 +113,7 @@ check_target() {
 
   printf '%s\n' \
     "What happened: I tried to edit '$display', which is inside '$matched_glob' — a place you marked as needing extra care." \
-    "What it means for you: nothing was changed. This task is not yet marked as Class 2 (the highest-risk kind of change: needs a second person's approval), and edits there require it." \
+    "What it means for you: nothing was changed. This task is not yet marked as Class 2 (the highest-risk kind of change: I check with you at every step), and edits there require it." \
     "To continue: tell me to raise this task to Class 2 (you confirm it), or drop the edit." >&2
   return 1
 }

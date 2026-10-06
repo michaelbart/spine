@@ -250,13 +250,12 @@ in automatically (`core/scripts/map-age`), and it is kept fresh the same way.
 ```
 # Raw tool output (verdict JSON, floor results, captures) is large and
 # per-run; verify.md summarizes it. Everything else in a task folder is
-# shared on purpose: state, owner, claims.json and approval.json are what
-# registry-sync, claims-check and the second-approver check read to see
-# other engineers' tasks, and the narrative docs give future sessions context.
+# shared on purpose: state, owner and claims.json are what registry-sync
+# and claims-check read to see other engineers' tasks, and the narrative docs give future sessions context.
 */artifacts/
 ```
 
-This lets `registry-sync` share a task's state, claims and approval with the
+This lets `registry-sync` share a task's state and claims with the
 rest of the team and keeps only the bulky raw artifacts off the PR diff.
 
 ## 6. Commit the install and hand off

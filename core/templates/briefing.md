@@ -68,9 +68,6 @@ never hidden.>
   mismatch about the product — see verify.md's own header note>
 - Plan accuracy: <conformance in words: "diff landed where the plan said"
   or "drifted: <where> — see verify.md">
-- Approver (Class 2 only): <second-approver identity — omit this bullet
-  entirely for Class 0/1, or when an override made it into "Overrides &
-  bypasses" below instead>
 
 <!-- Omit the whole "Contracts" section for a single-repo task, or a
      multi-repo task whose contract-touch run found nothing touched. -->
@@ -85,7 +82,7 @@ section.>
      never leave it present-but-empty. -->
 
 **Overrides & bypasses:** <Any `--bypass`, claims-check `--diff`
-[UNDECLARED] override, or second-approver self-approval override — each
+[UNDECLARED] override — each
 its own line, the recorded reason included, loud. Never folded into a
 single summarizing line.>
 

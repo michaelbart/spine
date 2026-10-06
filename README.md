@@ -265,7 +265,7 @@ any code is written, so everyone sees the same open-task picture. Two
 mechanisms catch what git alone can't: a real write conflict with another
 open task blocks plan approval, and a task whose grounding changed
 underfoot gets flagged and can't advance until that's acknowledged. Class 2
-changes need a second approver. Full accounting — including what still
+changes run guided at every step. Full accounting — including what still
 relies on an agent following instructions rather than a hook, and where
 this stops scaling — in `docs/tradeoffs.md`, under "Working with other
 engineers."
@@ -296,7 +296,7 @@ A few opt-in extensions, each disclosed with its tradeoffs in
   `core/skills/task/SKILL.md`'s Resuming section and `docs/tradeoffs.md`.
 - **`/autopilot`** `[--milestone <id>]` — loops an already-planned milestone
   backlog end to end with no human stops at all, including the ones Class 2
-  normally forces (a second approver, halt-tier deviations). Every override
+  normally forces (its guided stops, halt-tier deviations). Every override
   gets logged and reviewed once, at the end, not per task; commits stay
   local, nothing pushes. See `core/skills/autopilot/SKILL.md` and
   `docs/tradeoffs.md`.

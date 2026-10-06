@@ -47,10 +47,6 @@
 #     always-terminates for realpath, always-absolute-or-empty ownership
 #     root for workspace_route, NFC/NFD symmetry for glob_eq — each run
 #     bounded so a reintroduced runaway fails loudly instead of hanging.
-#   - second-approver-check's Class 2 approval gate: no approval.json, a
-#     missing approver field, self-approval without an override, a
-#     recorded self-approval override, and a genuine different-identity
-#     approver — each the correct exit code and message.
 #   - contract-touch's additive/breaking spec classification, blast-radius
 #     aggregation, and registry-staleness detection (a stale registry
 #     alone, with nothing else touched, still marks a contract touched) —
@@ -1174,80 +1170,6 @@ fuzz_run_bounded "workspace_route: WSR_OWNER_ROOT always empty-or-absolute (800 
 fuzz_run_bounded "_wsr_glob_eq: NFC/NFD-symmetric (20 real accented/CJK/emoji names)" 60 _wsr_fuzz_globeq_body
 
 # ---------------------------------------------------------------------------
-# second-approver-check: Class 2's second-approver gate
-# ---------------------------------------------------------------------------
-# Round 5's audit flagged core/scripts/* test coverage as a standing gap
-# (17 scripts, zero permanent coverage, five consecutive rounds). Rather
-# than either close all 17 or defer a sixth time, this closes coverage for
-# the two whose silent failure would matter most: this script gates a real
-# approval decision (an unnoticed regression here means Class 2 work ships
-# without a genuine second approver), contract-touch below gates cross-repo
-# blast-radius/breaking-change classification.
-
-SECOND_APPROVER_CHECK="$SCRIPT_DIR/second-approver-check"
-
-sac_fixture() {
-  # sac_fixture <owner> [<approval.json-body>] -> "<project>"
-  local owner="$1" body="${2:-}" proj
-  proj="$(mktemp -d "$tmp_root/sacproj.XXXXXX")"
-  mkdir -p "$proj/work/SAC1"
-  printf '%s' "$owner" >"$proj/work/SAC1/owner"
-  [[ -n "$body" ]] && printf '%s' "$body" >"$proj/work/SAC1/approval.json"
-  printf '%s' "$proj"
-}
-
-sac_run() {
-  # sac_run <project> -> "<exit>|<output>"
-  local proj="$1" out code=0
-  out="$("$SECOND_APPROVER_CHECK" SAC1 --project "$proj" 2>&1)" || code=$?
-  printf '%s|%s' "$code" "$out"
-}
-
-sac_check() {
-  # sac_check <desc> <result> <expect-exit> <expect-substring>
-  local desc="$1" result="$2" expect_exit="$3" expect_sub="$4" code="${2%%|*}" out="${2#*|}"
-  if [[ "$code" == "$expect_exit" && "$out" == *"$expect_sub"* ]]; then
-    pass "second-approver-check: $desc"
-  else
-    fail "second-approver-check: $desc (expected exit=$expect_exit containing '$expect_sub', got exit=$code: $out)"
-  fi
-}
-
-sac_check "no approval.json -> HALT" \
-  "$(sac_run "$(sac_fixture "alice")")" 1 "no approval.json"
-
-sac_check "approval.json with no approver field -> HALT" \
-  "$(sac_run "$(sac_fixture "alice" '{}')")" 1 "no 'approver' field"
-
-sac_check "approver == owner, no override -> HALT" \
-  "$(sac_run "$(sac_fixture "alice" '{"approver":"alice"}')")" 1 "same identity as owner"
-
-sac_check "approver == owner, override:true -> PROCEED, reason echoed" \
-  "$(sac_run "$(sac_fixture "alice" '{"approver":"alice","override":true,"override_reason":"solo project"}')")" 0 "solo project"
-
-sac_check "real second approver -> PROCEED" \
-  "$(sac_run "$(sac_fixture "alice" '{"approver":"bob"}')")" 0 "real second approver on record: bob"
-
-sac_check "missing owner file -> exit 2 (can't evaluate, not a halt)" \
-  "$(sac_run "$(mktemp -d "$tmp_root/sacproj.XXXXXX")")" 2 ""
-
-# Negative control: temporarily invert the self-approval identity check
-# (the specific line this coverage exists to guard) and confirm the
-# regression case above actually fails without it — a test that only ever
-# passes isn't evidence, per every prior round's own standing lesson.
-sac_negctrl_backup="$(mktemp "$tmp_root/sac-negctrl.XXXXXX")"
-cp "$SECOND_APPROVER_CHECK" "$sac_negctrl_backup"
-sed -i.bak 's/"\$approver" == "\$owner"/"$approver" != "$owner"/' "$SECOND_APPROVER_CHECK"
-rm -f "$SECOND_APPROVER_CHECK.bak"
-negctrl_result="$(sac_run "$(sac_fixture "alice" '{"approver":"alice"}')")"
-cp "$sac_negctrl_backup" "$SECOND_APPROVER_CHECK"
-if [[ "${negctrl_result%%|*}" != "1" ]]; then
-  pass "second-approver-check: negative control confirms the self-approval case above is meaningful (fails without the real check)"
-else
-  fail "second-approver-check: negative control did NOT fail as expected — the self-approval regression case may be vacuous"
-fi
-
-# ---------------------------------------------------------------------------
 # contract-touch: additive/breaking classification, blast radius, registry
 # staleness
 # ---------------------------------------------------------------------------
@@ -1438,10 +1360,9 @@ fi
 # collision matrix, done-task exclusion, and --diff DECLARED/UNDECLARED
 # tagging
 # ---------------------------------------------------------------------------
-# Second batch of round-5's scripts-coverage backlog closure (see the
-# second-approver-check/contract-touch section above for why these two
-# were picked next: both run on every real task's ship-time re-grounding
-# sequence, so a silent regression here would matter on every real ship).
+# Round-5's scripts-coverage backlog closure: these run on every real
+# task's ship-time re-grounding sequence, so a silent regression here
+# would matter on every real ship.
 
 CLAIMS_CHECK="$SCRIPT_DIR/claims-check"
 
@@ -3038,11 +2959,6 @@ r="$(hook_run "$DEP_GATE" "$tpl_real" '{"tool_name":"Write","tool_input":{"file_
 tpl_msg "dep-gate's package-change question" "$(jq -r '.hookSpecificOutput.permissionDecisionReason // empty' <<<"${r#*|}")"
 r="$(hook_run "$DEP_GATE" "$tpl_real" '{"tool_name":"Bash","tool_input":{"command":"npm install left-pad"}}')"
 tpl_msg "dep-gate's install question" "$(jq -r '.hookSpecificOutput.permissionDecisionReason // empty' <<<"${r#*|}")"
-
-for sac_case in "" '{}' '{"approver":"alice"}'; do
-  r="$(sac_run "$(sac_fixture "alice" "$sac_case")")"
-  tpl_msg "second-approver-check's halt (${sac_case:-no approval file})" "${r#*|}"
-done
 
 write_csc_plan '- apps/web/src/home/home.fixtures.ts — source: none'
 tpl_msg "content-sources-check's stop-and-ask" "$(csc_run || true)"

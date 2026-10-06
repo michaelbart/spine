@@ -8,19 +8,29 @@ is where it's the wrong tool, what it costs, and what it doesn't catch.
 **Token overhead.** Research, a plan, implementation, and two adversary
 agents cost real tokens over "just fix it." Rough estimate: 2–4x for a
 Class 1 task (small, self-contained, low blast radius), more for Class 2
-(wider blast radius, a second approver, more likely to hit a real
+(wider blast radius, guided at every step, more likely to hit a real
 deviation). There's no built-in instrumentation for this — measure it
 yourself against real task time if the estimate matters to your team;
 treat it as a starting point, not a guarantee.
 
 **Human minutes.** Class 1 asks for three short touchpoints — confirm the
 class, read a short plan before approving it, read a one-page briefing when
-it ships — a few minutes each. Class 2 adds a second approver and a higher
+it ships — a few minutes each. Class 2 adds more stops (it always runs guided) and a higher
 chance of a deviation needing a real decision, so more like 10–20 minutes.
 A `/design` session (turning a charter into foundational decisions before
 any code exists) is closer to a milestone-sized review than a single task —
 expect 20–40 minutes reading through several category decisions and two
 adversary reports, more if a decision is genuinely contested.
+
+**No second approver.** Class 2 used to require a different git identity to
+approve the plan. That was removed: the check compared two strings from
+`git config`, which prove nothing about who reviewed anything; there was no
+command for the approver and no way for them to find a pending plan; and for a
+solo engineer it was a self-approval override on nearly every Class 2 task
+(78 of 82 in one real set). Class 2 keeps its other protections: always
+`guided`, protected-path escalation, the adversaries, and the human approving
+the plan. A team that wants real cross-review should enforce it where it can
+be authenticated, in branch protection on the PR.
 
 **`/prototype` is cheap by design.** No plan, no floor, no adversary
 review — the cost is whatever it takes to build the throwaway artifact
@@ -44,7 +54,7 @@ repo and a contract check in both directions, but review stays flat — one
 plan, one approval, regardless of repo count. Working alongside other
 engineers adds a conflict check before plan approval and a couple of
 re-grounding checks at ship time; those are cheap in script time, the real
-cost is a colleague's attention when a plan needs a second approver.
+cost is a colleague's attention when their task overlaps yours.
 
 ## Where this is the wrong tool
 
@@ -231,7 +241,7 @@ Conceded by design, not bugs waiting to be fixed:
 - **`/autopilot` (experimental) removes every human stop `/task` has,
   including the ones spine treats as structural rather than stylistic —
   by explicit request, not by accident.** Class 2's forced `guided`
-  autonomy and second-approver requirement, halt-tier deviations, the
+  autonomy, halt-tier deviations, the
   circuit breaker, `claims-check` blocks, and flag-blocked advances all
   normally exist because some decisions are judged to need a human in the
   loop, not just a slower one. `/autopilot` (`core/skills/autopilot/
@@ -259,8 +269,8 @@ mechanical:
 - **One layer is a real hook; everything else is a script an agent is
   instructed to act on.** The write-blocking hooks are the one tier a
   session can't simply choose to skip. A conflict check before plan
-  approval, ship-time re-grounding, flag acknowledgment, and
-  second-approver review are all real scripts that compute a real, correct
+  approval, ship-time re-grounding, and flag acknowledgment
+  are all real scripts that compute a real, correct
   answer — but acting on that answer is skill instruction, not an enforced
   gate. A session that writes the target state file directly instead of
   following the instructions can walk past any of them.

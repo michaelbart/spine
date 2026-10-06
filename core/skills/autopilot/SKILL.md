@@ -21,7 +21,7 @@ with autonomy, only stops do" (`core/skills/task/SKILL.md`, the `autonomy`
 field). `/autopilot` is that same dial pushed to its extreme point — every
 remaining human stop `/task` has, including the ones normally treated as
 structural rather than stylistic (Class 2's forced `guided` autonomy and
-second-approver requirement), becomes "decide on your own judgment, log it,
+its plan-approval stop), becomes "decide on your own judgment, log it,
 keep going." What does **not** change: the deterministic floor, the
 falsifier's mandatory stub-out probe, the security adversary,
 `claims-check`, `conformance`, and `contract-touch` all still run for real
@@ -73,7 +73,7 @@ Every override below appends one line to `.spine/autopilot-log.md`:
 - <task-id> [<phase>] <kind>: <one-line what and why> — see <pointer>
 ```
 
-`<kind>` is one of: `class-2-escalation`, `second-approver-override`,
+`<kind>` is one of: `class-2-escalation`, `class-2-plan-self-approved`,
 `claims-check-override`, `halt-deviation-autoresolved`,
 `circuit-breaker-reset`, `flag-autoacknowledged`, `new-milestone-confirmed`,
 `run-resumed`, or `task-abandoned-unattended` (§5 — the one kind that means
@@ -139,12 +139,10 @@ implementation, the floor, the falsifier, the security adversary,
 `claims-check`, `conformance`, `contract-touch`) runs completely unchanged:
 
 - **Plan approval** — already skipped by `auto` autonomy; nothing new here.
-- **Class 2 second approver** (`task/SKILL.md` §3) — self-approve via the
-  *existing* override path already defined there, never a new mechanism:
-  `work/<task-id>/approval.json` with `"override": true,
-  "override_reason": "autopilot: unattended run, no second approver
-  available"`. Log a `second-approver-override` entry pointing at
-  `approval.json`.
+- **Class 2 plan approval** (`task/SKILL.md` §3) — Class 2 is forced
+  `guided`, so this stop still exists; approve it yourself: write
+  `work/<task-id>/approval.json` as usual with `"autonomy": "autopilot"` set.
+  Log a `class-2-plan-self-approved` entry pointing at `approval.json`.
 - **`claims-check` block** (`task/SKILL.md` §3) — take the "override"
   resolution `claims-check`'s own output already names as one of its three
   paths; append the `deviations.md` record that resolution already requires

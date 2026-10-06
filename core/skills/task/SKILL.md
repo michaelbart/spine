@@ -442,8 +442,8 @@ Ask the class with `AskUserQuestion`, in this form (per
 `core/templates/human-touchpoint.md`) when you're confident; when you're torn
 between classes, use the full block `/intake` uses for that case (its "Torn or
 low confidence" form). Name the class in plain words ("a small edit, no
-ceremony" / "a standard change" / "a high-risk change: a second person
-approves the plan"), not by number, unless glossed:
+ceremony" / "a standard change" / "a high-risk change: checked with you at
+every step"), not by number, unless glossed:
 
 <!-- touchpoint:start confirm -->
 > **Run this as a <trivial | standard | high-risk> change?** <One sentence: what it touches, and what happens automatically if that reading turns out wrong.>
@@ -722,7 +722,7 @@ clear (exit 0, warnings or not), proceed straight to presenting the plan.
 **If `work/<task-id>/autonomy` is `auto`, there is no plan-approval stop.**
 Write the plan exactly as above — it is still written, and `/ship` attaches it
 to the PR for review, trading pre-implementation plan review for PR-time review
-(the disclosed `auto` tradeoff — see `docs/tradeoffs.md`). Record `approval.json` as a self-approval with `"autonomy": "auto"` set,
+(the disclosed `auto` tradeoff — see `docs/tradeoffs.md`). Record `approval.json` with `"autonomy": "auto"` set,
 `registry-sync`, and proceed straight to §4. This can only happen at Class 1
 (the ceiling); if §3's protected-path check just auto-escalated this task to
 Class 2, `work/<task-id>/autonomy` was set to `guided` above, so this branch no
@@ -744,35 +744,15 @@ iteration. Present it with `AskUserQuestion`, in this form (per `core/templates/
 > **Safe to ignore:** the file lists and internal labels in `plan.md`; the summary above is the whole decision.
 <!-- touchpoint:end -->
 
-**Record the approval** (Extension C §2.6) — `work/<task-id>/approval.json`:
-`{"approver": "<git identity>", "at": "<iso8601>", "override": false,
-"override_reason": null}`. `registry-sync <task-id>`.
-
-- **Class 0/1**: the approver is whoever's session this is — resolve from
-  `git config user.name`/`user.email` in *this* session, same as `owner`.
-  Self-approval is expected and correct here; mandatory cross-review does
-  not extend to Class 1 — it would recreate the review-bottleneck theater
-  spine exists to escape.
-- **Class 2**: the approver must be a *different* git identity than
-  `work/<task-id>/owner`. This session cannot manufacture that identity —
-  it can only ever resolve its own `git config`. So: if this session's own
-  identity equals `owner`, **do not write `approver` as this session's own
-  identity and call it approved.** Tell the human in this form (per `core/templates/human-touchpoint.md`):
-
-  <!-- touchpoint:start short -->
-  > **What happened:** this is a Class 2 (the highest-risk kind of change: needs a second person's approval) task and you own it, so you can't approve your own plan.
-  > **What it means for you:** I've stopped before writing any code. Nothing is lost; I'll wait.
-  > **To continue:** ask a colleague to pull this project, read `work/<task-id>/plan.md`, and record their approval from their own session (it uses their own git identity, so it can't be typed on their behalf); then tell me. Working solo? You can instead record a self-approval with a stated reason; it is flagged loudly in the briefing.
-  <!-- touchpoint:end -->
-  Then stop — this
-  session waits (pull periodically, or the human says when it's done)
-  rather than proceeding to implement on an unapproved Class 2 plan.
-  **Override** (a genuine solo/vacation-coverage situation, same trust
-  model as `/ship --bypass`): the owner may self-approve by writing
-  `approval.json` with `"override": true` and a real
-  `"override_reason"` — loud, not silent; `/ship` (Phase C's own
-  extension) surfaces this in the briefing unconditionally, never treats it
-  as an ordinary approval.
+**Record the approval** — `work/<task-id>/approval.json`:
+`{"approver": "<git identity>", "at": "<iso8601>"}`. The approver is whoever's
+session this is, resolved from `git config user.name`/`user.email` in *this*
+session, same as `owner`. `registry-sync <task-id>`. This holds at every
+class: the person who owns the task approves its plan. Class 2 adds more
+checking (guided at every step, protected-path escalation, the adversaries),
+not a second approver. Mandatory cross-review would recreate the
+review-bottleneck theater spine exists to escape, and a name from `git config`
+can't prove who reviewed anything.
 
 ## 4. Implement
 
@@ -867,7 +847,7 @@ so this skill cannot call either via the Skill tool; only the human literally
 typing `/verify <task-id>` (or `/ship <task-id>`) gets through. Tell the human
 plainly: implementation is ready, please run `/verify <task-id>` yourself. Then
 stop and wait — this session does not proceed to ship on an unverified diff, the
-same waiting posture step 3 uses for a Class-2 second approver. When resumed,
+same waiting posture step 3 uses at plan approval. When resumed,
 **read `work/<task-id>/verify.md` directly** (its `Result:` line reads `PASS` or
 `FAIL` verbatim). If `FAIL`: fix it (back to implementation, same task) and ask
 the human to re-run `/verify`. If `PASS`: write `state` = `ship`, `registry-sync`,

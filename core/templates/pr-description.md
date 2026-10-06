@@ -146,10 +146,9 @@ actually true, how it was resolved. "Nothing — the plan held." if none.>
      summarizing line, never omitted when real. -->
 
 **Overrides & bypasses:** <Any `--bypass`, claims-check `--diff`
-`[UNDECLARED]` override, or second-approver self-approval override — each
-its own line, the recorded reason included. Source: notes.md +
-approval.json, same fields briefing.md's own "Overrides & bypasses"
-section reads.>
+`[UNDECLARED]` override — each
+its own line, the recorded reason included. Source: notes.md, same as
+briefing.md's own "Overrides & bypasses" section reads.>
 
 <!-- Omit "Milestone" entirely when this task isn't part of one. Present
      for exactly the same reason "Adversaries" is a floor rule above: a
