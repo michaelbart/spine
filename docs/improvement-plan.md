@@ -101,11 +101,11 @@ Small, independent, no data needed.
   what each of README / registry-sync header / tradeoffs / task skill says
   about it, with every copy of the story corrected. Then re-evaluate whether
   the worktree-isolation limit still exists as written.
-- [ ] **A4. Remove the dead "parallel work streams" knob.** `tradeoffs.md`
+- [x] **A4. Remove the dead "parallel work streams" knob.** (Done: the field does not exist anywhere in `core/`, installed projects or git history; the Deferred row was simply wrong and is deleted.) `tradeoffs.md`
   Deferred table says "Calibration has the field; it's hardcoded off". Find the
   field (grep found no match in `core/`, so it may live in generated
   calibration output or `~/.spine`), delete it and the Deferred row.
-- [ ] **A5. Stale-reference sweep.** After A1-A4, grep live docs and skills for
+- [x] **A5. Stale-reference sweep.** (Done 2026-10-08: no change needed; remaining matches are plain-English "ledger", the live `issue-ledger` script, and a historical selftest comment.) After A1-A4, grep live docs and skills for
   removed features (ledger, dashboard, costs, visualize, task-report,
   second-approver). Currently clean except intended mentions
   (`tradeoffs.md` second-approver history, `task/SKILL.md:755` rationale,

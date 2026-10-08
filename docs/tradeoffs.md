@@ -440,7 +440,6 @@ surprise:
 | Not built | Where it would attach |
 |---|---|
 | Parallel or team-of-agents orchestration | Every real flow — `/task`'s own phases, and `/wayfinder`'s ticket-by-ticket map — is strictly sequential: one active task, one active map, one session at a time. `/wayfinder` (below) narrows this row from where it used to stand — it adds *sequential* multi-session coordination through committed files (the same idiom `/task`'s milestone member-tasks already use, one level earlier), never parallelism. There is still no claim mechanism, no concurrent agents on one unit of work, and no cross-session locking beyond "one pointer file names the active one." |
-| Parallel work streams on one task | Calibration has the field; it's hardcoded off |
 | Cross-model adversary routing | Every agent inherits the session's model; nothing routes a different one in |
 | Scheduled cleanup of pre-existing duplication | Duplication checks only run against a task's own changed files, never sweep existing debt |
 | A product-spec layer | The charter deliberately stays at constraints, not a spec — a product spec itself stays optional and human-authored, never generated. `docs/vision.md` is the one exception, and only partly: it's still never invented outright, but `/wayfinder` (added since this row was first written) does write it, one confirmed line at a time, when the milestone shape was genuinely unknown rather than just unwritten — see `core/skills/wayfinder/SKILL.md` §4. |
