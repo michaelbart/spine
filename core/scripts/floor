@@ -6,7 +6,13 @@
 # a project's .spine/adapters/, per core/ADAPTER-CONTRACT.md. Never names a
 # language, framework, or tool.
 #
-# Usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>] [--full]
+# Usage: floor <class:0|1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>] [--full]
+#
+# Class 0 (a trivial change with no task folder) runs only the two changed-file
+# capabilities, typecheck and lint: a small-but-wrong edit (an inverted
+# condition is a type or lint error surprisingly often) should not ship on the
+# model's judgment alone, and these two are cheap. Everything else is skipped,
+# and a Class 0 run logs a `floor0` event with the result.
 #
 # Exit 0 iff every capability that ran passed. Fail-fast: stops at the first
 # failing capability and prints its full diagnostics. A capability marked
@@ -37,7 +43,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 usage() {
-  echo "usage: floor <class:1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>] [--full]" >&2
+  echo "usage: floor <class:0|1|2> [--project <path>] [--task <task-id>] [--out <json-path>] [--base <ref>] [--full]" >&2
   exit 2
 }
 
@@ -60,8 +66,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$class" != "1" && "$class" != "2" ]]; then
-  echo "floor: class must be 1 or 2 — Class 0 tasks run no floor" >&2
+if [[ "$class" != "0" && "$class" != "1" && "$class" != "2" ]]; then
+  echo "floor: class must be 0, 1 or 2" >&2
   exit 2
 fi
 
@@ -317,6 +323,26 @@ run_artifact() {
   return 0
 }
 
+finish_and_exit() {
+  if [[ -n "$out_path" ]]; then
+    jq -n --arg class "$class" --arg project "$project" --argjson results "$results" \
+      --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{class:($class|tonumber), project:$project, ran_at:$ts, results:$results}' >"$out_path"
+  fi
+  if [[ "$class" == "0" ]]; then
+    local r="PASS"
+    if [[ "${finish:-0}" -eq 1 ]]; then r="FAIL"
+    elif ! jq -e 'any(.[]; .status == "pass")' <<<"$results" >/dev/null 2>&1; then r="DEGRADED"; fi
+    "$(dirname "${BASH_SOURCE[0]}")/spine-event" --project "$project" floor0 result="$r"
+  fi
+  if [[ "${finish:-0}" -eq 1 ]]; then
+    echo "floor: FAIL"
+    exit 1
+  fi
+  echo "floor: PASS"
+  exit 0
+}
+
 echo "floor: class $class, project $project$([[ "$full_mode" -eq 1 ]] && echo " (--full: whole-tree lint/typecheck)")"
 
 # Layer 1 — deterministic floor, always for class >= 1. Fail-fast: stop at
@@ -325,6 +351,8 @@ echo "floor: class $class, project $project$([[ "$full_mode" -eq 1 ]] && echo " 
 for cap in typecheck lint; do
   run_scoped "$cap" || { finish=1; break; }
 done
+# Class 0 stops here: lint and types only.
+if [[ "$class" == "0" ]]; then finish_and_exit; fi
 if [[ "${finish:-0}" -ne 1 ]]; then
   run_simple test || finish=1
 fi
@@ -444,15 +472,4 @@ if [[ "${finish:-0}" -ne 1 ]]; then
   fi
 fi
 
-if [[ -n "$out_path" ]]; then
-  jq -n --arg class "$class" --arg project "$project" --argjson results "$results" \
-    --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    '{class:($class|tonumber), project:$project, ran_at:$ts, results:$results}' >"$out_path"
-fi
-
-if [[ "${finish:-0}" -eq 1 ]]; then
-  echo "floor: FAIL"
-  exit 1
-fi
-echo "floor: PASS"
-exit 0
+finish_and_exit

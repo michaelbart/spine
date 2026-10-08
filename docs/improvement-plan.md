@@ -426,7 +426,7 @@ measure.
 
 ### E1. Class 0 floor subset
 
-- [ ] Class 0 runs the changed-file lint/type layer (the narrow fix
+- [x] Class 0 runs the changed-file lint/type layer via `floor 0` (the narrow fix
   `tradeoffs.md` already names). `floor --class 0` runs only those layers;
   degrades with a visible line when the adapter lacks them; result recorded in
   the trace line. Selftest per outcome (pass, fail, degraded).

@@ -194,8 +194,8 @@ Once the class is confirmed:
 - **not-a-task** (from §2): you already handled it — answer or point outside
   the pipeline. Nothing else runs.
 - **Class 0 (traced-trivial)**: make the edit, then follow the traced-trivial
-  steps in `core/skills/task/SKILL.md` §1 directly — commit carrying a
-  `Spine-Ticket: <key>` trailer. No task folder, no phases.
+  steps in `core/skills/task/SKILL.md` §1 directly — run `floor 0`, then commit
+  carrying a `Spine-Ticket: <key>` trailer. No task folder, no phases.
 - **Class 1 / Class 2**: write the handoff so the task flow picks up your
   classification instead of re-doing it, then continue **as the task**:
 

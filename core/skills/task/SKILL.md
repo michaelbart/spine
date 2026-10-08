@@ -160,21 +160,12 @@ the resume offer: ask plainly whether to resume `<existing-task-id>` (phase
 folder stays on disk and `/task` can resume it later), and follow the human's
 answer; never silently pick one.
 
-**Step 0 — install health check.** Before classifying anything, run the
-cheap check that this project's enforcement layer is intact:
-
-```
-$(readlink -f "${CLAUDE_SKILL_DIR}")/../../scripts/setup --check --project <project root>
-```
-
-(`readlink -f` resolves the symlink so this works whether the skill is
-loaded from a direct checkout or a `.claude/skills/` symlink — `realpath`
-is an acceptable fallback.) No output: continue. A message about a missing or
-stale `.claude/hook-guard`: show it and continue, but say plainly that edits
-are not being gated until `setup` is re-run. Exit 1 (an invalid
-`.spine/profile.json`): stop, show the message, and do not touch any task state
-until it is fixed. If `setup` could not run at all, note it as a tooling gap
-and proceed; an unreachable check is not a passing one.
+**Step 0 — install health check.** Before classifying, run
+`$(readlink -f "${CLAUDE_SKILL_DIR}")/../../scripts/setup --check --project <project root>`
+(`realpath` if `readlink -f` is missing). No output: continue. A missing or stale
+`.claude/hook-guard`: show it, continue, and say edits are not gated until `setup`
+is re-run. Exit 1 (invalid `.spine/profile.json`): stop and show it. If `setup`
+could not run, note a tooling gap and proceed; an unreachable check is not a pass.
 
 Scripts referenced below live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
 Templates live at `${CLAUDE_SKILL_DIR}/../../templates/<name>`.
@@ -288,7 +279,8 @@ confirm an autonomy right after the class — see "Autonomy for a direct
   `class0_max_files`/`class0_max_lines` if set), introduces no new public
   symbol, and (check against `.spine/protected-paths.conf`) touches no
   protected path. No work folder, no phases — but not invisible: make the
-  edit, then commit it carrying a `Spine-Ticket: <key>` trailer if a ticket
+  edit, run the cheap check `${CLAUDE_SKILL_DIR}/../../scripts/floor 0 --project <project root>`
+  (types and lint on the changed files only; it logs its result), then commit it carrying a `Spine-Ticket: <key>` trailer if a ticket
   key is derivable from the branch name (split on `-`, match against
   `.spine/ticket-pattern.conf` if present). If no ticket is derivable
   (genuinely off-ticket), make the edit and skip the trailer; spine doesn't
@@ -296,7 +288,9 @@ confirm an autonomy right after the class — see "Autonomy for a direct
   convention. The backstop is `path-escalate`: with no active task it
   defaults to class 0, so if the edit turns out to touch a protected path,
   the hook halts it and you tell the human plainly: "this stopped being
-  trivial" — then restart as a real task.
+  trivial" — then restart as a real task. The same goes if `floor 0` fails and
+  the fix is no longer small. If it reports DEGRADED (no type or lint check is
+  set up here), proceed, but say so in one line.
 - **Class 1 (standard):** the default for anything bigger than that.
 - **Class 2 (high blast radius):** suggest when the human's description or
   your own quick read implies protected-path or schema/contract/auth

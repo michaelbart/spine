@@ -94,16 +94,13 @@ Conceded by design, not bugs waiting to be fixed:
   mandatory stub-out probe — the "partial backstop for the plan review
   auto skipped" — is checking a plan whose own acceptance checks were
   never reviewed by anyone. Two unbacked links stacked, not one.
-- **Class 0 has no adversarial backstop at all.** A change under the
-  trivial-change threshold (≈2 files, ≈15 lines, no protected path) gets
-  one commit and a trace line — no research, no plan, no verify, no
-  adversary. The only thing that can catch it is `path-escalate` noticing
-  a protected-path touch after the fact. A small-but-wrong logic change
-  (an inverted condition, an off-by-one) in an unprotected file ships on
-  the model's own unreviewed judgment alone. This is the price of Class 0
-  being cheap; if that price turns out too high in practice, the fix is a
-  narrow one (e.g. always run the floor's lint/type layer even when
-  everything else is skipped), not a redesign.
+- **Class 0 has no adversarial backstop, only a lint and type check.** A change
+  under the trivial-change threshold (≈2 files, ≈15 lines, no protected path)
+  gets one commit, a trace line and `floor 0` (types and lint on the changed
+  files; the result is logged as a `floor0` event). No research, plan, verify or
+  adversary. A small-but-wrong logic change that type-checks and lints (an
+  off-by-one) in an unprotected file still ships on the model's own judgment;
+  `path-escalate` catches a protected-path touch after the fact.
 - **Class 2 is permanently unreachable for a project with no smoke-testable
   runtime.** Unlike `ui-render`/`ui-conformance`/
   `ticket-fetch`/`open-pr`/`worktree-prep`, `smoke-seed`/`smoke-run`/`smoke-golden` have no

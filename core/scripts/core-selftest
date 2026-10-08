@@ -219,6 +219,50 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# floor: Class 0 runs typecheck + lint only, and logs a floor0 event
+# ---------------------------------------------------------------------------
+c0_fixture() { # <pass|fail|na> -> project path
+  local proj cap
+  proj="$(new_migrate_fixture not-applicable pass)"
+  if [[ "$1" != "na" ]]; then
+    for cap in typecheck lint; do
+      printf '#!/bin/bash\nset -euo pipefail\nroot="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n[[ "$(basename "$0")" == lint && -f "$root/lint-fail" ]] && { echo "selftest lint failure" >&2; exit 1; }\necho ok\n' >"$proj/.spine/adapters/$cap"
+      chmod +x "$proj/.spine/adapters/$cap"
+    done
+    printf '#!/bin/bash\ntouch "$(dirname "$0")/../test-ran"\n' >"$proj/.spine/adapters/test"; chmod +x "$proj/.spine/adapters/test"
+    jq '.typecheck={"status":"implemented"} | .lint={"status":"implemented"} | .test={"status":"implemented"}' "$proj/.spine/capabilities.json" >"$proj/caps.tmp" && mv "$proj/caps.tmp" "$proj/.spine/capabilities.json"
+  fi
+  [[ "$1" == "fail" ]] && touch "$proj/.spine/lint-fail"
+  echo "more" >>"$proj/src/app.js"
+  git -C "$proj" add -A
+  printf '%s' "$proj"
+}
+c0_proj="$(c0_fixture pass)"; c0_code=0
+( cd "$c0_proj" && "$FLOOR" 0 --out "$tmp_root/c0pass.json" >"$tmp_root/logs/c0pass.log" 2>&1 ) || c0_code=$?
+if [[ "$c0_code" == "0" && "$(result_status "$tmp_root/c0pass.json" typecheck)" == "pass" && "$(result_status "$tmp_root/c0pass.json" lint)" == "pass" \
+   && -z "$(result_status "$tmp_root/c0pass.json" test)" && ! -e "$c0_proj/.spine/test-ran" ]] \
+   && tail -1 "$c0_proj/.spine/events.jsonl" | jq -e '.event=="floor0" and .result=="PASS"' >/dev/null 2>&1; then
+  pass "floor: class 0 runs typecheck and lint only (test adapter untouched) and logs floor0 PASS"
+else
+  fail "floor: class 0 pass case wrong (exit=$c0_code): $(cat "$tmp_root/logs/c0pass.log" | head -5 | tr '\n' ' ')"
+fi
+c0_proj="$(c0_fixture fail)"; c0_code=0
+( cd "$c0_proj" && "$FLOOR" 0 --out "$tmp_root/c0fail.json" >"$tmp_root/logs/c0fail.log" 2>&1 ) || c0_code=$?
+if [[ "$c0_code" == "1" && "$(result_status "$tmp_root/c0fail.json" lint)" == "fail" ]] \
+   && tail -1 "$c0_proj/.spine/events.jsonl" | jq -e '.event=="floor0" and .result=="FAIL"' >/dev/null 2>&1; then
+  pass "floor: class 0 fails (exit 1) on a lint failure and logs floor0 FAIL"
+else
+  fail "floor: class 0 fail case wrong (exit=$c0_code): $(head -5 "$tmp_root/logs/c0fail.log" | tr '\n' ' ')"
+fi
+c0_proj="$(c0_fixture na)"; c0_code=0
+( cd "$c0_proj" && "$FLOOR" 0 >"$tmp_root/logs/c0na.log" 2>&1 ) || c0_code=$?
+if [[ "$c0_code" == "0" ]] && tail -1 "$c0_proj/.spine/events.jsonl" | jq -e '.event=="floor0" and .result=="DEGRADED"' >/dev/null 2>&1; then
+  pass "floor: class 0 with neither check available passes but logs floor0 DEGRADED, never a silent clean pass"
+else
+  fail "floor: class 0 degraded case wrong (exit=$c0_code): $(head -5 "$tmp_root/logs/c0na.log" | tr '\n' ' ')"
+fi
+
+# ---------------------------------------------------------------------------
 # floor: smoke_in_floor (.spine/profile.json) Class 1 opt-out
 # ---------------------------------------------------------------------------
 # Direct repro that motivated this coverage: with smoke implemented, cached
@@ -2582,7 +2626,7 @@ fi
 # budget: every cap fails when exceeded and passes when satisfied.
 printf 'l1\nl2\nl3\nl4\nl5\n' >>"$rl_root/core/skills/foo/SKILL.md"
 : >"$rl_root/core/scripts/s1"; : >"$rl_root/core/scripts/s2"
-printf '{"skill_lines":{"default":3},"user_commands":1,"scripts":1,"script_and_hook_lines":0}' >"$rl_root/core/budget.json"
+printf '{"skill_lines":{"default":3},"user_commands":1,"scripts":1,"script_and_hook_code_lines":0}' >"$rl_root/core/budget.json"
 rl_out="$("$REPO_LINT" --root "$rl_root" budget 2>&1)" || true
 if grep -q "core/skills/foo/SKILL.md is" <<<"$rl_out" && grep -q "user-invocable commands, cap is 1" <<<"$rl_out" \
    && grep -q "scripts in core/scripts, cap is 1" <<<"$rl_out"; then
@@ -2590,11 +2634,24 @@ if grep -q "core/skills/foo/SKILL.md is" <<<"$rl_out" && grep -q "user-invocable
 else
   fail "repo-lint: budget did not report all three caps: $rl_out"
 fi
-printf '{"skill_lines":{"default":3,"foo":50,"bar":50},"user_commands":5,"scripts":50,"script_and_hook_lines":100000}' >"$rl_root/core/budget.json"
+printf '{"skill_lines":{"default":3,"foo":50,"bar":50},"user_commands":5,"scripts":50,"script_and_hook_code_lines":100000}' >"$rl_root/core/budget.json"
 if "$REPO_LINT" --root "$rl_root" budget >/dev/null 2>&1; then
   pass "repo-lint: budget passes when every cap is satisfied, and a per-skill override beats the default"
 else
   fail "repo-lint: budget should pass within caps: $("$REPO_LINT" --root "$rl_root" budget 2>&1)"
+fi
+printf '# c1\n# c2\n\n# c3\ncode1\n  \n    # c4\ncode2\n' >"$rl_root/core/scripts/s1"
+printf '{"script_and_hook_code_lines":2}' >"$rl_root/core/budget.json"
+if "$REPO_LINT" --root "$rl_root" budget >/dev/null 2>&1; then
+  printf '{"script_and_hook_code_lines":1}' >"$rl_root/core/budget.json"
+  rl_out="$("$REPO_LINT" --root "$rl_root" budget 2>&1)" || true
+  if grep -q "2 code lines (no blanks or comments), cap is 1" <<<"$rl_out"; then
+    pass "repo-lint: the script/hook cap counts code lines only (comments and blanks are free)"
+  else
+    fail "repo-lint: code-line cap should fail at 1: $rl_out"
+  fi
+else
+  fail "repo-lint: 2 code lines among comments and blanks should satisfy a cap of 2"
 fi
 rm -f "$rl_root/core/budget.json" "$rl_root/core/scripts/s1" "$rl_root/core/scripts/s2"
 

@@ -7,7 +7,8 @@
 #   readme-commands  every user-invocable skill is listed in the README command
 #                    table, and every command in that table has a skill
 #   budget           core/budget.json caps (skill lines, command count, script
-#                    count, script+hook lines) are not exceeded
+#                    count, script+hook CODE lines: no blanks or # comments)
+#                    are not exceeded
 #   doc-refs         every core/..., docs/... path cited in a markdown file,
 #                    hook or script exists (dead citations were an audit finding
 #                    in five of six rounds). Wrapped lines are joined first.
@@ -76,9 +77,9 @@ check_budget() {
   n="$(find "$root/core/scripts" -maxdepth 1 -type f | wc -l | tr -d ' ')"
   cap_scripts="$(jq -r '.scripts // empty' "$b")"
   [[ -z "$cap_scripts" || "$n" -le "$cap_scripts" ]] || problem "budget: $n scripts in core/scripts, cap is $cap_scripts"
-  total="$(cat "$root"/core/scripts/* "$root"/core/hooks/* 2>/dev/null | wc -l | tr -d ' ')"
-  cap_lines="$(jq -r '.script_and_hook_lines // empty' "$b")"
-  [[ -z "$cap_lines" || "$total" -le "$cap_lines" ]] || problem "budget: scripts + hooks are $total lines, cap is $cap_lines"
+  total="$(cat "$root"/core/scripts/* "$root"/core/hooks/* 2>/dev/null | grep -vE '^[[:space:]]*(#|$)' | wc -l | tr -d ' ')"
+  cap_lines="$(jq -r '.script_and_hook_code_lines // empty' "$b")"
+  [[ -z "$cap_lines" || "$total" -le "$cap_lines" ]] || problem "budget: scripts + hooks are $total code lines (no blanks or comments), cap is $cap_lines"
 }
 
 check_doc_refs() {

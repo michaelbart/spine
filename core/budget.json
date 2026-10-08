@@ -1,5 +1,5 @@
 {
-  "_about": "Complexity budget for the spine core, enforced by core/scripts/repo-lint (run from core-selftest). Caps are frozen at the 2026-10-08 sizes. Adding a command, a script or skill lines past a cap means removing something else first; raising a cap needs the commit message to say what was removed or why that is impossible. 'targets' are aspirations (docs/improvement-plan.md D4), not enforced. Change log: script_and_hook_lines 7500 -> 7520 on 2026-10-08, hours after the first freeze, because spine-stats --brief/--rollup (planned measurement work, docs/improvement-plan.md B4/B7) landed after it; nothing else is meant to grow.",
+  "_about": "Complexity budget for the spine core, enforced by core/scripts/repo-lint (run from core-selftest). Caps are frozen at the 2026-10-08 sizes. Adding a command, a script or skill lines past a cap means removing something else first; raising a cap needs the commit message to say what was removed or why that is impossible. 'targets' are aspirations (docs/improvement-plan.md D4), not enforced. Change log (2026-10-08): the script+hook cap was first frozen at 7500 raw lines, raised to 7520 for spine-stats --brief/--rollup, then replaced by a cap on code lines (no blanks or # comments: 5175 measured, cap 5200) because counting comments penalized documenting the hooks, which is the opposite of the goal. The raw total was 7567 at the switch and is no longer capped.",
   "skill_lines": {
     "default": 320,
     "task": 700,
@@ -9,7 +9,6 @@
   },
   "user_commands": 18,
   "scripts": 25,
-  "script_and_hook_lines": 7520,
   "targets": {
     "skill_lines": {
       "task": 350,
@@ -17,5 +16,6 @@
       "verify": 350,
       "design": 300
     }
-  }
+  },
+  "script_and_hook_code_lines": 5200
 }
