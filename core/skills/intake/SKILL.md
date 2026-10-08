@@ -127,12 +127,11 @@ question.
 (`core/skills/task/SKILL.md`'s autonomy dial, orthogonal to class). Read it off
 the same signal: a small, low-complexity Class 1 with crisp scope → `auto` (spine
 runs research→plan→implement→verify→ship and hands back a draft PR, no scheduled
-stops); a substantial Class 1 → `checkpointed` (approve the plan, then one finish
-action); a Class 1 near the Class 2 boundary, or anything you're less sure of →
-`guided` (stop at each phase). Class 2 is always `guided` (the ceiling); Class 0
+stops); a substantial Class 1, a Class 1 near the Class 2 boundary, or anything
+you're less sure of → `guided` (stop at each phase). Class 2 is always `guided` (the ceiling); Class 0
 is `traced`. **Cap the proposal at `.spine/profile.json`'s `autonomy_ceiling`**
-if set (a `regulated` team caps at `checkpointed`, so `auto` is never offered
-there); absent = no team cap beyond the class rule. Like the class, this is a
+if set (`guided|auto`; a legacy `checkpointed` is read as `guided`; a
+`regulated` team caps at `guided`, so `auto` is never offered there); absent = no team cap beyond the class rule. Like the class, this is a
 proposal the menu can dial up or down — but never above the ceiling.
 
 ## 6. The confidence-weighted menu
@@ -142,7 +141,7 @@ its own ceremony:
 
 The menu covers the class *and* — for Class 1 — the autonomy: the recommended
 option is a `(class, autonomy)` flow, and its alternatives include dialing
-autonomy down (more stops, e.g. `auto`→`checkpointed`→`guided`) as well as class
+autonomy down (more stops, e.g. `auto`→`guided`) as well as class
 escalation and scope-first.
 
 - **Confident**: state the recommendation and ask for a near-one-tap confirm
@@ -201,7 +200,7 @@ Once the class is confirmed:
 
   ```
   # .spine/current-intake  (consumed and deleted by core/skills/task/SKILL.md §1)
-  {"ticket":"<key|null>", "class":<0|1|2>, "autonomy":"<auto|checkpointed|guided>",
+  {"ticket":"<key|null>", "class":<0|1|2>, "autonomy":"<auto|guided>",
    "type":"<feature|fix>", "description":"<the clarified brief>",
    "class_below_recommended":<true|false>,
    "recommended_class":<0|1|2>, "at":"<iso8601>"}

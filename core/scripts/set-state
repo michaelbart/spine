@@ -3,7 +3,22 @@
 # `phase` event (from/to) to .spine/events.jsonl, so every transition is
 # recorded the same way instead of by each skill remembering to.
 #
-# Usage: set-state [--project <path>] <task-id> <research|plan|implement|verify|ship|done>
+# Usage: set-state [--project <path>] [--bypass] <task-id> <research|plan|implement|verify|ship|done>
+#        set-state [--project <path>] <task-id> abandoned "<reason>"
+#
+# It refuses three moves that skip a gate, so they cannot happen by forgetting:
+#   implement   needs work/<task-id>/approval.json (the plan was approved)
+#   ship, done  need verify.md to record `Result: PASS`
+#   done        also needs zero `- Status: open` lines in deviations.md
+# `--bypass` skips these checks (for `/ship --bypass`, which logs the bypass).
+# The model still writes the files these read, so this stops accidents, not a
+# determined bypass; see docs/enforcement-map.md.
+#
+# `abandoned` is the other terminal state, for a task the engineer decided not to
+# finish. It needs a reason, which is saved in work/<task-id>/abandoned and logged
+# in the event; it clears .spine/current-task if that names this task. If the task
+# was a milestone's member, next-milestone-task then reports DISPOSITION until the
+# milestone entry is replaced or dropped.
 #
 # Exit 0 on success, silent. Exit 1 (with a message) on a bad phase or a task
 # folder that does not exist — unlike spine-event this is a state writer, so it
@@ -12,20 +27,44 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 project="$(pwd)"
+bypass=0
 if [[ "${1:-}" == "--project" ]]; then project="${2:?--project needs a path}"; shift 2; fi
-task="${1:-}"; phase="${2:-}"
-[[ -n "$task" && -n "$phase" ]] || { echo "usage: set-state [--project <path>] <task-id> <phase>" >&2; exit 1; }
+if [[ "${1:-}" == "--bypass" ]]; then bypass=1; shift; fi
+task="${1:-}"; phase="${2:-}"; reason="${3:-}"
+[[ -n "$task" && -n "$phase" ]] || { echo "usage: set-state [--project <path>] <task-id> <phase> [reason]" >&2; exit 1; }
 case "$phase" in
   research|plan|implement|verify|ship|done) ;;
-  *) echo "set-state: '$phase' is not a phase (research|plan|implement|verify|ship|done)" >&2; exit 1 ;;
+  abandoned) [[ -n "$reason" ]] || { echo "set-state: abandoning a task needs a reason" >&2; exit 1; } ;;
+  *) echo "set-state: '$phase' is not a phase (research|plan|implement|verify|ship|done|abandoned)" >&2; exit 1 ;;
 esac
 dir="$project/work/$task"
 [[ -d "$dir" ]] || { echo "set-state: no task folder at $dir" >&2; exit 1; }
+
+if [[ "$bypass" -eq 0 ]]; then
+  refuse() { echo "set-state: cannot move $task to $phase: $1" >&2; exit 1; }
+  case "$phase" in
+    implement) [[ -s "$dir/approval.json" ]] || refuse "the plan has no approval.json yet" ;;
+    ship|done) grep -qE 'Result:[[:space:]`*]*PASS' "$dir/verify.md" 2>/dev/null || refuse "verify.md does not record Result: PASS" ;;
+  esac
+  if [[ "$phase" == "done" ]]; then
+    open_n="$(grep -c '^- Status: open' "$dir/deviations.md" 2>/dev/null || true)"
+    [[ "${open_n:-0}" -eq 0 ]] || refuse "$open_n deviation(s) in deviations.md are still open"
+  fi
+fi
 
 old=""
 [[ -f "$dir/state" ]] && old="$(tr -d '[:space:]' <"$dir/state")"
 printf '%s\n' "$phase" >"$dir/state" || { echo "set-state: could not write $dir/state" >&2; exit 1; }
 
+if [[ "$phase" == "abandoned" ]]; then
+  printf '%s\n%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$reason" >"$dir/abandoned"
+  cur="$project/.spine/current-task"
+  [[ ! -f "$cur" || "$(tr -d '[:space:]' <"$cur")" != "$task" ]] || rm -f "$cur"
+fi
+
 source "$SCRIPT_DIR/../hooks/_spine-event" 2>/dev/null || exit 0
+if [[ "$phase" == "abandoned" ]]; then
+  SPINE_TASK="$task" spine_event "$project" abandoned from="${old:-none}" reason="$reason"
+fi
 SPINE_TASK="$task" spine_event "$project" phase from="${old:-none}" to="$phase"
 exit 0

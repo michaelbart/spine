@@ -6,6 +6,8 @@
 #                    core/ left four committed links dangling for weeks)
 #   readme-commands  every user-invocable skill is listed in the README command
 #                    table, and every command in that table has a skill
+#   references       every core/skills/<s>/reference/*.md is pointed to from that
+#                    skill's SKILL.md, and every reference/<name>.md it names exists
 #   budget           core/budget.json caps (skill lines, command count, script
 #                    count, script+hook CODE lines: no blanks or # comments)
 #                    are not exceeded
@@ -13,7 +15,7 @@
 #                    hook or script exists (dead citations were an audit finding
 #                    in five of six rounds). Wrapped lines are joined first.
 #
-# Usage: repo-lint [--root <spine-root>] [symlinks|readme-commands|budget|doc-refs ...]
+# Usage: repo-lint [--root <spine-root>] [symlinks|readme-commands|references|budget|doc-refs ...]
 #        (no check names = run all)
 # Exit 0 clean, 1 if any check reports a problem. Read-only.
 set -uo pipefail
@@ -22,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [[ "${1:-}" == "--root" ]]; then root="$(cd "${2:?--root needs a path}" && pwd)"; shift 2; fi
 checks=("$@")
-[[ ${#checks[@]} -gt 0 ]] || checks=(symlinks readme-commands budget doc-refs)
+[[ ${#checks[@]} -gt 0 ]] || checks=(symlinks readme-commands references budget doc-refs)
 
 problems=0
 problem() { echo "FAIL: $*"; problems=$((problems + 1)); }
@@ -60,6 +62,22 @@ check_readme_commands() {
   done <<<"$documented"
 }
 
+check_references() {
+  local d f name cited
+  for d in "$root"/core/skills/*/; do
+    [[ -f "$d/SKILL.md" ]] || continue
+    if [[ -d "$d/reference" ]]; then
+      for f in "$d"/reference/*.md; do
+        [[ -f "$f" ]] || continue
+        grep -q "reference/$(basename "$f")" "$d/SKILL.md" || problem "$(basename "$d"): reference/$(basename "$f") is never pointed to from its SKILL.md"
+      done
+    fi
+    while IFS= read -r cited; do
+      [[ -f "$d/reference/$cited" ]] || problem "$(basename "$d")/SKILL.md points to reference/$cited, which does not exist"
+    done < <(grep -oE 'reference/[A-Za-z0-9_.-]+\.md' "$d/SKILL.md" | sed 's#reference/##' | sort -u)
+  done
+}
+
 check_budget() {
   local b="$root/core/budget.json" f name lines cap n=0 total=0 cap_cmds cap_scripts cap_lines
   [[ -f "$b" ]] || return 0
@@ -77,9 +95,9 @@ check_budget() {
   n="$(find "$root/core/scripts" -maxdepth 1 -type f | wc -l | tr -d ' ')"
   cap_scripts="$(jq -r '.scripts // empty' "$b")"
   [[ -z "$cap_scripts" || "$n" -le "$cap_scripts" ]] || problem "budget: $n scripts in core/scripts, cap is $cap_scripts"
-  total="$(cat "$root"/core/scripts/* "$root"/core/hooks/* 2>/dev/null | grep -vE '^[[:space:]]*(#|$)' | wc -l | tr -d ' ')"
+  total="$(for f in "$root"/core/scripts/* "$root"/core/hooks/*; do [[ "$(basename "$f")" == core-selftest ]] || cat "$f"; done 2>/dev/null | grep -vE '^[[:space:]]*(#|$)' | wc -l | tr -d ' ')"
   cap_lines="$(jq -r '.script_and_hook_code_lines // empty' "$b")"
-  [[ -z "$cap_lines" || "$total" -le "$cap_lines" ]] || problem "budget: scripts + hooks are $total code lines (no blanks or comments), cap is $cap_lines"
+  [[ -z "$cap_lines" || "$total" -le "$cap_lines" ]] || problem "budget: scripts + hooks are $total code lines (no blanks, comments or core-selftest), cap is $cap_lines"
 }
 
 check_doc_refs() {
@@ -111,6 +129,7 @@ for c in "${checks[@]}"; do
   case "$c" in
     symlinks) check_symlinks ;;
     readme-commands) check_readme_commands ;;
+    references) check_references ;;
     budget) check_budget ;;
     doc-refs) check_doc_refs ;;
     *) echo "repo-lint: unknown check '$c'" >&2; exit 2 ;;

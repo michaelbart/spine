@@ -105,7 +105,7 @@ loop:
 ## 4. Running one task, inline, with every stop overridden
 
 Follow `core/skills/task/SKILL.md` step by step, in this session, exactly
-the way that skill's own §5 already directs `checkpointed`/`auto` autonomy
+the way that skill's own §5 already directs `auto` autonomy
 to follow `/verify`/`/ship` inline rather than through the Skill tool — same
 technique, applied here to the whole of `/task`'s own procedure, not just
 its tail end. **Nothing this run does leaves the machine.** Every
@@ -182,9 +182,9 @@ implementation, the floor, the falsifier, the security adversary,
 On a task's second circuit-breaker reset within this run (six total
 deviations on one task, §4), stop retrying that task: leave `state` exactly
 where it currently is — never force it to `done`, never fabricate a ship
-(spine has no `abandoned` terminal state today, `docs/tradeoffs.md`
-"Deferred (not built)"; inventing one unattended would be a bigger,
-undisclosed decision, not a small one). Log a `task-abandoned-unattended`
+(`abandoned` exists, but applying it is the human's decision about the plan:
+it makes the milestone entry need a replace-or-drop choice, so an unattended
+run does not apply it). Log a `task-abandoned-unattended`
 entry — this kind is surfaced first and loudest in the end-of-run report,
 never buried among ordinary overrides, because it's a real failure this
 run couldn't resolve, not a confident decision. Continue the loop with

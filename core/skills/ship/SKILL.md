@@ -67,7 +67,7 @@ recorded during `/verify` is exactly as "this task's own approved work"
 as (a)/(b), and forcing every such fix through
 `deviations.md` too would make the circuit breaker fire on legitimate,
 already-adversarially-verified work with nothing left to stash (disclosed
-fix — see docs/tradeoffs.md); or (d) it is `work/<id>/milestone.md` for the
+fix); or (d) it is `work/<id>/milestone.md` for the
 milestone this task itself belongs to (`work/<task-id>/milestone` names
 `<id>`), and every changed line `git diff <sha> -- work/<id>/milestone.md`
 shows traces to this task's own mandated bookkeeping in that shared file —
@@ -296,7 +296,7 @@ implementation, then re-run `/verify`), *carry* into `milestone.md` Known
 gaps (same `gap-<n>` mechanics as below), or *decline* with a stated reason
 recorded in `notes.md`. The visual-fidelity check is the only place a
 screen that looks wrong gets noticed; a finding nobody answered is exactly
-the miss it exists to prevent. `checkpointed`/`auto` tasks stop here too —
+the miss it exists to prevent. `auto` tasks stop here too —
 this is a deliberate exception to their no-scheduled-stop rule. Ask it with
 `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
@@ -331,7 +331,7 @@ this is a deliberate exception to their no-scheduled-stop rule. Ask it with
   > 2. **Carry none** — next: I move on; cost: nothing is recorded, so the next task won't know; undo: yes, until this ship finishes
   > **Safe to ignore:** the ones you don't pick; they stay in `verify.md`.
   <!-- touchpoint:end -->
-- **`checkpointed` / `auto`** — no scheduled stop exists here, so don't
+- **`auto`** — no scheduled stop exists here, so don't
   manufacture one. Draft the candidate entries (same shape the "apply the
   human's picks" step below produces for `guided`) into a new "Proposed
   milestone gap entries — undecided" section of the briefing (§4) and the
@@ -476,7 +476,7 @@ quotes, it doesn't re-derive:
   §3a's result folds in here too: which findings (if any) were carried
   into `milestone.md`'s Known gaps, with their new `gap-<n>` ids
   (`guided`), or the drafted "Proposed milestone gap entries — undecided"
-  list awaiting the human's PR-time triage (`checkpointed`/`auto`) — never
+  list awaiting the human's PR-time triage (`auto`) — never
   omitted just because §3a found nothing to carry; "zero flagged findings"
   and "N findings, none carried" are different facts and this line says
   which one happened.
@@ -567,16 +567,15 @@ alongside (or instead of, if this was never a real task-folder task)
 **Pushing and opening the PR is autonomy-aware, gated by the profile**
 (read `work/<task-id>/autonomy`, `core/skills/task/SKILL.md`, absent = `guided`;
 and `.spine/profile.json`'s `pr_open`, `core/ADAPTER-CONTRACT.md` §7, absent =
-`auto-checkpointed`). `pr_open` decides which autonomies get a draft PR opened
-here: `auto-checkpointed` (default) → `auto` and `checkpointed`; `all` → those
-plus `guided`; `auto-only` → only `auto`; `never` → none (every PR is the
-human's to open). For an autonomy `pr_open` does *not* cover, use the `guided`
+`auto-only`). `pr_open` decides which autonomies get a draft PR opened
+here: `auto-only` (default) → `auto`; `all` → `auto` plus `guided`; `never` → none (every PR is the
+human's to open); the legacy value `auto-checkpointed` is still accepted and means `auto-only`. For an autonomy `pr_open` does *not* cover, use the `guided`
 behavior below regardless of the task's own autonomy:
 
 - **`guided`** — do not push. Committing locally is this skill's job; pushing or
   opening a PR is the human's call, made after reading the briefing. This is the
   unchanged pre-Phase-4 behavior.
-- **`auto` / `checkpointed`** — open a **draft** PR now via the `open-pr`
+- **`auto`** — open a **draft** PR now via the `open-pr`
   capability (`core/ADAPTER-CONTRACT.md` §3.5), body =
   `work/<task-id>/pr-description.md` (§4a), head = the current branch, so the
   human's one remaining touchpoint is reviewing/merging it:
@@ -615,13 +614,14 @@ survive Claude Code pruning old transcripts; it prints nothing if it cannot run.
 that file is removed below).
 
 Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> done` (the commit from §5 must have
-actually landed before this write). Remove `.spine/current-task`
+actually landed before this write; it refuses without a passing `verify.md` and zero open
+deviations, so under `--bypass` run it as `set-state --bypass <task-id> done`). Remove `.spine/current-task`
 (the task is no longer active — a subsequent trivial edit should default
 back to Class 0, not stay phase-gated against a finished task).
 
 Tell the human where the briefing is. For a `guided` task,
 also point at `pr-description.md` (§4a) — pushing and opening the PR is their
-call, made after reading both. For an `auto`/`checkpointed` task the draft PR
+call, made after reading both. For an `auto` task the draft PR
 is already open (§5a) — give them its URL, so the one remaining touchpoint is
 reviewing and merging it. That read is the third recurring touchpoint,
 and it happens now, once, not as a gate this skill enforced on itself.

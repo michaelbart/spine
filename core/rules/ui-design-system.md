@@ -37,8 +37,8 @@ design system nobody's actually building against.
 **Use what's declared, don't invent alongside it.** A raw hex color, an
 inline magic-number spacing value, or a new one-off component where an
 existing library component already covers the case, is exactly the kind of
-small, compounding drift `docs/tradeoffs.md`'s duplication concerns already
-describe, applied to the visual layer instead of the code layer. Reach for
+small, compounding drift the floor's duplication check exists to catch in code,
+applied to the visual layer instead. Reach for
 `docs/ui/tokens.json` and `docs/ui/components.md` first, every
 time.
 

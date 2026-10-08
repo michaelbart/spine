@@ -34,8 +34,7 @@ sources, each read the same way every time:
    ratchet trigger**: the first time this heuristic demonstrably misses a
    real file a deviation cites, the fix is a structured `- Files:` line
    added to `core/templates/deviations.md` itself, not a smarter regex
-   here (see `docs/tradeoffs.md`'s PR-description-patch self-red-team for
-   the armed trigger and the count-to-two rule). Do not paper over a
+   here. Do not paper over a
    second real miss with a bigger heuristic; that's what the ratchet is
    for.
 2. Every `file_line`-evidence finding in a **kept** adversary verdict
@@ -145,7 +144,7 @@ briefing.md's own "Overrides & bypasses" section reads.>
 
 <!-- Omit "Milestone" entirely when this task isn't part of one. Present
      for exactly the same reason "Adversaries" is a floor rule above: a
-     `checkpointed`/`auto` task's human touchpoint is this PR, not
+     `auto` task's human touchpoint is this PR, not
      briefing.md, so a flagged finding drafted for milestone.md but not
      yet applied (/ship §3a) must be visible here too, not only in a file
      that autonomy's reviewer may never open. -->
@@ -156,7 +155,7 @@ way. This task's own flagged-finding triage result (/ship §3a): which
 findings (if any) were carried into `milestone.md`'s Known gaps, with
 their new `gap-<n>` ids (`guided`), or the drafted "Proposed milestone gap
 entries — undecided" list awaiting this PR's own reviewer to triage
-(`checkpointed`/`auto`) — never omitted just because §3a found nothing to
+(`auto`) — never omitted just because §3a found nothing to
 carry. Also this task's own known-gap resolution result (/ship §3c):
 which `gap-<n>` entries (if any) this task's own plan cited and closed out
 of `milestone.md`, "none cited" otherwise. Source: same fields

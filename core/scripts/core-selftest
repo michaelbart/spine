@@ -947,6 +947,69 @@ hook_check "path-escalate allows a Bash mv whose destination filename merely con
   "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"mv '"$hook_real"'/src/other/a.txt '"$hook_real"'/src/other/some-rm-thing.txt"}}')" allow
 
 # ---------------------------------------------------------------------------
+# _bash-write-targets: what counts as a write target (table-driven). "U" = must be
+# UNRESOLVED (blocked); "" = nothing; otherwise the exact PATH: lines joined by "|".
+# Every "U" or PATH case below is a way to write a protected file that must stay
+# caught; the "" cases are the false positives that used to stop real work.
+# ---------------------------------------------------------------------------
+bwt_fail=0
+bwt_case() { # <expected> <command>
+  local got
+  got="$( source "$SCRIPT_DIR/../hooks/_bash-write-targets"; bash_write_targets "$2" | tr '\n' '|' )"; got="${got%|}"
+  if [[ "$1" == "U" ]]; then [[ "$got" == UNRESOLVED:* ]] && return 0
+  else [[ "$got" == "$1" ]] && return 0; fi
+  echo "  bwt mismatch: want [$1] got [$got] for: $2" >&2; bwt_fail=1
+}
+# still caught
+bwt_case 'U'  "bash -c 'echo x > src/auth/f'"
+bwt_case 'U'  'echo "$(echo hi > src/auth/f)"'
+bwt_case 'U'  'echo `echo hi > src/auth/f`'
+bwt_case 'U'  "xargs -I{} sh -c 'echo > {}' < list"
+bwt_case 'U'  "awk '{print > \"src/auth/f\"}' x"
+bwt_case 'PATH:src/auth/f' $'cat <<\'EOF\' | bash\necho x > src/auth/f\nEOF'
+bwt_case 'PATH:f|PATH:src/auth/g' $'cat <<EOF > f\n x > src/auth/g'
+bwt_case 'PATH:src/auth/f' "echo 'unterminated > src/auth/f"
+bwt_case 'PATH:src/auth/f' "echo 'a > b' > src/auth/f"
+bwt_case 'PATH:src/auth/f' "sed -i 's/a>b/c/' src/auth/f"
+bwt_case 'PATH:src/auth/f' "sed -Ei s/a/b/ src/auth/f"
+bwt_case 'PATH:src/auth/f' "sed --in-place s/a/b/ src/auth/f"
+bwt_case 'PATH:src/auth/f' "perl -pi -e 's/a/b/' src/auth/f"
+bwt_case 'PATH:src/auth/f.ts' $'sed -i \'\' \\\n -e \'s/a/b/\' \\\n src/auth/f.ts'
+bwt_case 'PATH:src/auth/f' $'cp a \\\n src/auth/f'
+bwt_case 'PATH:src/auth/f' "ls | tee src/auth/f"
+bwt_case 'PATH:src/auth/f' "git checkout -- src/auth/f"
+bwt_case 'U'  'echo hi > "src/auth/f"'
+bwt_case 'U'  'echo x > $T/f'
+# a cd is followed only in the one exact case; everything else stays unresolved
+bwt_case 'PATH:src/auth/f' "cd src && echo x > auth/f"
+bwt_case 'PATH:src/auth/f' "cd src/auth && git checkout -- f"
+bwt_case 'PATH:f|PATH:src/auth/g' "echo a > f && cd src/auth && echo b > g"
+bwt_case 'PATH:/abs/dir/f' "cd /abs/dir && echo x > f"
+bwt_case 'U'  "cd src ; echo x > auth/f"
+bwt_case 'U'  "cd missing || echo x > auth/f"
+bwt_case 'U'  "if true; then cd src; echo x > auth/f; fi"
+bwt_case 'U'  "(cd src && echo x > auth/f)"
+bwt_case 'U'  "{ cd src && echo x > auth/f; }"
+bwt_case 'U'  'cd $D && echo x > f'
+bwt_case 'U'  "cd - && echo x > f"
+bwt_case 'U'  "pushd src; echo x > auth/f"
+bwt_case 'U'  "builtin cd src && echo x > auth/f"
+bwt_case 'U'  "cd src & echo x > auth/f"
+bwt_case 'U'  $'cd src/auth\necho x > f'
+bwt_case 'U'  "cd src/auth | cat && echo x > f"
+# data, not writes: these used to stop real work
+bwt_case ''   'grep -E "a>b" file'
+bwt_case ''   'echo "x => y"'
+bwt_case ''   'grep -rn "cp foo" src'
+bwt_case ''   "sed -n 's/a/b/p' work/20260930-invoices-x/plan.md"
+bwt_case ''   "sed -n '/next-gap-id/,/^\$/p' work/M3/milestone.md"
+bwt_case ''   'git commit -q -m "task: implement -> verify"'
+bwt_case 'PATH:a' $'cat > a <<EOF\n> quoted markdown\nEOF'
+bwt_case 'PATH:src/auth/f' $'cat > src/auth/f <<\'EOF\'\nhello\nEOF'
+[[ "$bwt_fail" == 0 ]] && pass "_bash-write-targets: table cases hold (still-caught writes, cd handling, data-not-writes)" \
+  || fail "_bash-write-targets: some table cases mismatched (see lines above)"
+
+# ---------------------------------------------------------------------------
 # fuzz: property-based coverage for _path-route's path functions
 # ---------------------------------------------------------------------------
 # Round 5. Four rounds of hand-picked adversarial scenarios found six
@@ -1872,6 +1935,23 @@ else
   fail "next-milestone-task: nonexistent --milestone -> expected exit 2, got $nmt_code"
 fi
 
+# An abandoned member task forces a disposition decision before anything else.
+proj="$(mktemp -d "$tmp_root/nmtproj.XXXXXX")"
+nmt_task "$proj" T1 done; nmt_task "$proj" T2 abandoned
+nmt_ms "$proj" M0 "1. \`T1\` — first" "2. \`T2\` — second" "3. \`TBD\` — third"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj")"
+if [[ "$out" == "DISPOSITION M0 T2" ]]; then
+  pass "next-milestone-task: an abandoned member task -> DISPOSITION, ahead of the queued TBD"
+else
+  fail "next-milestone-task: expected 'DISPOSITION M0 T2', got: $out"
+fi
+nmt_ms "$proj" M0 "1. \`T1\` — first" "2. \`TBD\` — second" "3. \`TBD\` — third"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj")"
+[[ "$out" == "TBD M0 second" ]] && pass "next-milestone-task: replacing the abandoned entry with TBD re-queues it" || fail "next-milestone-task: replace -> expected 'TBD M0 second', got: $out"
+nmt_ms "$proj" M0 "1. \`T1\` — first" "2. \`TBD\` — third"
+out="$("$NEXT_MILESTONE_TASK" --project "$proj")"
+[[ "$out" == "TBD M0 third" ]] && pass "next-milestone-task: dropping the abandoned entry moves on to the next one" || fail "next-milestone-task: drop -> expected 'TBD M0 third', got: $out"
+
 # ---------------------------------------------------------------------------
 # design-gate: the four /design stopping-rule checks
 # ---------------------------------------------------------------------------
@@ -2458,7 +2538,7 @@ else
 fi
 
 # An unplaceable Bash write: rule + why code + command words, never the command.
-printf '{"tool_name":"Bash","tool_input":{"command":"cd sub && echo SECRETVALUE9 > out-file-name.txt"}}' \
+printf '{"tool_name":"Bash","tool_input":{"command":"cd sub ; echo SECRETVALUE9 > out-file-name.txt"}}' \
   | CLAUDE_PROJECT_DIR="$ev_proj" "$SCRIPT_DIR/../hooks/path-escalate" >/dev/null 2>&1 || true
 ev_line="$(tail -1 "$ev_proj/.spine/events.jsonl")"
 if jq -e '.event=="hook-block" and .rule=="unresolved-bash-target" and .why=="relative-after-cd" and .cmds=="cd,echo" and (.cmd_sha|test("^[0-9a-f]{10}$"))' <<<"$ev_line" >/dev/null 2>&1; then
@@ -2541,6 +2621,7 @@ if "$SET_STATE" --project "$ss" T1 plan && [[ "$(cat "$ss/work/T1/state")" == "p
 else
   fail "set-state: wrong result: state=$(cat "$ss/work/T1/state") event=$(tail -1 "$ss/.spine/events.jsonl" 2>/dev/null)"
 fi
+echo '{"approver":"t"}' >"$ss/work/T2/approval.json"
 "$SET_STATE" --project "$ss" T2 implement
 if tail -1 "$ss/.spine/events.jsonl" | jq -e '.from=="none" and .to=="implement"' >/dev/null 2>&1; then
   pass "set-state: a task with no state file yet logs from=none"
@@ -2553,6 +2634,47 @@ if ! "$SET_STATE" --project "$ss" T1 shipping 2>/dev/null && [[ "$(cat "$ss/work
   pass "set-state: a bad phase or a missing task exits 1 and changes nothing"
 else
   fail "set-state: bad input should exit 1 and leave state and events untouched"
+fi
+
+# set-state gates: implement needs approval.json; ship/done need Result: PASS; done needs no open deviations.
+gt="$(mktemp -d "$tmp_root/gates.XXXXXX")"; mkdir -p "$gt/work/G1" "$gt/.spine"
+gt_state() { cat "$gt/work/G1/state" 2>/dev/null; }
+echo plan >"$gt/work/G1/state"
+gt1=0; "$SET_STATE" --project "$gt" G1 implement 2>/dev/null || gt1=$?
+echo '{"approver":"a"}' >"$gt/work/G1/approval.json"; "$SET_STATE" --project "$gt" G1 implement
+if [[ "$gt1" == "1" && "$(gt_state)" == "implement" ]]; then pass "set-state: implement is refused without approval.json and allowed with it"; else fail "set-state: implement gate wrong (refused=$gt1 state=$(gt_state))"; fi
+gt2=0; "$SET_STATE" --project "$gt" G1 ship 2>/dev/null || gt2=$?
+printf 'Class: `1` · Floor run: now · Result: **FAIL**\n' >"$gt/work/G1/verify.md"
+gt3=0; "$SET_STATE" --project "$gt" G1 ship 2>/dev/null || gt3=$?
+printf 'Class: `1` · Floor run: now · Result: `PASS`\n' >"$gt/work/G1/verify.md"; "$SET_STATE" --project "$gt" G1 ship
+if [[ "$gt2" == "1" && "$gt3" == "1" && "$(gt_state)" == "ship" ]]; then pass "set-state: ship is refused with no verify.md or a FAIL result, allowed on PASS"; else fail "set-state: ship gate wrong ($gt2 $gt3 $(gt_state))"; fi
+printf -- '- Status: open\n- Status: resolved\n' >"$gt/work/G1/deviations.md"
+gt4=0; "$SET_STATE" --project "$gt" G1 done 2>/dev/null || gt4=$?
+"$SET_STATE" --project "$gt" --bypass G1 done; gt5="$(gt_state)"
+echo ship >"$gt/work/G1/state"; printf -- '- Status: resolved\n' >"$gt/work/G1/deviations.md"; "$SET_STATE" --project "$gt" G1 done
+if [[ "$gt4" == "1" && "$gt5" == "done" && "$(gt_state)" == "done" ]]; then pass "set-state: done is refused with an open deviation, allowed once resolved, and --bypass skips the gate"; else fail "set-state: done gate wrong ($gt4 $gt5 $(gt_state))"; fi
+
+# set-state abandoned: needs a reason, records it, clears only its own current-task pointer.
+ab="$(mktemp -d "$tmp_root/abandon.XXXXXX")"
+mkdir -p "$ab/work/A1" "$ab/work/A2" "$ab/.spine"; echo plan >"$ab/work/A1/state"; echo plan >"$ab/work/A2/state"; echo A1 >"$ab/.spine/current-task"
+ab_code=0; "$SET_STATE" --project "$ab" A1 abandoned 2>/dev/null || ab_code=$?
+if [[ "$ab_code" == "1" && "$(cat "$ab/work/A1/state")" == "plan" && -f "$ab/.spine/current-task" ]]; then
+  pass "set-state abandoned: refuses without a reason and changes nothing"
+else
+  fail "set-state abandoned: should refuse without a reason (code=$ab_code)"
+fi
+"$SET_STATE" --project "$ab" A2 abandoned "superseded by the redesign"
+if [[ "$(cat "$ab/work/A2/state")" == "abandoned" && "$(sed -n 2p "$ab/work/A2/abandoned")" == "superseded by the redesign" && "$(cat "$ab/.spine/current-task")" == "A1" ]]; then
+  pass "set-state abandoned: records the reason and leaves another task's current-task pointer alone"
+else
+  fail "set-state abandoned: wrong result (state=$(cat "$ab/work/A2/state") pointer=$(cat "$ab/.spine/current-task" 2>&1))"
+fi
+"$SET_STATE" --project "$ab" A1 abandoned "dropped"
+if [[ ! -e "$ab/.spine/current-task" ]] && jq -e 'select(.event=="abandoned" and .task=="A1" and .reason=="dropped")' "$ab/.spine/events.jsonl" >/dev/null 2>&1 \
+   && jq -e 'select(.event=="phase" and .task=="A1" and .to=="abandoned")' "$ab/.spine/events.jsonl" >/dev/null 2>&1; then
+  pass "set-state abandoned: clears its own current-task pointer and logs abandoned + phase events"
+else
+  fail "set-state abandoned: pointer/events wrong: $(cat "$ab/.spine/events.jsonl" 2>&1 | tail -2)"
 fi
 
 # spine_cmd_fields: command-position words across separators, assignments skipped.
@@ -2672,7 +2794,7 @@ printf '{"script_and_hook_code_lines":2}' >"$rl_root/core/budget.json"
 if "$REPO_LINT" --root "$rl_root" budget >/dev/null 2>&1; then
   printf '{"script_and_hook_code_lines":1}' >"$rl_root/core/budget.json"
   rl_out="$("$REPO_LINT" --root "$rl_root" budget 2>&1)" || true
-  if grep -q "2 code lines (no blanks or comments), cap is 1" <<<"$rl_out"; then
+  if grep -q "2 code lines (no blanks, comments or core-selftest), cap is 1" <<<"$rl_out"; then
     pass "repo-lint: the script/hook cap counts code lines only (comments and blanks are free)"
   else
     fail "repo-lint: code-line cap should fail at 1: $rl_out"

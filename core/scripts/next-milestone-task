@@ -27,7 +27,7 @@
 # even though the milestone itself is incomplete.
 #
 # Output is exactly one line on stdout, space-separated, first token is
-# the outcome:
+# the outcome (DISPOSITION is checked first, before TBD/BLOCKED/WAITING):
 #   TBD <milestone-id> <description...>       a real next task to propose
 #   BLOCKED <milestone-id> <blocking-token>    the next TBD's predecessor
 #                                               (a task-id, or the literal
@@ -38,6 +38,11 @@
 #                                               no TBD at all — every
 #                                               member task already has a
 #                                               real id, just not done yet
+#   DISPOSITION <milestone-id> <task-id>        a member task was abandoned
+#                                               (state `abandoned`): the
+#                                               milestone can't finish until
+#                                               that entry is replaced with a
+#                                               new `TBD` or dropped
 #   NONE                                       no milestone exists, or
 #                                               every one found is complete
 #
@@ -47,7 +52,7 @@
 # predecessor logic applies within it; if it's already complete, or has
 # no queueable TBD, that's still NONE/WAITING, same as any other milestone.
 #
-# Read-only — never writes anything. Exit 0 for any of the four outcomes
+# Read-only — never writes anything. Exit 0 for any of the five outcomes
 # above; exit 2 only for a genuine usage/parse problem (bad args, a named
 # --milestone with no milestone.md, or a milestone.md missing a
 # parseable `## Member tasks` section entirely).
@@ -117,6 +122,13 @@ for ms_path in "${ms_paths[@]}"; do
     echo "next-milestone-task: $ms_path has no parseable ## Member tasks entries" >&2
     exit 2
   fi
+
+  for id in "${ids[@]}"; do
+    if [[ "$id" != "TBD" && "$(cat "$project/work/$id/state" 2>/dev/null || true)" == "abandoned" ]]; then
+      echo "DISPOSITION $ms_id $id"
+      exit 0
+    fi
+  done
 
   complete=1
   for id in "${ids[@]}"; do

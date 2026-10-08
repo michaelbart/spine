@@ -89,17 +89,11 @@ case "$tool_name" in
 
     source "$SCRIPT_DIR/_bash-write-targets"
     declare -F bash_write_targets >/dev/null || { echo "dep-gate: _bash-write-targets did not load — failing closed, cannot evaluate this Bash write safely" >&2; exit 2; }
+    # A write whose target can't be placed is denied outright by path-escalate, which
+    # is always installed alongside this hook; asking here as well only doubled every
+    # such event, so only the targets that could be resolved are checked for manifests.
     while IFS= read -r line; do
-      [[ -n "$line" ]] || continue
-      case "$line" in
-        UNRESOLVED:*)
-          ev_why="$(spine_unresolved_code "$line")"
-          ask unresolved-bash-target "What happened: I'm about to run '$command', and I can't tell which file it writes (${line#UNRESOLVED:}). What it means for you: I can't rule out that it changes the list of packages, which is always your call. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
-          ;;
-        PATH:*)
-          check_manifest_target "${line#PATH:}"
-          ;;
-      esac
+      case "$line" in PATH:*) check_manifest_target "${line#PATH:}" ;; esac
     done < <(bash_write_targets "$command")
 
     # Install patterns are usually anchored to the START of a command ("^pnpm add"),

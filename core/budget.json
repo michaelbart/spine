@@ -1,5 +1,5 @@
 {
-  "_about": "Complexity budget for the spine core, enforced by core/scripts/repo-lint (run from core-selftest). Caps are frozen at the 2026-10-08 sizes. Adding a command, a script or skill lines past a cap means removing something else first; raising a cap needs the commit message to say what was removed or why that is impossible. 'targets' are aspirations (docs/improvement-plan.md D4), not enforced. Change log (2026-10-08): the script+hook cap was first frozen at 7500 raw lines, raised to 7520 for spine-stats --brief/--rollup, then replaced by a cap on code lines (no blanks or # comments: 5175 measured, cap 5200) because counting comments penalized documenting the hooks, which is the opposite of the goal. The raw total was 7567 at the switch and is no longer capped. Ratcheted 5200 -> 5150 after floor's four duplicate dispatch functions were merged (5133 measured).",
+  "_about": "Complexity budget for the spine core, enforced by core/scripts/repo-lint (run from core-selftest). Caps are frozen at the 2026-10-08 sizes. Adding a command, a script or skill lines past a cap means removing something else first; raising a cap needs the commit message to say what was removed or why that is impossible. 'targets' are aspirations (docs/improvement-plan.md D4), not enforced. Change log (2026-10-08): the script+hook cap was first frozen at 7500 raw lines, raised to 7520 for spine-stats --brief/--rollup, then replaced by a cap on code lines (no blanks or # comments: 5175 measured, cap 5200) because counting comments penalized documenting the hooks, which is the opposite of the goal. The raw total was 7567 at the switch and is no longer capped. Ratcheted 5200 -> 5150 after floor's four duplicate dispatch functions were merged (5133 measured). Second change (2026-10-08): core-selftest is excluded from the cap. It was 2081 of 5220 code lines, so every test added consumed budget meant for runtime logic, which punishes the thing we want more of. The cap is now on runtime scripts and hooks only (3139 measured when set, cap 3150); the selftest is still run and reported. Third change (2026-10-08): 3150 -> 3200 for the write-target parser rewrite (literal cd tracking, quote masking, heredoc bodies, continued lines, sed/perl flag clusters: it closed real gaps found by a differential run over 9,012 real commands), set-state's gates and abandon support, and next-milestone-task's DISPOSITION outcome. I looked for removable code first and found none worth cutting.",
   "skill_lines": {
     "default": 320,
     "task": 700,
@@ -17,5 +17,5 @@
       "design": 300
     }
   },
-  "script_and_hook_code_lines": 5150
+  "script_and_hook_code_lines": 3200
 }

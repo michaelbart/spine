@@ -52,5 +52,5 @@ impression of coverage this rule can't actually deliver. The two real,
 already-existing mechanisms that do cover this today are `secret-scan`
 (content-based, runs in every floor invocation, not path-scoped) and
 whatever paths this project's own calibration explicitly added to
-`.spine/protected-paths.conf` — see `docs/tradeoffs.md`'s Known limits for
-this gap named the same way every other conceded-not-bug limit there is.
+`.spine/protected-paths.conf` — see `docs/tradeoffs.md` ("Inherent limits") for
+this gap named the same way as every other conceded limit.

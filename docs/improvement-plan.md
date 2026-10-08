@@ -44,7 +44,7 @@ task folders; turnpilot session transcripts) produced four conclusions:
   label it advisory and say so.
 - **Every code change gets a `core-selftest` case, and a negative control**
   (revert the fix, watch the new test fail), per the standing lesson in
-  `docs/audit-2026-08-22-round3.md`.
+  `docs/history/audit-2026-08-22-round3.md`.
 - **No per-project data leaves the machine.** The analyzer reads transcripts
   and task folders locally and emits numbers only, never content.
 
@@ -466,7 +466,7 @@ measure.
 
 ### E5. Unlogged-deviation backstop
 
-- [ ] The circuit breaker is an honor system. Add a verify-time warning (not a
+- [x] The circuit breaker is an honor system. Add a verify-time warning (not a
   block): files changed outside the plan's declared file set, or fix commits
   during implement, with zero logged deviations -> "possible unlogged
   deviation", shown in `verify.md` and the briefing. Also cheap: aggregate

@@ -38,7 +38,7 @@ human). A Bash call can produce both, from different hooks, at the same `ts`.
 |---|---|
 | `hook` | `path-escalate`, `phase-gate`, `dep-gate` |
 | `tool` | `Edit`, `Write` or `Bash` |
-| `rule` | why: `protected-path`, `migration-path` (path-escalate); `pre-plan-write` (phase-gate); `manifest-path`, `install-command`, `invalid-patterns`, `no-project-root` (dep-gate); `unresolved-bash-target` (all three); `internal` (a hook could not load a helper and failed closed) |
+| `rule` | why: `protected-path`, `migration-path` (path-escalate); `pre-plan-write` (phase-gate); `manifest-path`, `install-command`, `invalid-patterns`, `no-project-root` (dep-gate); `unresolved-bash-target` (path-escalate, phase-gate); `internal` (a hook could not load a helper and failed closed) |
 | `target` | repo-relative path, when one was resolved |
 | `why` | only with `unresolved-bash-target`: `var-glob-quote` (a variable, glob or quote in the target) or `relative-after-cd` (a relative target after a `cd` in the same command) or `other` |
 | `cmds` | Bash only: command-position words, comma-joined, at most 6 (`cd,pnpm,tail`). Leading `VAR=value` assignments are skipped |

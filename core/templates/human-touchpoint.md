@@ -204,7 +204,6 @@ that specific one *is*, not what the family is.
 | deviation | a place where the work departed from the approved plan |
 | Known gaps | the list of problems knowingly left for a later task |
 | guided | I stop after every phase and wait for you |
-| checkpointed | I stop for plan approval, then once more at the finish |
 | auto | I run without scheduled stops; you review the finished PR |
 | handoff | the summary passed from one stage to the next |
 | walking skeleton | the thinnest end-to-end version of the app |

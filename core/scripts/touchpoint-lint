@@ -1,7 +1,8 @@
 #!/bin/bash
 # touchpoint-lint — mechanical check of core/templates/human-touchpoint.md.
 #
-#   touchpoint-lint [<skill.md>...]   default: every core/skills/*/SKILL.md
+#   touchpoint-lint [<skill.md>...]   default: every core/skills/*/SKILL.md and
+#                                     core/skills/*/reference/*.md
 #   touchpoint-lint --stdin           lint a hook/script message from stdin
 #
 # In markdown files it checks only text between `<!-- touchpoint:start -->`
@@ -37,7 +38,7 @@ for a in "$@"; do
   esac
 done
 if [[ "$mode" == files && ${#files[@]} -eq 0 ]]; then
-  for f in "$SCRIPT_DIR"/../skills/*/SKILL.md; do files+=("$f"); done
+  for f in "$SCRIPT_DIR"/../skills/*/SKILL.md "$SCRIPT_DIR"/../skills/*/reference/*.md; do [[ -f "$f" ]] && files+=("$f"); done
 fi
 
 lint_awk='

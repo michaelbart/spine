@@ -202,8 +202,7 @@ to 0 (`profile-check` rejects that).
 ## 3. Run the adversaries
 
 **Adversary re-run caching: content-aware, severity-aware, budget-tiered —
-never a scope-narrowing shortcut** (`docs/tradeoffs.md`, "design-mode
-adversary cost tiers" and its "content-hash correction" addendum). Before
+never a scope-narrowing shortcut**. Before
 dispatching `falsifier` (and `security`, if running), compute this task's
 current blast radius for that agent — the diff's changed-file set (step 1's,
 bookkeeping already excluded) union this run's fresh `callers.md` file
@@ -255,7 +254,7 @@ Only *effort* is ever tiered, never *input* — every outcome except REUSED
 hands the adversary the complete current diff, since the risk these agents
 exist to catch is precisely in how a new change interacts with code that
 didn't change (this is why per-finding or per-file input caching stays
-rejected — see `docs/tradeoffs.md`).
+rejected).
 
 Record coverage at dispatch time, not after: whenever an adversary *is*
 dispatched (fully or focused), write `work/<task-id>/artifacts/
@@ -292,17 +291,16 @@ for its own reference, not for reconciling a cloned copy.
 
 **Bound each adversary's run — new, and load-bearing in `auto`.** An adversary
 with no budget can run unbounded; in `guided` a watching human interrupts, but
-`auto`/`checkpointed` have no such human, so the budget *is* the backstop. Give
+`auto` has no such human, so the budget *is* the backstop. Give
 each adversary a wall-clock budget proportional to blast radius, not to how
 interesting it finds the code: roughly ~5 min for a Class 1 `auto` task, ~10 min
-for Class 1 `checkpointed`/`guided`, ~20–30 min for Class 2. Size its scope to
+for Class 1 `guided`, ~20–30 min for Class 2. Size its scope to
 match — a trivial Class 1 change gets a focused pass, not the full-ceremony sweep
-a Class 2 warrants (this resolves the long-open "design-mode adversary cost
-tiers" question for the normal path too, `docs/tradeoffs.md`). If an adversary
+a Class 2 warrants. If an adversary
 exceeds its budget, **stop it** (cancel the subagent) and record it in
 `verify.md` as `adversary: <name> exceeded budget — not a clean pass` — never
-silently treat a killed or timed-out adversary as PASS. In `guided`/
-`checkpointed` that's a note for the human to act on; **in `auto` a budget breach
+silently treat a killed or timed-out adversary as PASS. In `guided`
+that's a note for the human to act on; **in `auto` a budget breach
 is an exception-stop** (`core/skills/task/SKILL.md` §5) — pull the human in
 rather than shipping on an incomplete adversarial pass. Say it in this form (per `core/templates/human-touchpoint.md`):
 
@@ -421,7 +419,11 @@ ${CLAUDE_SKILL_DIR}/../../scripts/conformance work/<task-id>/plan.md \
   --out work/<task-id>/artifacts/conformance.json
 ```
 
-Never blocks anything (Layer 4) — it scores the plan, not the change.
+Never blocks anything (Layer 4) — it scores the plan, not the change. Then catch a
+quiet departure from the plan: `jq '(.actual - .predicted) | length'` on that file. If
+it is above zero and `work/<task-id>/deviations.md` has no records and `notes.md` no
+`SETUP:` line, put one line in `verify.md`: "Possible unlogged deviation: N files
+changed that the plan did not predict, none logged." Informational only.
 
 ## 5. Assemble verify.md
 

@@ -11,7 +11,7 @@
 # unlink, git rm, git checkout -- <path>, git restore <path>) invoked via
 # Bash mutates files exactly like Edit/Write would, and the pre-fix
 # Edit|Write-only matcher let any of those bypass this gate entirely — see
-# core/hooks/_bash-write-targets and docs/tradeoffs.md's "Known limits"
+# core/hooks/_bash-write-targets and docs/tradeoffs.md's "Measured tradeoffs"
 # ("The write-blocking hooks don't see every way to write a file").
 #
 # Project state consulted:

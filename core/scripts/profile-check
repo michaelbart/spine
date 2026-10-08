@@ -44,9 +44,9 @@ val() { jq -r --arg k "$1" 'if has($k) then .[$k]|tostring else "" end' "$pf"; }
 adv="$(val class1_adversaries)"
 [[ -z "$adv" || "$adv" =~ ^[12]$ ]] || errs+=("class1_adversaries must be 1 or 2 (never 0 — the falsifier always runs); got \"$adv\"")
 ceil="$(val autonomy_ceiling)"
-[[ -z "$ceil" || "$ceil" =~ ^(guided|checkpointed|auto)$ ]] || errs+=("autonomy_ceiling must be guided|checkpointed|auto; got \"$ceil\"")
+[[ -z "$ceil" || "$ceil" =~ ^(guided|checkpointed|auto)$ ]] || errs+=("autonomy_ceiling must be guided|auto (checkpointed is a retired alias for guided); got \"$ceil\"")
 pr="$(val pr_open)"
-[[ -z "$pr" || "$pr" =~ ^(never|auto-only|auto-checkpointed|all)$ ]] || errs+=("pr_open must be never|auto-only|auto-checkpointed|all; got \"$pr\"")
+[[ -z "$pr" || "$pr" =~ ^(never|auto-only|auto-checkpointed|all)$ ]] || errs+=("pr_open must be never|auto-only|all (auto-checkpointed is a retired alias for auto-only); got \"$pr\"")
 smoke="$(val smoke_in_floor)"
 [[ -z "$smoke" || "$smoke" =~ ^(true|false)$ ]] || errs+=("smoke_in_floor must be true or false; got \"$smoke\"")
 cf="$(val class0_max_files)"

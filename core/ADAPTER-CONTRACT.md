@@ -208,9 +208,7 @@ convention every adapter and `floor` itself must obey.
 Through Phase D, `lint` and `typecheck` were whole-tree, no-stdin
 capabilities. Phase E moved them to the changed-file-set bucket: a task's
 floor result must reflect the task's own change, not the repository's
-accumulated history, per the architecture decision recorded in
-`docs/tradeoffs.md` (the "rescope, don't just add `--full`" question the
-build declined to resolve unilaterally in Phase D — now decided). A
+accumulated history (decided: rescope the adapters, don't just add `--full`). A
 diff-scoped adapter is free to still invoke its underlying tool
 whole-tree internally where the tool needs full-project context for
 correct results (a type checker resolving imports, for instance) — the
@@ -364,7 +362,7 @@ tracker.
 
 ### 3.5 `open-pr` (ship) — an action, not a gate
 
-`/ship` calls `open-pr` for a task whose autonomy is `auto` or `checkpointed`
+`/ship` calls `open-pr` for a task whose autonomy is `auto`
 (`core/skills/task/SKILL.md`) to push the current branch and open a **draft** PR,
 so the human's one remaining touchpoint is reviewing/merging it. Inputs by
 environment variable (the `SPINE_BASE_REF` precedent — no positional, since there is no
@@ -396,8 +394,7 @@ The falsifier runs in an isolated git worktree (`core/agents/falsifier.md`,
 `isolation: worktree`) so it can stub code and run mutated tests without
 touching the implementer's real tree. But a fresh worktree lacks the
 project's gitignored dependencies, so the stub-out probe's test runner
-often can't resolve at all — the `auto` fire-test's finding
-(`docs/tradeoffs.md`, "The `auto` fire-test happened"). `worktree-prep`
+often can't resolve at all — a finding from the first real `auto` run. `worktree-prep`
 closes that gap the same way every other stack-specific action does: a
 capability adapter the project owns, invoked by name only.
 
@@ -438,8 +435,7 @@ adapter detects a scratch checkout it cannot provision (a dependency shape
 it doesn't recognize, for instance): non-zero exit, diagnostics on stderr.
 Both modes route through the same provisioning logic normal mode uses —
 never a parallel check that happens to agree with it on the fixture (§4's
-general rule, the exact one finding #7 in `docs/tradeoffs.md` was written
-after).
+general rule).
 
 ### 3.7 `migrate-rehearse` — eligible only on a migration-touching Class 2 task
 
@@ -538,7 +534,7 @@ has `smoke-run` `unavailable` with a reason containing "skeleton target";
 and `work/M0/milestone.md`'s Capability targets row for `smoke-run` reads
 `unavailable*`. Any other status shape (`missing`, `not-applicable`), any
 other milestone, or a missing declaration keeps the hard gate. The waiver
-lapses the moment `smoke-run` is `implemented`. See `docs/tradeoffs.md`,
+lapses the moment `smoke-run` is `implemented`. See `docs/design/design-stage.md`,
 "The M0 bootstrap waiver".
 
 ### 3.9 `ui-conformance` — declared tokens/components actually present, never visual similarity
@@ -725,9 +721,7 @@ report a clean pass. A self-test that only ever builds one clean file
 proves the tool wrapper works; it proves nothing about whether the
 adapter actually honors the changed-file scope versus silently checking
 the whole scratch directory regardless of stdin. This is the fixture that
-would have caught a rescoped-in-name-only adapter — see
-`docs/tradeoffs.md`'s Phase E section for the concrete horizon/synthetic
-runs that exercised it.
+would have caught a rescoped-in-name-only adapter.
 
 This is a builder decision — it's the mechanism that makes `adapter-conformance` possible
 without inventing a second, stack-specific fixture-delivery channel. An
@@ -757,7 +751,7 @@ self-test branch calls through the adapter's real invocation path rather
 than a parallel check — the `callers` incident above is exactly a case
 that satisfied every check `adapter-conformance` runs while violating this
 one. A human reviewing a hand-written adapter is the real backstop for
-these two rules (see `docs/tradeoffs.md`'s Known limits).
+these two rules (see `docs/tradeoffs.md`, "Measured tradeoffs").
 
 **A `--self-test fail` branch with two divergent internal paths needs a
 way to say which one fired.** Some fail fixtures don't just build a
@@ -974,8 +968,8 @@ takes its `standard` value):
 | `smoke_in_floor` | `true` \| `false` | Whether smoke joins the floor when its runtime fits the budget. |
 | `class0_max_files` | `0`..`10` | The Class 0 (trivial) file-count threshold `/intake` and `/task` classify against. |
 | `class0_max_lines` | `0`..`100` | The Class 0 line-count threshold. |
-| `autonomy_ceiling` | `guided` \| `checkpointed` \| `auto` | The highest autonomy a Class 1 task may run at (`core/skills/task/SKILL.md`). Class 2 is always `guided` regardless. |
-| `pr_open` | `never` \| `auto-only` \| `auto-checkpointed` \| `all` | When `/ship` opens a draft PR (`§3.5`, `core/skills/ship/SKILL.md` §5a). `auto-checkpointed` (default) opens for `auto`/`checkpointed`; `all` also opens for `guided`; `auto-only` only for `auto`; `never` leaves every PR to the human. |
+| `autonomy_ceiling` | `guided` \| `auto` | The highest autonomy a Class 1 task may run at (`core/skills/task/SKILL.md`). Class 2 is always `guided` regardless. The retired value `checkpointed` is still accepted and means `guided`. |
+| `pr_open` | `never` \| `auto-only` \| `all` | When `/ship` opens a draft PR (`§3.5`, `core/skills/ship/SKILL.md` §5a). `auto-only` (default) opens only for `auto`; `all` also opens for `guided`; `never` leaves every PR to the human. The retired value `auto-checkpointed` is still accepted and means `auto-only`. |
 
 **Presets** (a starting point `/bootstrap`/`/adopt` write, then the team edits):
 
@@ -984,8 +978,8 @@ takes its `standard` value):
 | `class1_adversaries` | 1 | 2 | 2 |
 | `smoke_in_floor` | false | true | true |
 | `class0_max_files` / `_lines` | 3 / 30 | 2 / 15 | 1 / 10 |
-| `autonomy_ceiling` | auto | auto | checkpointed |
-| `pr_open` | all | auto-checkpointed | auto-checkpointed |
+| `autonomy_ceiling` | auto | auto | guided |
+| `pr_open` | all | auto-only | auto-only |
 
 **The hard invariant, mechanically enforced by `core/scripts/profile-check`**
 (run at every `setup --check`, i.e. every `/task` step 0): a profile tunes

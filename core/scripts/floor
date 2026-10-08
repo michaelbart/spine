@@ -90,7 +90,7 @@ status_of() { jq -r --arg c "$1" '.[$c].status // "missing"' "$caps_json"; }
 reason_of() { jq -r --arg c "$1" '.[$c].reason // ""' "$caps_json"; }
 
 # M0 bootstrap waiver for the Class 2 smoke hard gate (ADAPTER-CONTRACT.md
-# §3.8, docs/tradeoffs.md "The M0 bootstrap waiver"). The hard gate is
+# §3.8, docs/design/design-stage.md "The M0 bootstrap waiver"). The hard gate is
 # circular for a walking skeleton: milestone 0's own job is to *build* the
 # smoke capability, yet its first tasks are Class 2 by necessity (dependency
 # manifests, db, auth are protected paths) and so cannot pass a floor whose

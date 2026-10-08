@@ -6,9 +6,8 @@
 # severity thresholds) — a real, recurring token cost paid specifically to
 # *save* cost on adversary re-runs, with nothing checking the model got the
 # hand-computation right. Same algorithm, same three-outcome rule
-# (docs/tradeoffs.md "design-mode adversary cost tiers" / its "content-hash
-# correction" addendum) — this script is a mechanical restatement, not a
-# new policy:
+# (core/skills/verify/SKILL.md, adversary re-run caching) — this script is a
+# mechanical restatement, not a new policy:
 #
 #   REUSED  — every blast-radius file's current content hash matches
 #             work/<task-id>/artifacts/<agent>-coverage.json exactly, AND

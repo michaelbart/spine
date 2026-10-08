@@ -75,7 +75,7 @@ ceremony and how many human stops a task gets — and write
 chosen preset (`core/ADAPTER-CONTRACT.md §7`'s table): **prototype** (one
 adversary, `auto` allowed, no smoke, looser Class 0), **standard** (the
 template's own values — two adversaries, `auto` allowed, smoke on), or
-**regulated** (two adversaries, `autonomy_ceiling: checkpointed` so `auto` is
+**regulated** (two adversaries, `autonomy_ceiling: guided` so `auto` is
 never offered, stricter Class 0). Default to **standard** unless the team says
 otherwise. Then validate it:
 
@@ -186,7 +186,11 @@ project's own dependency-install commands — derived from the confirmed
 package manager(s), same answers as adapter generation above. This is what
 `core/hooks/dep-gate` reads for its Bash-command check; it never hardcodes a
 package-manager name itself (the stack-independence rule applies to hooks
-too). If this project's stack has no recognizable
+too). `dep-gate` tests each command segment on its own (`cd x && ...`, leading `VAR=value`
+are handled), but a pattern anchored at the start must still allow the package
+manager's own flags before the subcommand: a workspace or directory selector plus
+its value (e.g. `--filter <pkg>`, `-C <dir>`) is how monorepo installs are usually
+written. If this project's stack has no recognizable
 install-command shape, leave the file absent — `dep-gate`'s Bash check
 no-ops without it, and its Edit/Write manifest-tag check is unaffected.
 

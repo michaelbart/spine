@@ -24,8 +24,8 @@ stops needing the old shape. Two tasks, in order:
    assumed — remove it in its own, later task.
 
 A single task that both changes application code *and* destructively
-changes the schema those changes depend on is a co-commit the deterministic
-floor flags: it collapses expand/contract into one irreversible step, and it
+changes the schema those changes depend on is a co-commit to avoid, and one a
+plan reviewer should flag: it collapses expand/contract into one irreversible step, and it
 is exactly the shape of change that breaks rollback.
 
 **Every migration ships a rollback.** If you cannot articulate the rollback

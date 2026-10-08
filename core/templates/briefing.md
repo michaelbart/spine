@@ -21,7 +21,7 @@ starts reading briefings in aggregate instead of one at a time. Don't
 rename a label casually. (This stability guarantee
 only covers briefings written after a given convention shipped — nothing
 retroactively updates an already-shipped project's older briefings to a
-later heading shape; see `docs/tradeoffs.md`'s "Known limits.")
+later heading shape; see `docs/tradeoffs.md`, "Inherent limits.")
 
 **The two floors — never compressed below these, regardless of how tight
 the one-page budget gets:**
@@ -86,7 +86,7 @@ Either way, also this task's own flagged-finding triage result (/ship
 §3a): which findings (if any) were carried into `milestone.md`'s Known
 gaps, with their new `gap-<n>` ids (`guided`), or the drafted "Proposed
 milestone gap entries — undecided" list awaiting the human's PR-time
-triage (`checkpointed`/`auto`) — never omitted just because §3a found
+triage (`auto`) — never omitted just because §3a found
 nothing to carry; "zero flagged findings" and "N findings, none carried"
 are different facts. And this task's own known-gap resolution result
 (/ship §3c): which `gap-<n>` entries (if any) this task's own plan cited

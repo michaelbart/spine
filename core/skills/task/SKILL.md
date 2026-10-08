@@ -28,7 +28,7 @@ separate reads — same completeness test `/roadmap` and `/ship` §3b use
 own `state` reading `done`), computed once in the one place, live, so it
 can't drift the way a cached "last completed milestone" pointer could
 once a `## Closes milestone gap` splice (§3 below) reopens a milestone
-that already looked complete. Its one-line output branches four ways:
+that already looked complete. Its one-line output branches five ways:
 
 - **`TBD <milestone-id> <description>`** — propose it and stop: "Continue
   with `<milestone-id>`'s next task: `<description>`?" — before doing
@@ -55,6 +55,19 @@ that already looked complete. Its one-line output branches four ways:
   task already has a real id, none are `TBD`) but nothing in it is done
   yet either, so there's nothing queued to propose. Say so plainly and
   fall through to asking for a description.
+- **`DISPOSITION <milestone-id> <task-id>`** — a planned task in that milestone
+  was abandoned, so it can't finish as written. Ask before anything else, with
+  `AskUserQuestion`:
+
+  <!-- touchpoint:start confirm -->
+  > **Replace the abandoned task "<its description>" in `<milestone title>`, or drop it from the plan?** It was set aside on purpose, and the milestone can't finish until you choose.
+  > **Replace it** (recommended) — I queue it again as a fresh task. **Drop it** — I remove it from the plan and note why.
+  <!-- touchpoint:end -->
+
+  Replace: set that entry in `work/<milestone-id>/milestone.md` back to `TBD`
+  (keep its description) and carry on as the `TBD` case. Drop: delete the entry,
+  add the description and the reason (second line of `work/<task-id>/abandoned`)
+  under `## Known gaps for future member tasks`, and re-run the script.
 - **`NONE`** — no milestone exists yet, or every one found is already
   complete. Fall through to asking for a description, saying briefly why
   auto-continue didn't fire.
@@ -138,11 +151,11 @@ State lives in four places, and every phase transition below updates them
   task = Class 0 default.
 - `work/<task-id>/state` — the current phase name, one line.
 - `work/<task-id>/class` — `0`, `1`, or `2`, one line.
-- `work/<task-id>/autonomy` — `guided`, `checkpointed`, or `auto`, one line
+- `work/<task-id>/autonomy` — `guided` or `auto`, one line
   (absent = `guided`, the default). This is the Phase 4 dial for *how many
   human stops* the flow has, orthogonal to `class` (which sets *how much
   verification*). **Blast radius caps autonomy, never the reverse:** a Class 2
-  task is always `guided`; a Class 1 task may be `auto`/`checkpointed`/`guided`;
+  task is always `guided`; a Class 1 task may be `auto` or `guided`;
   Class 0 is `traced` (no task folder — §1). `/intake` sets this and enforces
   the ceiling; §3's escalation re-enforces it. `auto` runs with no scheduled
   stops — only the same tripwires every task has (a `halt`-tier deviation, a
@@ -156,9 +169,10 @@ nothing from memory; a fresh session has none, so read
 `work/<task-id>/{research,plan,deviations}.md` before proceeding. If a new
 description was typed while a task is already active, don't swallow it into
 the resume offer: ask plainly whether to resume `<existing-task-id>` (phase
-`<state>`) or leave it parked and start `<new description>` (a parked task's
-folder stays on disk and `/task` can resume it later), and follow the human's
-answer; never silently pick one.
+`<state>`) or abandon it and start `<new description>`, and follow the human's answer;
+never silently pick one. To abandon, ask for a one-line reason and run
+`${CLAUDE_SKILL_DIR}/../../scripts/set-state <existing-task-id> abandoned "<reason>"`
+(the folder stays on disk; it clears `.spine/current-task`).
 
 **Step 0 — install health check.** Before classifying, run
 `$(readlink -f "${CLAUDE_SKILL_DIR}")/../../scripts/setup --check --project <project root>`
@@ -314,24 +328,22 @@ every step"), not by number, unless glossed:
 **Autonomy for a direct `/task`** (no intake handoff; the choice only exists at
 Class 1 — Class 0 is `traced`, Class 2 is always `guided`, the ceiling). Once the
 class is confirmed, ask the human how autonomous the flow should run: `guided`
-(stop at each phase — the default and the safe choice), `checkpointed` (approve
-the plan, then one finish action), or `auto` (no scheduled stops; you review the
-finished PR). Default to `guided` if they express no preference. **If you had
+(stop at each phase — the default and the safe choice) or `auto` (no scheduled
+stops; you review the finished PR). Default to `guided` if they express no preference. **If you had
 suggested a higher class than the human chose** (e.g. you suggested Class 2, they
 picked Class 1), lean `guided` and say why — a change you read as
 higher-blast-radius is exactly the kind to keep a human in the loop on, even at
 the class they chose. Cap the offer at `.spine/profile.json`'s `autonomy_ceiling`
-if set. You'll write the result to `work/<task-id>/autonomy` in the setup step
+if set (`guided|auto`; a legacy `checkpointed` ceiling is read as `guided`). You'll write the result to `work/<task-id>/autonomy` in the setup step
 below, the same place the class file is written. (`/intake` proposes this from
 its pre-scan; a direct `/task` does none, so it simply asks.) Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
 
 <!-- touchpoint:start -->
 > **Deciding:** how often I should stop and check with you on this task. It's yours because it trades your attention against how closely you watch the work.
-> **Need to know:** The three settings are `guided` (I stop after every phase and wait for you), `checkpointed` (I stop for plan approval, then once more at the finish) and `auto` (I run without scheduled stops; you review the finished PR).
+> **Need to know:** The two settings are `guided` (I stop after every phase and wait for you) and `auto` (I run without scheduled stops; you review the finished PR).
 > **Recommend:** The setting called guided — it is the safe default; pick less stopping only if the change is small and easy to review.
 > 1. **Stop after every phase** — next: I pause after research, plan and each step for your go-ahead; cost: the most of your attention; undo: yes, you can switch later
-> 2. **Approve the plan, then one finish check** — next: I run to the end after you approve the plan, then ask once; cost: two stops; undo: yes
-> 3. **No scheduled stops** — next: I run everything and you review the finished PR; cost: you find problems late; undo: yes, nothing merges without you
+> 2. **No scheduled stops** — next: I run everything and you review the finished PR; cost: you find problems late; undo: yes, nothing merges without you
 > **Safe to ignore:** the setting names; I'll use plain words.
 <!-- touchpoint:end -->
 
@@ -467,7 +479,7 @@ fabricate the file.
 Check every `## Predicted touch` entry against `.spine/protected-paths.conf`. If any match and `work/<task-id>/class` is not
 already `2`, auto-escalate: rewrite the class file to `2`, **and
 rewrite `work/<task-id>/autonomy` = `guided`** (the ceiling — a Class 2 task
-is never `auto`/`checkpointed`; escalation pulls the human back in), log it
+is never `auto`; escalation pulls the human back in), log it
 (`${CLAUDE_SKILL_DIR}/../../scripts/spine-event class-escalated from=<old> to=2
 when=plan`), and
 say so plainly when you present the plan — this is plan-triggered
@@ -506,8 +518,7 @@ to the PR for review, trading pre-implementation plan review for PR-time review
 and proceed straight to §4. This can only happen at Class 1
 (the ceiling); if §3's protected-path check just auto-escalated this task to
 Class 2, `work/<task-id>/autonomy` was set to `guided` above, so this branch no
-longer applies and you fall through to the stop below. For `checkpointed` and
-`guided`:
+longer applies and you fall through to the stop below. For `guided`:
 
 **Present the plan and stop — this is the second recurring human
 touchpoint.** Do not proceed to implementation in the same turn. Wait for
@@ -623,7 +634,7 @@ yourself first; don't hand a known-broken diff to `/verify`. Then: run
 **This phase's shape depends on `work/<task-id>/autonomy`** (absent =
 `guided`). The independence that `/verify` protects comes from the falsifier
 and security agents being *fresh, isolated subagents* — never from who typed
-the command — so `checkpointed`/`auto` preserve it while removing the human
+the command — so `auto` preserves it while removing the human
 relay the engineer explicitly delegated by choosing that autonomy at `/intake`.
 
 **guided** — `/verify` and `/ship` both carry `disable-model-invocation: true`,
@@ -655,20 +666,8 @@ completes), use this form; it replaces any freeform summary. Show only the
 > **Worth knowing:** <anything surprising, left open on purpose, or not proven, in plain words; or "nothing">
 <!-- touchpoint:end -->
 
-**checkpointed** — one human action closes out the task instead of two. Present a
-single **finish** confirmation ("implementation's ready and the plan's acceptance
-checks pass — verify and ship?"). On the human's go, **follow
-`core/skills/verify/SKILL.md`'s steps inline** — read that file and execute its
-steps in this session. This is *not* a Skill-tool invocation, so
-`disable-model-invocation` does not block it (that flag blocks the tool call, not
-following the written procedure); the human authorized it with the finish
-confirmation. Read the resulting `verify.md` `Result:`. On `PASS`, **follow
-`core/skills/ship/SKILL.md`'s steps inline** the same way. On `FAIL`, fix and
-re-run verify inline — no new human stop unless a `halt`-tier deviation opens
-(§4).
-
 **auto** — no scheduled human stop. **Follow `core/skills/verify/SKILL.md` inline**
-(same mechanism as `checkpointed`; the falsifier's stub-out probe is *mandatory*
+(the falsifier's stub-out probe is *mandatory*
 in this mode — it is the partial backstop for the plan review `auto` skipped).
 Read `verify.md`'s
 `Result:`. On `PASS`, **follow `core/skills/ship/SKILL.md` inline**, which for an
