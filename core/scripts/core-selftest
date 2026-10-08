@@ -2562,4 +2562,82 @@ else
   fail "repo-lint: doc-refs output wrong: $rl_out"
 fi
 
+# ---------------------------------------------------------------------------
+# spine-stats: dedupe, token sums, attribution, active time, yield, floor, privacy
+# ---------------------------------------------------------------------------
+SPINE_STATS="$SCRIPT_DIR/spine-stats"
+if command -v python3 >/dev/null 2>&1; then
+  ss_home="$(mktemp -d "$tmp_root/ssHome.XXXXXX")"
+  ss_proj="$(mktemp -d "$tmp_root/ssProj.XXXXXX")"
+  ss_real="$(cd "$ss_proj" && pwd -P)"
+  ss_enc="$(printf '%s' "$ss_real" | sed 's/[^A-Za-z0-9-]/-/g')"
+  ss_tdir="$ss_home/.claude/projects/$ss_enc"
+  ss_task="20261001-fixture-task"
+  mkdir -p "$ss_proj/.spine" "$ss_proj/work/$ss_task/artifacts" "$ss_tdir/S1/subagents"
+  echo 2 >"$ss_proj/work/$ss_task/class"; echo guided >"$ss_proj/work/$ss_task/autonomy"; echo done >"$ss_proj/work/$ss_task/state"
+  printf '| Capability | Result |\n|---|---|\n| lint | PASS |\n| clone-scan | DEGRADED (unavailable) — none |\n' >"$ss_proj/work/$ss_task/verify.md"
+  printf -- '- Tier: record-and-proceed\n' >"$ss_proj/work/$ss_task/deviations.md"
+  echo '{"agent":"falsifier","verdicts":[{"claim":"c1","severity":"high","disposition":"fixed"},{"claim":"c2","severity":"low"}]}' >"$ss_proj/work/$ss_task/artifacts/falsifier-verdict.json"
+  {
+    echo '{"v":1,"ts":"2026-10-01T09:59:00Z","task":"'$ss_task'","event":"class-set","class":"2","autonomy":"guided"}'
+    echo '{"v":1,"ts":"2026-10-01T10:01:00Z","task":"'$ss_task'","event":"hook-block","hook":"path-escalate","tool":"Bash","rule":"unresolved-bash-target","why":"relative-after-cd","cmds":"cd,echo"}'
+    echo '{"v":1,"ts":"2026-10-01T10:02:00Z","task":"'$ss_task'","event":"hook-ask","hook":"dep-gate","tool":"Bash"}'
+    echo '{"v":1,"ts":"2026-10-01T12:30:00Z","task":"'$ss_task'","event":"shipped"}'
+  } >"$ss_proj/.spine/events.jsonl"
+  {
+    echo '{"type":"user","timestamp":"2026-10-01T09:59:30Z","message":{"content":"SECRET_PROMPT_TEXT edit work/'$ss_task'/plan.md"}}'
+    for i in 1 2; do echo '{"type":"assistant","timestamp":"2026-10-01T10:00:00Z","sessionId":"S1","attributionSkill":"task","message":{"id":"m1","usage":{"input_tokens":10,"cache_creation_input_tokens":90,"cache_read_input_tokens":1000,"output_tokens":50}}}'; done
+    echo '{"type":"assistant","timestamp":"2026-10-01T10:05:00Z","sessionId":"S1","message":{"id":"m2","usage":{"input_tokens":200,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":100}}}'
+    echo '{"type":"assistant","timestamp":"2026-10-01T12:00:00Z","sessionId":"S1","attributionSkill":"verify","message":{"id":"m3","usage":{"input_tokens":150,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":10}}}'
+  } >"$ss_tdir/S1.jsonl"
+  {
+    echo '{"type":"user","timestamp":"2026-10-01T10:01:00Z","message":{"content":"work/'$ss_task'/research.md"}}'
+    echo '{"type":"assistant","isSidechain":true,"timestamp":"2026-10-01T10:02:00Z","sessionId":"S1","message":{"id":"m4","usage":{"input_tokens":300,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":20}}}'
+  } >"$ss_tdir/S1/subagents/agent-a1.jsonl"
+  echo '{"agentType":"falsifier"}' >"$ss_tdir/S1/subagents/agent-a1.meta.json"
+
+  ss_json="$(HOME="$ss_home" "$SPINE_STATS" --project "$ss_proj" --json 2>&1)" || true
+  q() { jq -r "$1" <<<"$ss_json" 2>/dev/null; }
+  if [[ "$(q '.results.tokens.messages_deduped')" == "4" && "$(q '.results.tokens.total.fresh')" == "750" && "$(q '.results.tokens.total.out')" == "180" ]]; then
+    pass "spine-stats: duplicate content-block lines count once; token totals add up"
+  else
+    fail "spine-stats: dedupe/totals wrong: msgs=$(q '.results.tokens.messages_deduped') fresh=$(q '.results.tokens.total.fresh') out=$(q '.results.tokens.total.out')"
+  fi
+  if [[ "$(q '.results.tokens.spine_attributed.fresh')" == "550" ]]; then
+    pass "spine-stats: skill-tagged turns and spine subagents count as spine-attributed; plain turns do not"
+  else
+    fail "spine-stats: spine-attributed fresh expected 550, got $(q '.results.tokens.spine_attributed.fresh')"
+  fi
+  if [[ "$(q ".results.tokens.per_task[\"$ss_task\"].msgs")" == "4" && "$(q ".results.tokens.per_task[\"$ss_task\"].active_s")" == "300" ]]; then
+    pass "spine-stats: transcript turns attribute to the work/<task-id> they touched; active time skips long gaps"
+  else
+    fail "spine-stats: per-task attribution wrong: $(q ".results.tokens.per_task[\"$ss_task\"]")"
+  fi
+  if [[ "$(q '.results.adversaries.by_agent.falsifier.yield_fixed_over_raised')" == "0.5" && "$(q '.results.floor.by_capability["clone-scan"].DEGRADED')" == "1" && "$(q '.results.floor.by_capability.lint.PASS')" == "1" ]]; then
+    pass "spine-stats: adversary yield and floor-layer counts parse from the task artifacts"
+  else
+    fail "spine-stats: yield/floor wrong: $(q '.results.adversaries.by_agent.falsifier') $(q '.results.floor.by_capability')"
+  fi
+  if [[ "$(q '.results.friction.interventions')" == "2" && "$(q '.results.friction.with_reason_logged')" == "1" && "$(q '.results.friction.by_rule[0].rule')" != "" ]]; then
+    pass "spine-stats: hook events are counted, and ones with no logged reason are called out"
+  else
+    fail "spine-stats: friction wrong: $(q '.results.friction')"
+  fi
+  ss_text="$(HOME="$ss_home" "$SPINE_STATS" --project "$ss_proj" 2>&1)" || true
+  if ! grep -q "SECRET_PROMPT_TEXT" <<<"$ss_text$ss_json"; then
+    pass "spine-stats: output never contains prompt or message text"
+  else
+    fail "spine-stats: output leaked transcript text"
+  fi
+  ss_code=0; HOME="$ss_home" "$SPINE_STATS" --project "$tmp_root" >/dev/null 2>&1 || ss_code=$?
+  ss_empty="$(HOME="$(mktemp -d "$tmp_root/ssHome2.XXXXXX")" "$SPINE_STATS" --project "$ss_proj" tokens 2>&1)" || true
+  if [[ "$ss_code" == "2" && "$ss_empty" == *"no Claude transcript directory"* ]]; then
+    pass "spine-stats: a non-spine directory exits 2; a project with no transcripts says so instead of failing"
+  else
+    fail "spine-stats: edge cases wrong: code=$ss_code out=$ss_empty"
+  fi
+else
+  pass "spine-stats: python3 not installed — skipped (the analyzer is optional)"
+fi
+
 exit "$overall"

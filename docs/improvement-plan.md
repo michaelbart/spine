@@ -164,8 +164,10 @@ of writing the state file by hand, so transitions are mechanical.
 
 ### B4. The analyzer
 
-- [ ] `core/scripts/spine-stats` (bash + jq, matching repo idiom; no new
-  runtime dependency). Subcommands: `summary`, `task <id>`, `commands`,
+- [x] (MVP done) `core/scripts/spine-stats`, Python 3 standard library only
+  (changed from bash + jq: the joins and windows would have been unreadable in
+  jq; the tool is optional and off the gate path, and the selftest skips its
+  cases when python3 is absent). Subcommands: `summary`, `task <id>`, `commands`,
   `friction`, `adversaries`, `floor`, `--since <date>`, `--project <path>`,
   `--json`.
 - **Inputs:**
@@ -192,6 +194,16 @@ of writing the state file by hand, so transitions are mechanical.
   (every turn under a skill, or only the first). Verify empirically on a
   controlled session before trusting phase splits.
 
+**MVP status (2026-10-08):** sections `tokens tasks friction adversaries floor
+census complexity`, `--since`, `--json`, tested against synthetic fixtures. Not
+yet built: the `shipped` token rollup (needed because Claude Code prunes old
+transcripts: tgml has 17 of 70 tasks attributable), prices (tokens only; no
+price table was invented), rework/escaped-defect rates, human-wait time, and
+the per-phase split. Task attribution is by the `work/<task-id>/` path a
+transcript touched last (works for tasks that predate the event log); active
+time sums gaps under 30 minutes. Transcript usage must be deduped by message
+id (one line per content block repeats the same usage).
+
 ### B5. Metrics (definitions)
 
 | Metric | Definition |
@@ -217,7 +229,7 @@ show the matching commits so a human can judge each one.
 
 ### B6. Baseline report
 
-- [ ] Run B4 over turnpilot (primary: ~92 task folders, event log since
+- [x] (Done: `docs/baseline-2026-10.md`.) Run B4 over turnpilot (primary: ~92 task folders, event log since
   2026-10-06) and tgml (secondary: ~80 task folders, predates the event log so
   most rows are `inferred`). Commit the
   numbers (not content) as `docs/baseline-2026-10.md`. It must answer: spine

@@ -1,0 +1,530 @@
+#!/usr/bin/env python3
+"""spine-stats — read-only measurement of how spine is working in a project.
+
+Joins four local sources and prints numbers (never code or prompt text):
+  1. <project>/.spine/events.jsonl            (docs/event-schema.md)
+  2. Claude transcripts for the project        (~/.claude/projects/<encoded cwd>/)
+  3. <project>/work/<task>/ artifacts          (class, verify.md, verdict json, ...)
+  4. this spine checkout                       (skill/script size, for the complexity budget)
+
+It never gates anything and nothing consults it. Stdlib only; run with python3 -I.
+
+Usage:
+  spine-stats [--project <path>] [--since YYYY-MM-DD] [--json] [section ...]
+  sections: tokens tasks friction adversaries floor census complexity  (default: all)
+
+Honest limits, repeated in the output where they apply:
+  * Token attribution to a task is by time window (first event .. shipped), or by
+    folder mtimes for tasks that predate the event log ("inferred").
+  * `attributionSkill` tags the turns a skill drove; untagged turns include
+    implementation AND any non-spine conversation in the same project.
+  * Rework and escaped-defect rates are not computed here yet.
+"""
+import glob
+import json
+import os
+import re
+import statistics
+import sys
+import time
+from collections import Counter, defaultdict
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+SPINE_ROOT = os.path.realpath(os.path.join(HERE, "..", ".."))
+SPINE_AGENTS = {"researcher", "falsifier", "security", "ui-fidelity", "surveyor"}
+TASK_RE = re.compile(r"work/(\d{8}-[A-Za-z0-9][A-Za-z0-9-]*)")
+ACTIVE_GAP = 1800  # seconds; a longer pause between a task's messages is not counted as active time
+ALL = ["tokens", "tasks", "friction", "adversaries", "floor", "census", "complexity"]
+
+
+# ----------------------------------------------------------------- helpers
+def parse_ts(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def read_jsonl(path):
+    out = []
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                try:
+                    out.append(json.loads(line))
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return out
+
+
+def read_text(path):
+    try:
+        with open(path, errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def first_word(path, pattern):
+    m = re.search(pattern, read_text(path).strip())
+    return m.group(0) if m else ""
+
+
+def median(xs):
+    return statistics.median(xs) if xs else None
+
+
+def fmt_dur(sec):
+    if sec is None:
+        return "-"
+    if sec < 3600:
+        return f"{sec / 60:.0f}m"
+    if sec < 86400:
+        return f"{sec / 3600:.1f}h"
+    return f"{sec / 86400:.1f}d"
+
+
+def mtok(n):
+    return f"{n / 1e6:,.1f}M"
+
+
+# ----------------------------------------------------------------- loading
+def load_events(project, since):
+    ev = read_jsonl(os.path.join(project, ".spine", "events.jsonl"))
+    for e in ev:
+        e["_t"] = parse_ts(e.get("ts"))
+    return [e for e in ev if e["_t"] is not None and (since is None or e["_t"] >= since)]
+
+
+def load_tasks(project, events):
+    """One record per work/<YYYYMMDD-slug> folder."""
+    by_task = defaultdict(list)
+    for e in events:
+        if e.get("task"):
+            by_task[e["task"]].append(e)
+    tasks = {}
+    for d in sorted(glob.glob(os.path.join(project, "work", "[0-9]*"))):
+        tid = os.path.basename(d)
+        t = {"id": tid, "dir": d}
+        cls = first_word(os.path.join(d, "class"), r"[012]")
+        t["class"] = cls or "?"
+        t["autonomy"] = first_word(os.path.join(d, "autonomy"), r"guided|checkpointed|auto") or "?"
+        st = read_text(os.path.join(d, "state")).strip().split("\n")[0]
+        t["state"] = re.sub(r"\s.*", "", st) or "?"
+        t["deviations"] = len(re.findall(r"^- Tier:", read_text(os.path.join(d, "deviations.md")), re.M))
+        evs = sorted(by_task.get(tid, []), key=lambda e: e["_t"])
+        starts = [e["_t"] for e in evs if e["event"] == "class-set"]
+        ends = [e["_t"] for e in evs if e["event"] == "shipped"]
+        if starts and ends:
+            t["start"], t["end"], t["timing"] = starts[0], ends[-1], "events"
+        else:
+            mt = []
+            for name in ("research.md", "plan.md", "verify.md", "briefing.md", "state"):
+                p = os.path.join(d, name)
+                if os.path.exists(p):
+                    mt.append(os.path.getmtime(p))
+            r = os.path.join(d, "research.md")
+            b = os.path.join(d, "briefing.md")
+            t["start"] = os.path.getmtime(r) if os.path.exists(r) else (min(mt) if mt else None)
+            t["end"] = os.path.getmtime(b) if os.path.exists(b) else (max(mt) if mt else None)
+            t["timing"] = "inferred"
+        t["events"] = evs
+        tasks[tid] = t
+    return tasks
+
+
+def transcript_dir(project):
+    base = os.path.expanduser("~/.claude/projects")
+    enc = re.sub(r"[^A-Za-z0-9-]", "-", os.path.realpath(project))
+    cand = os.path.join(base, enc)
+    return cand if os.path.isdir(cand) else None
+
+
+def load_usage(project, since, known_tasks):
+    """Deduped assistant usage records: one per message id."""
+    tdir = transcript_dir(project)
+    if not tdir:
+        return [], None
+    files = glob.glob(os.path.join(tdir, "*.jsonl")) + glob.glob(os.path.join(tdir, "*", "subagents", "agent-*.jsonl"))
+    seen = {}
+    for f in files:
+        sub = os.sep + "subagents" + os.sep in f
+        agent_type = ""
+        if sub:
+            meta = f[: -len(".jsonl")] + ".meta.json"
+            try:
+                agent_type = json.load(open(meta)).get("agentType", "")
+            except (OSError, ValueError):
+                agent_type = ""
+        current = ""
+        try:
+            fh = open(f, errors="replace")
+        except OSError:
+            continue
+        with fh:
+            for line in fh:
+                # The task a transcript is working on is whichever work/<task-id>/ path it
+                # touched last. Cheap, works for tasks that predate the event log, and
+                # approximate: it cannot see a task before its folder is first touched.
+                m = TASK_RE.search(line)
+                if m and m.group(1) in known_tasks:
+                    current = m.group(1)
+                if '"type":"assistant"' not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if d.get("type") != "assistant":
+                    continue
+                msg = d.get("message") or {}
+                u = msg.get("usage")
+                if not u:
+                    continue
+                ts = parse_ts(d.get("timestamp"))
+                if ts is None or (since is not None and ts < since):
+                    continue
+                key = msg.get("id") or d.get("requestId") or d.get("uuid")
+                rec = {
+                    "t": ts,
+                    "session": d.get("sessionId", ""),
+                    "side": bool(d.get("isSidechain")) or sub,
+                    "skill": d.get("attributionSkill") or "",
+                    "agent": agent_type,
+                    "task": current,
+                    "fresh": (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0),
+                    "cache": u.get("cache_read_input_tokens") or 0,
+                    "out": u.get("output_tokens") or 0,
+                }
+                prev = seen.get(key)
+                if prev is None or rec["out"] > prev["out"]:
+                    seen[key] = rec
+    return list(seen.values()), tdir
+
+
+# ----------------------------------------------------------------- sections
+def sec_tokens(ctx):
+    usage, tdir = ctx["usage"], ctx["tdir"]
+    if tdir is None:
+        return {"error": "no Claude transcript directory found for this project"}
+    groups = defaultdict(lambda: {"msgs": 0, "fresh": 0, "cache": 0, "out": 0})
+    per_task = defaultdict(lambda: {"msgs": 0, "fresh": 0, "cache": 0, "out": 0})
+    for r in usage:
+        agent = (r["agent"] or "subagent") if r["side"] else "main"
+        label = (r["skill"] or "(none)") + " / " + agent
+        for g in (groups[label],):
+            g["msgs"] += 1
+            g["fresh"] += r["fresh"]
+            g["cache"] += r["cache"]
+            g["out"] += r["out"]
+        if r["task"]:
+            g = per_task[r["task"]]
+            g["msgs"] += 1
+            g["fresh"] += r["fresh"]
+            g["cache"] += r["cache"]
+            g["out"] += r["out"]
+            g.setdefault("ts", []).append(r["t"])
+    total = {k: sum(g[k] for g in groups.values()) for k in ("msgs", "fresh", "cache", "out")}
+    def is_spine(label):
+        skill, side = label.split(" / ", 1)
+        return skill != "(none)" or side in SPINE_AGENTS
+    spine_tagged = {k: sum(g[k] for lab, g in groups.items() if is_spine(lab)) for k in ("msgs", "fresh", "cache", "out")}
+    for g in per_task.values():
+        ts = sorted(g.pop("ts", []))
+        g["active_s"] = int(sum(b - a for a, b in zip(ts, ts[1:]) if b - a < ACTIVE_GAP))
+        g["span_s"] = int(ts[-1] - ts[0]) if len(ts) > 1 else 0
+    return {
+        "messages_deduped": len(usage),
+        "total": total,
+        "spine_attributed": spine_tagged,
+        "share_fresh_tagged": spine_tagged["fresh"] / total["fresh"] if total["fresh"] else None,
+        "share_out_tagged": spine_tagged["out"] / total["out"] if total["out"] else None,
+        "groups": dict(groups),
+        "per_task": dict(per_task),
+    }
+
+
+def sec_tasks(ctx):
+    tasks = ctx["tasks"]
+    cls_auto = Counter((t["class"], t["autonomy"]) for t in tasks.values())
+    states = Counter(t["state"] for t in tasks.values())
+    done = [t for t in tasks.values() if t["state"] == "done" and t["start"] and t["end"] and t["end"] >= t["start"]]
+    cyc_ev = [t["end"] - t["start"] for t in done if t["timing"] == "events"]
+    c2 = [t for t in tasks.values() if t["class"] == "2"]
+    adv = ctx["adv_by_task"]
+    c2_idle = [t["id"] for t in c2 if t["state"] == "done"
+               and adv.get(t["id"], {}).get("fixed", 0) == 0 and t["deviations"] == 0]
+    ver = Counter()
+    first_pass = []
+    for t in tasks.values():
+        vr = [e for e in t["events"] if e["event"] == "verify-result"]
+        if vr:
+            first_pass.append(vr[0].get("result") == "PASS")
+            ver[len(vr)] += 1
+    return {
+        "count": len(tasks),
+        "states": dict(states),
+        "class_x_autonomy": {f"class {c} / {a}": n for (c, a), n in sorted(cls_auto.items())},
+        "class2_share": (len(c2) / len(tasks)) if tasks else None,
+        "class2_done_with_no_fixed_finding_and_no_deviation": c2_idle,
+        "cycle_time_median_events": median(cyc_ev),
+        "cycle_time_n_events": len(cyc_ev),
+        "verify_first_pass": (sum(first_pass), len(first_pass)),
+        "verify_rounds_per_task": dict(ver),
+        "deviation_records_total": sum(t["deviations"] for t in tasks.values()),
+    }
+
+
+def sec_friction(ctx):
+    ev = ctx["events"]
+    hook = [e for e in ev if e["event"] in ("hook-block", "hook-ask")]
+    shipped = {e["task"] for e in ev if e["event"] == "shipped"}
+    by_rule = Counter()
+    for e in hook:
+        by_rule[(e["event"], e.get("hook", "?"), e.get("rule") or "(no reason logged)", e.get("why") or "")] += 1
+    per_task = Counter(e.get("task") or "(none)" for e in hook)
+    cmds = Counter(e["cmds"] for e in hook if e.get("cmds"))
+    shas = Counter(e["cmd_sha"] for e in hook if e.get("cmd_sha"))
+    with_reason = sum(1 for e in hook if e.get("rule"))
+    return {
+        "interventions": len(hook),
+        "with_reason_logged": with_reason,
+        "shipped_tasks_in_log": len(shipped),
+        "per_shipped_task": (len(hook) / len(shipped)) if shipped else None,
+        "by_rule": [{"event": a, "hook": b, "rule": c, "why": d, "n": n} for (a, b, c, d), n in by_rule.most_common()],
+        "worst_tasks": per_task.most_common(5),
+        "top_command_words": cmds.most_common(8),
+        "most_repeated_commands": [(s, n) for s, n in shas.most_common(5) if n > 1],
+        "bypasses": sum(1 for e in ev if e["event"] == "bypass"),
+        "class_escalations": sum(1 for e in ev if e["event"] == "class-escalated"),
+    }
+
+
+def sec_adversaries(ctx):
+    return {"by_agent": ctx["adv_agents"], "tasks_with_artifacts": len(ctx["adv_by_task"])}
+
+
+def collect_adversaries(project, tasks):
+    agents = defaultdict(lambda: {"tasks": 0, "verdicts": 0, "fixed": 0, "high": 0, "medium": 0, "low": 0, "tasks_with_zero": 0, "fixed_high_medium": 0})
+    by_task = {}
+    for tid, t in tasks.items():
+        per = {"fixed": 0, "verdicts": 0}
+        for f in glob.glob(os.path.join(t["dir"], "artifacts", "*-verdict.json")):
+            name = os.path.basename(f)
+            if name.endswith("-raw.json"):
+                continue
+            try:
+                d = json.load(open(f))
+            except (OSError, ValueError):
+                continue
+            agent = d.get("agent") or name.split("-")[0]
+            vs = d.get("verdicts") or []
+            a = agents[agent]
+            a["tasks"] += 1
+            a["verdicts"] += len(vs)
+            if not vs:
+                a["tasks_with_zero"] += 1
+            for v in vs:
+                sev = v.get("severity", "")
+                if sev in ("high", "medium", "low"):
+                    a[sev] += 1
+                if v.get("disposition") == "fixed":
+                    a["fixed"] += 1
+                    per["fixed"] += 1
+                    if sev in ("high", "medium"):
+                        a["fixed_high_medium"] += 1
+            per["verdicts"] += len(vs)
+        if per["verdicts"] or glob.glob(os.path.join(t["dir"], "artifacts", "*-verdict.json")):
+            by_task[tid] = per
+    for a in agents.values():
+        a["yield_fixed_over_raised"] = (a["fixed"] / a["verdicts"]) if a["verdicts"] else None
+    return dict(agents), by_task
+
+
+FLOOR_ROW = re.compile(r"^\|\s*([A-Za-z][A-Za-z0-9 /_-]*?)\s*\|\s*([A-Z][A-Z_-]*)\b")
+
+
+def sec_floor(ctx):
+    cap = defaultdict(Counter)
+    runs = 0
+    for t in ctx["tasks"].values():
+        txt = read_text(os.path.join(t["dir"], "verify.md"))
+        if not txt:
+            continue
+        runs += 1
+        for line in txt.split("\n"):
+            m = FLOOR_ROW.match(line)
+            if not m:
+                continue
+            name, status = m.group(1).strip(), m.group(2)
+            if name.lower() in ("capability", "result", "check", "---") or status not in ("PASS", "FAIL", "DEGRADED", "SKIPPED", "WARN"):
+                continue
+            cap[name][status] += 1
+    rows = {k: dict(v) for k, v in sorted(cap.items())}
+    never_fail = [k for k, v in cap.items() if v.get("PASS", 0) >= 5 and not v.get("FAIL")]
+    return {"verify_files": runs, "by_capability": rows, "never_failed_in_5_plus_passes": sorted(never_fail)}
+
+
+def sec_census(ctx):
+    usage = ctx["usage"]
+    skills = defaultdict(lambda: {"msgs": 0, "sessions": set(), "last": 0})
+    for r in usage:
+        if not r["skill"]:
+            continue
+        s = skills[r["skill"]]
+        s["msgs"] += 1
+        s["sessions"].add(r["session"])
+        s["last"] = max(s["last"], r["t"])
+    out = {k: {"messages": v["msgs"], "sessions": len(v["sessions"]), "last_used": datetime.fromtimestamp(v["last"], timezone.utc).strftime("%Y-%m-%d")} for k, v in skills.items()}
+    cmds = sorted(d for d in os.listdir(os.path.join(SPINE_ROOT, "core", "skills")))
+    unused = [c for c in cmds if c not in out and c != "security-checklist"]
+    return {"by_skill": dict(sorted(out.items(), key=lambda kv: -kv[1]["messages"])), "no_turns_found": unused}
+
+
+def sec_complexity(ctx):
+    skills = {}
+    for f in sorted(glob.glob(os.path.join(SPINE_ROOT, "core", "skills", "*", "SKILL.md"))):
+        skills[os.path.basename(os.path.dirname(f))] = sum(1 for _ in open(f, errors="replace"))
+    scripts = glob.glob(os.path.join(SPINE_ROOT, "core", "scripts", "*"))
+    hooks = glob.glob(os.path.join(SPINE_ROOT, "core", "hooks", "*"))
+    return {
+        "skills": len(skills),
+        "skill_lines_total": sum(skills.values()),
+        "largest_skills": sorted(skills.items(), key=lambda kv: -kv[1])[:5],
+        "scripts": len(scripts),
+        "hooks_files": len(hooks),
+        "script_and_hook_lines": sum(sum(1 for _ in open(f, errors="replace")) for f in scripts + hooks if os.path.isfile(f)),
+    }
+
+
+# ----------------------------------------------------------------- output
+def table(rows, headers):
+    w = [max(len(str(r[i])) for r in [headers] + rows) for i in range(len(headers))]
+    lines = ["  ".join(str(h).ljust(w[i]) for i, h in enumerate(headers))]
+    lines += ["  ".join(str(c).ljust(w[i]) for i, c in enumerate(r)) for r in rows]
+    return "\n".join("  " + ln for ln in lines)
+
+
+def render(name, d, ctx):
+    p = print
+    if name == "tokens":
+        p("== Tokens (deduped by message id; tokens only, no prices)")
+        if "error" in d:
+            p("  " + d["error"]); return
+        t = d["total"]
+        p(f"  {d['messages_deduped']:,} assistant messages   fresh-in {mtok(t['fresh'])}   cache-read {mtok(t['cache'])}   out {mtok(t['out'])}")
+        if d["share_fresh_tagged"] is not None:
+            p(f"  spine-attributed (skill-tagged turns + researcher/falsifier/security/ui-fidelity agents): {d['share_fresh_tagged']:.0%} of fresh input, {d['share_out_tagged']:.0%} of output")
+            p("  the rest = implementation plus any non-spine conversation in this project; not separable here")
+        rows = [[k, f"{g['msgs']:,}", mtok(g["fresh"]), mtok(g["cache"]), mtok(g["out"])] for k, g in sorted(d["groups"].items(), key=lambda kv: -kv[1]["fresh"])[:12]]
+        p(table(rows, ["skill / side or agent", "msgs", "fresh-in", "cache-read", "out"]))
+        pt = d["per_task"]
+        if pt:
+            tok = [g["fresh"] + g["out"] for g in pt.values()]
+            act = [g["active_s"] for g in pt.values() if g["active_s"] > 0]
+            p(f"  {len(pt)} tasks attributed by the work/<task-id> path each transcript touched last (approximate)")
+            p(f"  per task: median fresh-in+out {mtok(median(tok))}, max {mtok(max(tok))}; median active time {fmt_dur(median(act))} "
+              f"(gaps over {ACTIVE_GAP // 60}m excluded), total active {fmt_dur(sum(act))}")
+    elif name == "tasks":
+        p("== Tasks")
+        p(f"  {d['count']} task folders; states: {d['states']}")
+        for k, n in d["class_x_autonomy"].items():
+            p(f"    {k}: {n}")
+        if d["class2_share"] is not None:
+            p(f"  Class 2 share: {d['class2_share']:.0%}")
+        idle = d["class2_done_with_no_fixed_finding_and_no_deviation"]
+        p(f"  Class 2 tasks done with 0 fixed adversary findings and 0 deviations: {len(idle)} (over-classification candidates)")
+        p(f"  wall-clock cycle time class-set..shipped, median {fmt_dur(d['cycle_time_median_events'])} (n={d['cycle_time_n_events']}; event log only, so recent tasks); "
+          f"see the tokens section for active time on every task")
+        fp = d["verify_first_pass"]
+        p(f"  verify first-pass PASS (event log only): {fp[0]}/{fp[1]}   deviation records total: {d['deviation_records_total']}")
+    elif name == "friction":
+        p("== Hook friction (event log)")
+        p(f"  {d['interventions']} interventions; {d['with_reason_logged']} carry a reason; {d['shipped_tasks_in_log']} shipped tasks in log"
+          + (f"; {d['per_shipped_task']:.1f} per shipped task" if d["per_shipped_task"] else ""))
+        rows = [[r["event"], r["hook"], r["rule"], r["why"], r["n"]] for r in d["by_rule"][:10]]
+        if rows:
+            p(table(rows, ["event", "hook", "rule", "why", "n"]))
+        if d["worst_tasks"]:
+            p("  worst tasks: " + "; ".join(f"{t} ({n})" for t, n in d["worst_tasks"]))
+        if d["top_command_words"]:
+            p("  top command-word chains: " + "; ".join(f"{c} ({n})" for c, n in d["top_command_words"]))
+        p(f"  bypasses: {d['bypasses']}   class escalations: {d['class_escalations']}")
+    elif name == "adversaries":
+        p("== Adversary yield (verdict artifacts: fixed / raised)")
+        rows = []
+        for a, v in sorted(d["by_agent"].items()):
+            y = f"{v['yield_fixed_over_raised']:.0%}" if v["yield_fixed_over_raised"] is not None else "-"
+            rows.append([a, v["tasks"], v["verdicts"], f"{v['high']}/{v['medium']}/{v['low']}", v["fixed"], y, v["tasks_with_zero"]])
+        p(table(rows, ["agent", "tasks", "raised", "high/med/low", "fixed", "yield", "tasks w/ 0 findings"]))
+        p("  `fixed` is set only when /verify marked the finding fixed. The rest were carried, declined or left open, so a low yield")
+        p("  (ui-fidelity) means findings are mostly dispositioned by the human, not that they were noise (core/ADAPTER-CONTRACT.md §5).")
+    elif name == "floor":
+        p(f"== Floor layers across {d['verify_files']} verify.md files (PASS / FAIL / DEGRADED)")
+        rows = [[k, v.get("PASS", 0), v.get("FAIL", 0), v.get("DEGRADED", 0)] for k, v in d["by_capability"].items()]
+        p(table(rows, ["capability", "PASS", "FAIL", "DEGRADED"]))
+        p("  caveat: verify.md holds the FINAL round's result, so failures fixed in an earlier round do not show here.")
+        always_degraded = [k for k, v in d["by_capability"].items() if v.get("DEGRADED", 0) >= 5 and not v.get("PASS") and not v.get("FAIL")]
+        if always_degraded:
+            p("  degraded (never ran) in every recorded task: " + ", ".join(always_degraded))
+    elif name == "census":
+        p("== Command census (turns carrying each skill tag; by messages)")
+        rows = [[k, v["messages"], v["sessions"], v["last_used"]] for k, v in d["by_skill"].items()]
+        p(table(rows, ["skill", "messages", "sessions", "last used"]))
+        if d["no_turns_found"]:
+            p("  no tagged turns in this project: " + ", ".join(d["no_turns_found"]))
+    elif name == "complexity":
+        p("== Complexity (this spine checkout)")
+        p(f"  {d['skills']} skills, {d['skill_lines_total']:,} skill lines; largest: " + ", ".join(f"{k} {n}" for k, n in d["largest_skills"]))
+        p(f"  {d['scripts']} scripts + {d['hooks_files']} hook files, {d['script_and_hook_lines']:,} lines")
+
+
+def main(argv):
+    project, since, as_json, want = os.getcwd(), None, False, []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--project":
+            project = argv[i + 1]; i += 2
+        elif a == "--since":
+            since = parse_ts(argv[i + 1] + "T00:00:00Z"); i += 2
+        elif a == "--json":
+            as_json = True; i += 1
+        elif a in ("-h", "--help"):
+            print(__doc__); return 0
+        elif a in ALL:
+            want.append(a); i += 1
+        else:
+            print(f"spine-stats: unknown argument '{a}'", file=sys.stderr); return 2
+    want = want or ALL
+    project = os.path.realpath(project)
+    if not os.path.isdir(os.path.join(project, ".spine")):
+        print(f"spine-stats: {project} has no .spine/ — not a spine project", file=sys.stderr)
+        return 2
+    events = load_events(project, since)
+    tasks = load_tasks(project, events)
+    usage, tdir = load_usage(project, since, set(tasks)) if any(w in want for w in ("tokens", "census")) else ([], None)
+    adv_agents, adv_by_task = collect_adversaries(project, tasks)
+    ctx = {"project": project, "events": events, "tasks": tasks, "usage": usage, "tdir": tdir,
+           "adv_agents": adv_agents, "adv_by_task": adv_by_task}
+    fn = {"tokens": sec_tokens, "tasks": sec_tasks, "friction": sec_friction, "adversaries": sec_adversaries,
+          "floor": sec_floor, "census": sec_census, "complexity": sec_complexity}
+    results = {w: fn[w](ctx) for w in want}
+    if as_json:
+        print(json.dumps({"project": os.path.basename(project), "generated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "results": results}, indent=2, default=str))
+        return 0
+    print(f"spine-stats  project={os.path.basename(project)}  events={len(events)}  tasks={len(tasks)}"
+          + (f"  since={datetime.fromtimestamp(since, timezone.utc).date()}" if since else ""))
+    for w in want:
+        print()
+        render(w, results[w], ctx)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
