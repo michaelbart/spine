@@ -1,0 +1,251 @@
+# _path-route — shared library, sourced by phase-gate, path-escalate,
+# dep-gate. Not a hook itself (nothing in .claude/settings.json wires it
+# directly) — same convention as _bash-write-targets.
+#
+# Turns a write target into the facts every hook needs: is it inside this
+# project at all, and what is its project-relative, symlink-resolved path (the
+# thing protected-path globs and task-folder containment compare against)?
+#
+# Usage:
+#   project_route "$project" "$file_path"
+# Sets two globals (never prints — this runs in the caller's own shell,
+# sourced, not a subshell, so plain assignment is simpler and safer than
+# serializing paths that could themselves contain a field separator):
+#   PR_ROOT  — the project's canonical absolute path, or empty if $file_path
+#              resolves outside $project (a genuinely out-of-project path;
+#              callers allow those: these hooks only govern their own project).
+#   PR_REL   — $file_path relative to PR_ROOT, fully symlink-resolved ("." if it
+#              names the root itself), or $file_path verbatim when PR_ROOT is
+#              empty.
+# Returns 1 (failing closed, PR_ROOT empty) only when $project is not absolute.
+
+# _pr_collapse — collapses `.`/`..` segments out of an absolute path
+# string purely lexically (no filesystem access, so it works for a path
+# that doesn't exist yet — the common case for a about-to-be-written
+# file). Without this, "$project/work/T1/../../etc/passwd" survives as a
+# literal string all the way to every glob match below (protected-paths.conf,
+# task_dir confinement, install-command manifests), and none of them match
+# it even though it plainly resolves outside the boundary they exist to
+# enforce — a bare `../` in an ordinary relative file_path silently walks
+# past phase-gate/path-escalate/dep-gate. Confirmed by direct repro: a
+# single ../.. component made an otherwise-denied protected-path write and
+# an otherwise-confined out-of-task-dir write both pass clean.
+_pr_collapse() {
+  # Bash 3.2 (macOS system bash) has no negative array subscripts
+  # (${arr[-1]} is a 4.2+ feature) — last-index reads/removals below use
+  # $((${#out[@]}-1)) instead, deliberately, not for style.
+  local input="$1" seg out=() IFS='/' last
+  local -a segs
+  read -ra segs <<<"$input"
+  # Same bash-3.2 "unbound variable under set -u on a legitimately empty
+  # array" gotcha this function already guards below for "${out[@]}" —
+  # found here too, on "${segs[@]}", by a fuzz harness feeding raw
+  # unrestricted strings directly to this function (core-selftest's
+  # "fuzz:" section). `read -ra segs <<<""` (input is the literal empty
+  # string) leaves segs with zero elements, and bash 3.2 throws on
+  # dereferencing that under nounset — every real caller in this codebase
+  # is traced to never pass "" here (project_route/hooks all guard
+  # file_path/task_id non-empty before this point), so this is not known
+  # to be reachable through any hook today, but the function's own
+  # contract ("never crashes, always returns at least /") shouldn't
+  # depend on every future caller rediscovering that precondition by hand.
+  if [[ ${#segs[@]} -gt 0 ]]; then
+    for seg in "${segs[@]}"; do
+      case "$seg" in
+        ''|'.') continue ;;
+        '..')
+          if [[ ${#out[@]} -gt 0 ]]; then
+            last="${out[$((${#out[@]}-1))]}"
+            [[ "$last" != '..' ]] && unset 'out[$((${#out[@]}-1))]'
+          fi
+          ;;
+        *) out+=("$seg") ;;
+      esac
+    done
+  fi
+  local result="" p
+  # Bash 3.2 throws "unbound variable" under `set -u` when expanding
+  # "${out[@]}" on a *legitimately empty* array (no empty-array exemption
+  # until 4.4+) — confirmed by direct repro: a path that collapses all the
+  # way to root (e.g. a `../` chain that cancels a whole absolute prefix,
+  # or a relative $project silently mis-rooted to "/proj" by the
+  # unconditional leading "/" below) hit this, the surrounding $(...) swallowed
+  # the error and returned "", and the caller (_pr_realpath's ancestor
+  # walk) then recursed on that same non-progressing "" input forever —
+  # each level a real subshell fork, confirmed as a genuine multi-thousand-
+  # process runaway, not just a hypothetical crash. Guard the dereference
+  # instead of ever letting it fire.
+  if [[ ${#out[@]} -gt 0 ]]; then
+    for p in "${out[@]}"; do result+="/$p"; done
+  fi
+  printf '%s' "${result:-/}"
+}
+
+# _pr_realpath — physically resolves every symlink in $1's *existing*
+# prefix, including $1 itself if it exists and is a symlink (bounded
+# hop-count against a symlink cycle). Layered on top of _pr_collapse
+# (lexical `.`/`..` normalization is not enough on its own: a symlink
+# doesn't need a `..` in it to point outside a confined tree). A path
+# component that doesn't exist yet — the common case, a task about to
+# create a new file — has no on-disk symlink-ness to resolve, so it's left
+# exactly as _pr_collapse already normalized it; only the existing prefix
+# (ancestor directories, or the target itself if it's an existing file/
+# symlink being overwritten) is canonicalized.
+#
+# Confirmed by direct repro this was a real gap, not a hypothetical one:
+# a symlink planted *inside* a task folder pointing outside the project
+# let phase-gate's containment check pass (the abs_path's string prefix
+# was still "$task_dir/..." even though the write physically landed
+# elsewhere); a symlink at an *unprotected*-looking name pointing *into* a
+# protected path let path-escalate's glob check pass (the glob never saw
+# the protected name, only the symlink's own). Both are invisible to
+# _pr_collapse alone since neither repro used a `..` segment.
+_pr_realpath() {
+  local input hop=0 target dir base resolved_dir
+  input="$(_pr_collapse "$1")"
+  while [[ -L "$input" && $hop -lt 40 ]]; do
+    hop=$((hop + 1))
+    target="$(readlink "$input" 2>/dev/null)"
+    [[ -n "$target" ]] || break
+    case "$target" in
+      /*) input="$target" ;;
+      *) input="$(dirname "$input")/$target" ;;
+    esac
+    input="$(_pr_collapse "$input")"
+  done
+  if [[ -e "$input" ]]; then
+    dir="$(cd -P "$(dirname "$input")" 2>/dev/null && pwd -P)"
+    if [[ -n "$dir" ]]; then
+      printf '%s' "$dir/$(basename "$input")"
+    else
+      printf '%s' "$input"
+    fi
+    return 0
+  fi
+  dir="$(dirname "$input")"
+  base="$(basename "$input")"
+  if [[ "$dir" == "$input" ]]; then
+    printf '%s' "$input"
+    return 0
+  fi
+  resolved_dir="$(_pr_realpath "$dir")"
+  printf '%s' "$resolved_dir/$base"
+}
+
+# _pr_nfc <string> — Unicode-NFC-normalizes $1, or returns it unchanged if
+# it's pure ASCII (the overwhelming common case — zero-cost fast path, no
+# subprocess spawned) or if no normalizer is available. macOS APFS/HFS+ is
+# normalization-insensitive: an NFC- and an NFD-encoded (byte-distinct) form
+# of the same accented filename address the identical real file, but a bare
+# bash glob comparison (`[[ "$rel" == $glob ]]`) is a byte comparison and
+# _pr_realpath's physical resolution (cd -P/pwd -P, readlink) preserves
+# whichever byte form the caller supplied rather than canonicalizing it —
+# confirmed by direct repro: a protected-paths.conf glob written in NFC form
+# matched a file_path given in NFC form but silently missed the identical
+# real file addressed via its NFD form. Bash 3.2 has no normalization
+# primitive of its own, so this shells out to python3 (already how this
+# machine's real environment is provisioned — confirmed present; no new
+# core dependency is declared, since the ASCII fast path above means a
+# python3-less system only loses coverage for the narrow non-ASCII case,
+# never regresses the byte-identical-comparison behavior that predates this
+# fix).
+_pr_nfc() {
+  local s="$1"
+  case "$s" in
+    *[![:ascii:]]*) ;;
+    *) printf '%s' "$s"; return 0 ;;
+  esac
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys,unicodedata; sys.stdout.write(unicodedata.normalize("NFC", sys.stdin.read()))' <<<"$s" 2>/dev/null && return 0
+  fi
+  printf '%s' "$s"
+}
+
+# _pr_glob_eq <rel> <glob> — true if <rel> matches the shell glob <glob>,
+# trying a plain byte comparison first (fast path, and the only path a pure-
+# ASCII $rel/$glob pair ever takes) and, only if that misses, retrying with
+# both sides Unicode-NFC-normalized (_pr_nfc) — closes the NFC/NFD bypass
+# above without changing the result for any pair that already matched or
+# already correctly didn't.
+_pr_glob_eq() {
+  local rel="$1" glob="$2"
+  [[ "$rel" == $glob ]] && return 0
+  local rel_nfc glob_nfc
+  rel_nfc="$(_pr_nfc "$rel")"
+  glob_nfc="$(_pr_nfc "$glob")"
+  [[ "$rel_nfc" == $glob_nfc ]]
+}
+
+# _pr_owns <lexical-path> <resolved-path> <root> — true if <lexical-path>
+# lexically falls under <root>, or (fallback — closes a real bypass: an
+# absolute file_path reaching the project through a different real
+# filesystem alias than $project was given in, e.g. macOS's /tmp vs.
+# /private/tmp for the identical directory, defeated the lexical-only check
+# below on its own, confirmed by direct repro) <resolved-path> falls under
+# <root> once both sides are canonical. <root> must already be resolved
+# (project_res) —
+# this never extends ownership to something merely reachable via an
+# unrelated symlink from outside the tree, only recognizes the same real
+# location addressed two different valid ways.
+_pr_owns() {
+  local path="$1" path_res="$2" root="$3"
+  case "$path" in "$root"|"$root"/*) return 0 ;; esac
+  case "$path_res" in "$root"|"$root"/*) return 0 ;; esac
+  return 1
+}
+
+project_route() {
+  local project="$1" file_path="$2" project_res abs_path abs_path_res
+
+  # $project (CLAUDE_PROJECT_DIR, or a caller's $(pwd) fallback) must be
+  # absolute. A relative value has no principled resolution here — this
+  # runs in a hook subprocess whose cwd isn't reliably "the project" — and
+  # every comparison below assumes an absolute root (a relative one gets
+  # silently mis-rooted to "/$project" by the leading "/" _pr_collapse always
+  # prepends, which once produced a confidently-wrong ownership decision
+  # rather than a refusal). Fail closed instead of guessing.
+  case "$project" in
+    /*) ;;
+    *)
+      echo "_path-route: project root '$project' is not absolute — failing closed, cannot evaluate this write safely" >&2
+      PR_ROOT=""; PR_REL="$file_path"
+      return 1
+      ;;
+  esac
+
+  # project_res: the project root's own canonical location — resolves a
+  # root-level alias (e.g. macOS's /tmp -> /private/tmp, or a project reached
+  # through a symlinked ancestor) so the SAME project reached two ways is
+  # recognized as one project. The swap below puts that resolved root back
+  # into $abs_path's own prefix (root-alias normalization only) rather than
+  # resolving $abs_path wholesale, for the reason in the next comment.
+  project_res="$(_pr_realpath "$project")"
+
+  case "$file_path" in
+    /*) abs_path="$file_path" ;;
+    *) abs_path="$project/$file_path" ;;
+  esac
+  abs_path="$(_pr_collapse "$abs_path")"
+  case "$abs_path" in
+    "$project"/*) abs_path="$project_res/${abs_path#"$project"/}" ;;
+    "$project") abs_path="$project_res" ;;
+  esac
+  # Whether a target is in scope is decided from this root-alias-normalized
+  # but otherwise LEXICAL path: a file_path lexically outside $project (e.g.
+  # the user's home directory) stays out of scope whatever a symlink somewhere
+  # might resolve to, while one lexically INSIDE the project (or a task
+  # folder) that symlinks its way out must still count as in scope — that is
+  # precisely the case a caller has to go on and check. PR_REL is the one
+  # place full symlink resolution matters: it is what protected-path globs and
+  # task-folder containment compare against, so a symlink cannot hide a
+  # write's real destination once the target has been placed in scope.
+  abs_path_res="$(_pr_realpath "$abs_path")"
+
+  if _pr_owns "$abs_path" "$abs_path_res" "$project_res"; then
+    PR_ROOT="$project_res"
+    [[ "$abs_path_res" == "$project_res" ]] && PR_REL="." || PR_REL="${abs_path_res#"$project_res"/}"
+  else
+    PR_ROOT=""; PR_REL="$file_path"
+  fi
+  return 0
+}

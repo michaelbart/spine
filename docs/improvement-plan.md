@@ -547,7 +547,7 @@ rounds of hook-bypass bugs were found.
 2. [x] Delete the skill, scripts, templates and rules with no hook coupling
    (`/workspace`, `propagate`, `registry-sync`, `contract-touch`,
    `contracts.md`, templates) and their selftest cases.
-3. [ ] (next, own commit) Simplify the hooks: replace `_workspace-route` with the small
+3. [x] Simplify the hooks (done in its own commit; `_workspace-route` 360 lines -> `_path-route` 251, renamed `project_route`/`_pr_*`/`PR_ROOT`/`PR_REL`; existing traversal, symlink, alias and fuzz tests all pass unchanged): replace `_workspace-route` with the small
    single-repo helper. **Own commit**, because these are the security layer.
    The fuzz suite for the kept functions must pass; each retained behavior
    keeps a negative control.
@@ -576,7 +576,7 @@ UI steps run 1, 1c, 1d, 1e; `/task` got a small "Step 0 install health"
 all of Step 0; `/update` now shows `git log ORIG_HEAD..HEAD` in the spine
 checkout instead of comparing against a pin; the `/task` "second task while one
 is active" prompt now offers resume-or-park until E2 (abandon) exists.
-The hooks still carry workspace-mode code and tests (step 3).
+The hooks were simplified in the next commit (step 3).
 
 ---
 

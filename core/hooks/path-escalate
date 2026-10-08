@@ -23,33 +23,15 @@
 # Project state consulted:
 #   .spine/protected-paths.conf — one glob per line; `#` starts a comment;
 #                                  a trailing `#migration` tags the line.
-#                                  In workspace mode (workspace.json present
-#                                  at $project), the *owning repo's own*
-#                                  .spine/protected-paths.conf governs a
-#                                  target inside a member repo — see
-#                                  _workspace-route. A plain single-repo
-#                                  project (no workspace.json) is entirely
-#                                  unaffected: workspace_route degenerates
-#                                  to $project's own conf, exactly as before.
-#   .spine/current-task         — active task-id (or absent -> class 0),
-#                                  always read from $project (the workspace
-#                                  root for a multi-repo task — one task
-#                                  folder at the workspace)
-#   work/<task-id>/class        — single line, "0"|"1"|"2", same rule: one
-#                                  class for the whole multi-repo task, so
-#                                  a protected path in *any* member repo is
-#                                  gated by that one class, which is what
-#                                  makes plan-time "max across repos"
-#                                  escalation (core/skills/task/SKILL.md)
-#                                  sufficient — this hook never itself
-#                                  computes a max, it only ever reads one.
+#   .spine/current-task         — active task-id (or absent -> class 0)
+#   work/<task-id>/class        — single line, "0"|"1"|"2"
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/_workspace-route"
+source "$SCRIPT_DIR/_path-route"
 source "$SCRIPT_DIR/_spine-event" 2>/dev/null
 declare -F spine_cmd_fields >/dev/null || { spine_cmd_fields() { :; }; spine_unresolved_code() { :; }; }
-declare -F workspace_route >/dev/null || { echo "path-escalate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
+declare -F project_route >/dev/null || { echo "path-escalate: _path-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
@@ -68,20 +50,16 @@ fi
 
 check_target() {
   # check_target <file_path-as-given> — denies per the owning root's
-  # protected-paths.conf (workspace_route resolves which root that is;
+  # protected-paths.conf (project_route resolves which root that is;
   # single-repo projects always resolve to $project itself).
   local file_path="$1" rel matched_glob="" is_migration=0 line tag glob conf display
 
-  workspace_route "$project" "$file_path" || return 1
-  [[ -n "$WSR_OWNER_ROOT" ]] || return 0
-  conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
+  project_route "$project" "$file_path" || return 1
+  [[ -n "$PR_ROOT" ]] || return 0
+  conf="$PR_ROOT/.spine/protected-paths.conf"
   [[ -f "$conf" ]] || return 0
-  rel="$WSR_REL"
-  # Repo-qualified display form for messages only — glob matching below
-  # always uses the plain $rel against that owner's own conf. Empty
-  # WSR_OWNER_NAME (plain single-repo project, no workspace.json) means
-  # display==rel, byte-identical to this hook's pre-Extension-B messages.
-  if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$rel"; else display="$rel"; fi
+  rel="$PR_REL"
+  display="$rel"
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" == \#* ]] && continue
@@ -90,7 +68,7 @@ check_target() {
     glob="${line%%#*}"
     glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
     [[ -z "$glob" ]] && continue
-    if _wsr_glob_eq "$rel" "$glob"; then
+    if _pr_glob_eq "$rel" "$glob"; then
       matched_glob="$glob"
       [[ "$tag" == "migration" ]] && is_migration=1
       break

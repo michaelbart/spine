@@ -20,34 +20,21 @@
 #
 # Project state consulted:
 #   .spine/protected-paths.conf          — lines tagged `#manifest` are
-#     dependency manifests. In workspace mode (workspace.json present at
-#     $project) the *owning repo's own* copy governs an Edit/Write inside a
-#     member repo — see core/hooks/_workspace-route, same routing
-#     path-escalate uses. A plain single-repo project is unaffected:
-#     workspace_route degenerates to $project's own conf, exactly as before.
+#     dependency manifests.
 #   .spine/install-command-patterns.conf — one extended-regex fragment per
 #     line (grep -E syntax), generated at install time from this project's
 #     confirmed Layer 3 stack/commands (bootstrap/adopt SKILL.md §4). Any
 #     line matching a Bash command is treated as a dependency install/change.
 #     Absent file (not yet installed, or a stack with no recognizable
 #     install-command shape) means the Bash-command check is a no-op — the
-#     Edit/Write manifest-tag check above is unaffected either way. In
-#     workspace mode, a Bash command's *working directory* (hence which
-#     repo's install-command shape applies) isn't reliably knowable from
-#     the command string alone the way an Edit/Write's file_path is, so this
-#     check is the **union** of every member repo's own
-#     install-command-patterns.conf, plus $project's own (a workspace root
-#     is unlikely to have one, but nothing forbids it) — matching any one
-#     of them is enough to ask. A single-repo project has exactly one
-#     pattern file in that union (its own), so this degenerates to the
-#     original behavior unchanged.
+#     Edit/Write manifest-tag check above is unaffected either way.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/_workspace-route"
+source "$SCRIPT_DIR/_path-route"
 source "$SCRIPT_DIR/_spine-event" 2>/dev/null
 declare -F spine_cmd_fields >/dev/null || { spine_cmd_fields() { :; }; spine_unresolved_code() { :; }; }
-declare -F workspace_route >/dev/null || { echo "dep-gate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
+declare -F project_route >/dev/null || { echo "dep-gate: _path-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 tool_name="$(jq -r '.tool_name // empty' <<<"$input")"
@@ -65,15 +52,15 @@ ask() {
 
 check_manifest_target() {
   # check_manifest_target <file_path-as-given> — asks per the owning root's
-  # protected-paths.conf #manifest tag (workspace_route resolves which root
+  # protected-paths.conf #manifest tag (project_route resolves which root
   # that is; single-repo projects always resolve to $project itself).
   local file_path="$1" rel display conf line glob
-  workspace_route "$project" "$file_path" || ask no-project-root "What happened: I'm about to edit a file, but I can't tell where the project root is, so I can't rule out that it changes the list of packages. What it means for you: nothing has changed yet, and any package change is always your call. To continue: allow the edit, or deny it and tell me what to do instead."
-  [[ -n "$WSR_OWNER_ROOT" ]] || return 0
-  conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
+  project_route "$project" "$file_path" || ask no-project-root "What happened: I'm about to edit a file, but I can't tell where the project root is, so I can't rule out that it changes the list of packages. What it means for you: nothing has changed yet, and any package change is always your call. To continue: allow the edit, or deny it and tell me what to do instead."
+  [[ -n "$PR_ROOT" ]] || return 0
+  conf="$PR_ROOT/.spine/protected-paths.conf"
   [[ -f "$conf" ]] || return 0
-  rel="$WSR_REL"
-  if [[ -n "$WSR_OWNER_NAME" ]]; then display="$WSR_OWNER_NAME:$rel"; else display="$rel"; fi
+  rel="$PR_REL"
+  display="$rel"
   while IFS= read -r raw || [[ -n "$raw" ]]; do
     line="$raw"
     [[ -z "$line" || "$line" == \#* ]] && continue
@@ -81,7 +68,7 @@ check_manifest_target() {
     glob="${line%%#*}"
     glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
     [[ -z "$glob" ]] && continue
-    if _wsr_glob_eq "$rel" "$glob"; then
+    if _pr_glob_eq "$rel" "$glob"; then
       ev_target="$rel"
       ask manifest-path "What happened: I'm about to edit '$display', which lists the packages the project depends on. What it means for you: adding or changing a package is always your call — it affects security and how much the project has to maintain. Nothing has changed yet. To continue: allow this edit, or deny it and tell me what to do instead."
     fi
@@ -116,14 +103,6 @@ case "$tool_name" in
     done < <(bash_write_targets "$command")
 
     pattern_files=("$project/.spine/install-command-patterns.conf")
-    ws_conf="$project/workspace.json"
-    if [[ -f "$ws_conf" ]]; then
-      n="$(jq '(.repos // []) | length' "$ws_conf" 2>/dev/null || echo 0)"
-      for ((i = 0; i < n; i++)); do
-        repo_path="$(jq -r --argjson i "$i" '.repos[$i].path // empty' "$ws_conf")"
-        [[ -n "$repo_path" ]] && pattern_files+=("$repo_path/.spine/install-command-patterns.conf")
-      done
-    fi
     any_exist=0
     for pf in "${pattern_files[@]}"; do
       [[ -f "$pf" ]] || continue

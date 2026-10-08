@@ -40,29 +40,18 @@
 #     them), a `../` traversal, a planted symlink into a protected path,
 #     and dep-gate asking on a Bash write to a `#manifest` path (previously
 #     checked only for Edit/Write).
-#   - fuzz coverage for _workspace-route's path functions (_wsr_collapse,
-#     _wsr_realpath, workspace_route, _wsr_glob_eq): thousands of randomly
+#   - fuzz coverage for _path-route's path functions (_pr_collapse,
+#     _pr_realpath, project_route, _pr_glob_eq): thousands of randomly
 #     generated path strings (fixed seed, reproducible) checked against
 #     invariants — never-empty/idempotent/no-dot-segments for collapse,
 #     always-terminates for realpath, always-absolute-or-empty ownership
-#     root for workspace_route, NFC/NFD symmetry for glob_eq — each run
+#     root for project_route, NFC/NFD symmetry for glob_eq — each run
 #     bounded so a reintroduced runaway fails loudly instead of hanging.
-#   - contract-touch's additive/breaking spec classification, blast-radius
-#     aggregation, and registry-staleness detection (a stale registry
-#     alone, with nothing else touched, still marks a contract touched) —
-#     plus its two precondition failures (missing/malformed workspace.json).
-#   - claims-check's asymmetric write/write vs write/read vs read/read
-#     collision matrix (only the first two ever block), done-task
-#     exclusion, and --diff mode's DECLARED/UNDECLARED tagging.
 #   - check-stale's grounding-file drift, quarantine-banner writing (once,
 #     not duplicated on re-run), the own-task-folder exemption, and
 #     grounding-decisions status/content drift — including the specific
 #     disclosed fix that a decision already `superseded` at citation time
 #     is never drift, however many times this re-runs.
-#   - registry-sync's commit-scope discipline (stages only work/<task-id>/,
-#     never an unrelated dirty file elsewhere in the tree) and the push /
-#     pull-rebase-retry sequence against a real local remote, including a
-#     genuine concurrent-push scenario with no real conflict.
 #   - decision-hash (excludes Status, deterministic, reacts to real content
 #     drift), profile-check (unrepresentable-floor-off, bounded fields), q
 #     (one-line-ok vs full-diagnostics-plus-real-exit-code), ui-touch
@@ -71,10 +60,9 @@
 #     (TBD/BLOCKED/WAITING/NONE, numeric milestone ordering), design-gate
 #     (all four /design stopping-rule checks incl. the DEFERRED.md escape
 #     hatch), decision-index (regenerated INDEX.md, numeric id ordering,
-#     --check staleness with no disk write), propagate (flags every OTHER
-#     open task grounding on what changed, severity from its own phase,
-#     self/done exclusion), setup (real symlinks into this checkout, pin
-#     init/warn/strict comparison, settings.local.json merge discipline),
+#     --check staleness with no disk write), setup (real symlinks into this
+#     checkout, --check hook-guard/profile reporting, settings.local.json
+#     merge discipline), event-log fields and set-state, repo-lint,
 #     and wayfinder-frontier (FRONTIER/CLEARED/STALLED resolution derived
 #     from Status+Blocked-by, never a stored "blocked" label; a resolved
 #     blocker un-stalls its dependent without anything hand-flipping it; a
@@ -690,7 +678,7 @@ expect_bootstrap "floor: class 2, smoke-run not-applicable (wrong shape) even wi
 # missed them: a lexical `../` (round 1), a planted/live symlink (round 2),
 # and a project-root reached through a different real alias than the one
 # $file_path was given through (round 3). These cases exist so the next
-# edit to _workspace-route/_bash-write-targets/the hooks themselves can't
+# edit to _path-route/_bash-write-targets/the hooks themselves can't
 # silently reopen any of the three. The alias case uses a self-created
 # symlink rather than depending on the host's own /tmp layout, so this
 # suite is portable — but exercises the identical code path a real /tmp ->
@@ -836,9 +824,9 @@ hook_check "path-escalate denies a planted symlink into a protected path" \
 rm -f "$hook_real/src/other/innocuous.txt"
 
 # Round 4: a relative CLAUDE_PROJECT_DIR, or a ../ chain deep enough to
-# cancel a whole absolute project prefix to nothing, drove _wsr_collapse's
+# cancel a whole absolute project prefix to nothing, drove _pr_collapse's
 # empty-array dereference into a silently-swallowed crash whose caller
-# (_wsr_realpath) then recursed forever on the resulting "" — a genuine
+# (_pr_realpath) then recursed forever on the resulting "" — a genuine
 # multi-thousand-subprocess runaway that still resolved to fail-open.
 # Bounded so a regression here fails fast instead of just running long.
 hook_check_fast "path-escalate fails closed on a relative CLAUDE_PROJECT_DIR, fast (not a runaway that only eventually deny-shaped-crashes)" \
@@ -852,7 +840,7 @@ hook_check_fast "path-escalate resolves a root-cancelling ../ chain fast, withou
 # filesystem (APFS/HFS+), but a bare bash glob comparison is byte-level —
 # a protected-paths.conf glob written in one form silently missed a
 # file_path given in the other. Skipped if python3 (the only normalizer
-# _wsr_nfc uses) isn't on PATH, matching that helper's own fallback.
+# _pr_nfc uses) isn't on PATH, matching that helper's own fallback.
 if command -v python3 >/dev/null 2>&1; then
   nfc_dir="$(python3 -c "print('café')")"
   nfd_dir="$(python3 -c "import unicodedata; print(unicodedata.normalize('NFD', 'café'))")"
@@ -900,7 +888,7 @@ hook_check "path-escalate allows a Bash mv whose destination filename merely con
   "$(hook_run "$PATH_ESCALATE" "$hook_real" '{"tool_name":"Bash","tool_input":{"command":"mv '"$hook_real"'/src/other/a.txt '"$hook_real"'/src/other/some-rm-thing.txt"}}')" allow
 
 # ---------------------------------------------------------------------------
-# fuzz: property-based coverage for _workspace-route's path functions
+# fuzz: property-based coverage for _path-route's path functions
 # ---------------------------------------------------------------------------
 # Round 5. Four rounds of hand-picked adversarial scenarios found six
 # distinct hooks bypass mechanisms (../, symlink, alias mismatch, dep-gate's
@@ -914,7 +902,7 @@ hook_check "path-escalate allows a Bash mv whose destination filename merely con
 # must hold regardless of input shape, independent of any specific bug
 # anyone has thought to check for.
 #
-# python3 generates the corpus (already an accepted core-selftest/_wsr_nfc
+# python3 generates the corpus (already an accepted core-selftest/_pr_nfc
 # dependency, same graceful-fallback posture: a smaller bash-only corpus if
 # python3 isn't on PATH, never a hard failure). The seed is fixed
 # (20260823) deliberately, not truly randomized per run — this is wired in
@@ -936,15 +924,15 @@ hook_check "path-escalate allows a Bash mv whose destination filename merely con
 #
 # Unlike the rest of this "hooks:" section (which execs phase-gate/
 # path-escalate/dep-gate as real subprocesses via hook_run/hook_run_bounded),
-# fuzzing calls _workspace-route's own functions directly in-process — the
-# whole point is exercising _wsr_collapse/_wsr_realpath/_wsr_glob_eq/
-# workspace_route themselves, not a hook wrapper around them — so this file
+# fuzzing calls _path-route's own functions directly in-process — the
+# whole point is exercising _pr_collapse/_pr_realpath/_pr_glob_eq/
+# project_route themselves, not a hook wrapper around them — so this file
 # needs its own `source`, never implicitly inherited from anywhere else.
-source "$SCRIPT_DIR/../hooks/_workspace-route"
-declare -F workspace_route >/dev/null || { echo "core-selftest: _workspace-route did not load — cannot run the fuzz section" >&2; exit 1; }
+source "$SCRIPT_DIR/../hooks/_path-route"
+declare -F project_route >/dev/null || { echo "core-selftest: _path-route did not load — cannot run the fuzz section" >&2; exit 1; }
 
-_wsr_fuzz_gen_paths() {
-  # _wsr_fuzz_gen_paths <n> -> n path strings on stdout, one per line.
+_pr_fuzz_gen_paths() {
+  # _pr_fuzz_gen_paths <n> -> n path strings on stdout, one per line.
   local n="$1"
   if command -v python3 >/dev/null 2>&1; then
     python3 - "$n" <<'PYEOF'
@@ -1002,7 +990,7 @@ fuzz_run_bounded() {
   # a bare `( "$fn" ... ) &` would propagate that non-zero status through
   # `wait "$pid"` below and kill this *entire suite* under its own set -e,
   # with no FAIL line and no indication which section crashed or why —
-  # confirmed by direct negative control (reverting the _wsr_collapse fix
+  # confirmed by direct negative control (reverting the _pr_collapse fix
   # this section exists to guard) before this echo-wrap was added: exit
   # 1, zero output, no diagnostic. The echo-wrapped exit code is written
   # but intentionally unused below — a crash is instead detected the same
@@ -1042,7 +1030,7 @@ fuzz_run_bounded() {
   fi
 }
 
-_wsr_fuzz_collapse_body() {
+_pr_fuzz_collapse_body() {
   # Invariants (never dependent on knowing any specific bug in advance):
   #   1. never returns empty (always at least "/")
   #   2. idempotent: collapse(collapse(x)) == collapse(x)
@@ -1051,16 +1039,16 @@ _wsr_fuzz_collapse_body() {
   local -a parts
   while IFS= read -r input; do
     n=$((n + 1))
-    result="$(_wsr_collapse "$input" 2>&1)"
+    result="$(_pr_collapse "$input" 2>&1)"
     if [[ -z "$result" ]]; then
       fails=$((fails + 1))
-      echo "FUZZDETAIL: _wsr_collapse('$input') returned empty (want at least '/')"
+      echo "FUZZDETAIL: _pr_collapse('$input') returned empty (want at least '/')"
       continue
     fi
-    result2="$(_wsr_collapse "$result" 2>&1)"
+    result2="$(_pr_collapse "$result" 2>&1)"
     if [[ "$result2" != "$result" ]]; then
       fails=$((fails + 1))
-      echo "FUZZDETAIL: _wsr_collapse not idempotent: collapse('$input')='$result' but collapse(that)='$result2'"
+      echo "FUZZDETAIL: _pr_collapse not idempotent: collapse('$input')='$result' but collapse(that)='$result2'"
       continue
     fi
     bad_seg=0
@@ -1070,13 +1058,13 @@ _wsr_fuzz_collapse_body() {
     done
     if [[ "$bad_seg" -eq 1 ]]; then
       fails=$((fails + 1))
-      echo "FUZZDETAIL: _wsr_collapse('$input') = '$result' still contains a . or .. segment"
+      echo "FUZZDETAIL: _pr_collapse('$input') = '$result' still contains a . or .. segment"
     fi
-  done < <(_wsr_fuzz_gen_paths 3000)
+  done < <(_pr_fuzz_gen_paths 3000)
   echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
 }
 
-_wsr_fuzz_realpath_body() {
+_pr_fuzz_realpath_body() {
   # Invariant: never hangs (bounded by the caller) and always terminates
   # with *some* string — this is the function whose unbounded recursion
   # produced round 4's multi-thousand-process runaway, so "terminates at
@@ -1086,21 +1074,21 @@ _wsr_fuzz_realpath_body() {
   local n=0 fails=0 input result
   while IFS= read -r input; do
     n=$((n + 1))
-    result="$(_wsr_realpath "$input" 2>&1)"
+    result="$(_pr_realpath "$input" 2>&1)"
     if [[ -z "$result" ]]; then
       fails=$((fails + 1))
-      echo "FUZZDETAIL: _wsr_realpath('$input') returned empty"
+      echo "FUZZDETAIL: _pr_realpath('$input') returned empty"
     fi
-  done < <(_wsr_fuzz_gen_paths 800)
+  done < <(_pr_fuzz_gen_paths 800)
   echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
 }
 
-_wsr_fuzz_route_body() {
-  # Invariant: WSR_OWNER_ROOT is always either the empty string or an
+_pr_fuzz_route_body() {
+  # Invariant: PR_ROOT is always either the empty string or an
   # absolute path — never anything else, regardless of how malformed
   # $file_path is (including deliberately relative/empty $project values,
-  # which must fail closed per workspace_route's own precondition check
-  # rather than ever producing a non-absolute WSR_OWNER_ROOT).
+  # which must fail closed per project_route's own precondition check
+  # rather than ever producing a non-absolute PR_ROOT).
   local real_proj n=0 fails=0 fp proj_choice proj
   real_proj="$(mktemp -d "$tmp_root/wsrfuzzproj.XXXXXX")"
   mkdir -p "$real_proj/.spine" "$real_proj/work/T1"
@@ -1112,35 +1100,35 @@ _wsr_fuzz_route_body() {
       1) proj="relative-proj-$n" ;;
       2) proj="" ;;
     esac
-    # `|| true`: workspace_route deliberately returns 1 (fail-closed) for
+    # `|| true`: project_route deliberately returns 1 (fail-closed) for
     # the relative/empty $proj cases this loop intentionally generates —
     # under this script's set -e a bare non-zero return here would abort
     # the whole fuzz body on the very first such case instead of letting
-    # every case run; the invariant under test is WSR_OWNER_ROOT's shape
-    # regardless of workspace_route's own return code.
-    workspace_route "$proj" "$fp" >/dev/null 2>&1 || true
-    if [[ -n "$WSR_OWNER_ROOT" ]]; then
-      case "$WSR_OWNER_ROOT" in
+    # every case run; the invariant under test is PR_ROOT's shape
+    # regardless of project_route's own return code.
+    project_route "$proj" "$fp" >/dev/null 2>&1 || true
+    if [[ -n "$PR_ROOT" ]]; then
+      case "$PR_ROOT" in
         /*) : ;;
         *)
           fails=$((fails + 1))
-          echo "FUZZDETAIL: workspace_route(project='$proj', file_path='$fp') left WSR_OWNER_ROOT='$WSR_OWNER_ROOT' non-absolute"
+          echo "FUZZDETAIL: project_route(project='$proj', file_path='$fp') left PR_ROOT='$PR_ROOT' non-absolute"
           ;;
       esac
     fi
-  done < <(_wsr_fuzz_gen_paths 800)
+  done < <(_pr_fuzz_gen_paths 800)
   echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
 }
 
-_wsr_fuzz_globeq_body() {
-  # Invariant: _wsr_glob_eq's result must not depend on which of the two
+_pr_fuzz_globeq_body() {
+  # Invariant: _pr_glob_eq's result must not depend on which of the two
   # sides (rel, glob) happens to be in NFC vs. NFD form — all four
   # combinations of a name compared against itself must agree. Smaller
   # corpus than the others (each case pays two real python3 subprocess
   # calls to build the NFC/NFD forms), but breadth here is about covering
   # a variety of real accented/CJK/emoji shapes, not path-structure
   # combinatorics. Skipped entirely if python3 isn't on PATH, matching
-  # _wsr_nfc's own fallback (byte comparison only, disclosed limit).
+  # _pr_nfc's own fallback (byte comparison only, disclosed limit).
   local n=0 fails=0 base nfc nfd r1 r2 r3 r4
   if ! command -v python3 >/dev/null 2>&1; then
     echo "FUZZSUMMARY: pass=0 fail=0 (of 0 cases) — SKIPPED, no python3 on PATH"
@@ -1152,22 +1140,22 @@ _wsr_fuzz_globeq_body() {
     nfc="$(python3 -c "import unicodedata,sys; sys.stdout.write(unicodedata.normalize('NFC', sys.argv[1]))" "$base")"
     nfd="$(python3 -c "import unicodedata,sys; sys.stdout.write(unicodedata.normalize('NFD', sys.argv[1]))" "$base")"
     r1=0; r2=0; r3=0; r4=0
-    _wsr_glob_eq "$nfc" "$nfc" && r1=1
-    _wsr_glob_eq "$nfc" "$nfd" && r2=1
-    _wsr_glob_eq "$nfd" "$nfc" && r3=1
-    _wsr_glob_eq "$nfd" "$nfd" && r4=1
+    _pr_glob_eq "$nfc" "$nfc" && r1=1
+    _pr_glob_eq "$nfc" "$nfd" && r2=1
+    _pr_glob_eq "$nfd" "$nfc" && r3=1
+    _pr_glob_eq "$nfd" "$nfd" && r4=1
     if [[ "$r1" -ne 1 || "$r2" -ne 1 || "$r3" -ne 1 || "$r4" -ne 1 ]]; then
       fails=$((fails + 1))
-      echo "FUZZDETAIL: _wsr_glob_eq asymmetric for '$base': nfc/nfc=$r1 nfc/nfd=$r2 nfd/nfc=$r3 nfd/nfd=$r4 (all should be 1)"
+      echo "FUZZDETAIL: _pr_glob_eq asymmetric for '$base': nfc/nfc=$r1 nfc/nfd=$r2 nfd/nfc=$r3 nfd/nfd=$r4 (all should be 1)"
     fi
   done < <(printf '%s\n' "café" "naïve" "Zürich" "日本語ファイル" "emoji😀name" "ÀÉÎÕÜ" "áb́c" "xéy" "plain" "has space é" "Café's file" "İstanbul" "north's café" "🏳️‍🌈flag" "über" "façade" "señor" "coöperate" "résumé" "naïve café")
   echo "FUZZSUMMARY: pass=$((n - fails)) fail=$fails (of $n cases)"
 }
 
-fuzz_run_bounded "_wsr_collapse: never-empty, idempotent, no ./.. segments (3000 generated cases)" 60 _wsr_fuzz_collapse_body
-fuzz_run_bounded "_wsr_realpath: always terminates with a non-empty result (800 generated cases)" 90 _wsr_fuzz_realpath_body
-fuzz_run_bounded "workspace_route: WSR_OWNER_ROOT always empty-or-absolute (800 generated cases)" 90 _wsr_fuzz_route_body
-fuzz_run_bounded "_wsr_glob_eq: NFC/NFD-symmetric (20 real accented/CJK/emoji names)" 60 _wsr_fuzz_globeq_body
+fuzz_run_bounded "_pr_collapse: never-empty, idempotent, no ./.. segments (3000 generated cases)" 60 _pr_fuzz_collapse_body
+fuzz_run_bounded "_pr_realpath: always terminates with a non-empty result (800 generated cases)" 90 _pr_fuzz_realpath_body
+fuzz_run_bounded "project_route: PR_ROOT always empty-or-absolute (800 generated cases)" 90 _pr_fuzz_route_body
+fuzz_run_bounded "_pr_glob_eq: NFC/NFD-symmetric (20 real accented/CJK/emoji names)" 60 _pr_fuzz_globeq_body
 
 # ---------------------------------------------------------------------------
 # check-stale: grounding-file drift, quarantine banner, own-task-folder

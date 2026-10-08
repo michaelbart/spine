@@ -38,7 +38,7 @@
 # UNRESOLVED, nothing) before this was added, after which a later
 # Edit/Write to the new symlink's name walked straight past
 # phase-gate/path-escalate's containment/glob checks since they compared
-# strings, not resolved locations. _workspace-route's _wsr_realpath closes
+# strings, not resolved locations. _path-route's _pr_realpath closes
 # the same gap for a symlink that already existed before this Bash call
 # ran; this closes it for one created live, in the same task.
 #
@@ -193,7 +193,7 @@ bash_write_targets() {
     # direct repro: plant a symlink whose *name* looks unremarkable, then
     # a later Edit/Write to that name resolves through it. Catching the
     # `ln` call itself here is the first of two layers closing that gap —
-    # the second is _workspace-route's _wsr_realpath, which also resolves
+    # the second is _path-route's _pr_realpath, which also resolves
     # an already-existing symlink regardless of how it got there. ---
     if grep -qE '\bln\b' <<<"$seg"; then
       local -a ln_nonflag=()
