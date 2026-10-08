@@ -90,6 +90,9 @@ loop:
   `/task`'s own header does; treat it as confirmed, log a plain note isn't
   needed (this isn't an override, it's the expected normal case) and go to
   §4 with that description and milestone id.
+- **`DISPOSITION <id> <task-id>`** — a planned task was abandoned and only the
+  human can say whether to replace or drop it. End the loop (§6) and name it in
+  the report.
 - **`BLOCKED <id> <token>`** or **`WAITING <id>`** — nothing runnable right
   now. This is a structural sequencing fact, not a decision to render a
   verdict on — end the loop (§6), don't invent a way around it.
@@ -195,7 +198,7 @@ is the loop ending correctly, not a bug to route around.
 
 ## 6. Ending the loop and the report
 
-Whenever §3 ends the loop (`NONE`, `BLOCKED`, `WAITING`, or a tooling gap)
+Whenever §3 ends the loop (`NONE`, `BLOCKED`, `WAITING`, `DISPOSITION`, or a tooling gap)
 or a §1 stop fires: remove `.spine/autopilot-active` (a finished or
 genuinely-stopped run is not "resumable" the way a mid-task interruption
 is — a fresh `/autopilot` invocation re-derives everything from

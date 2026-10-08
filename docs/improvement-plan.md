@@ -1,6 +1,24 @@
 # Spine improvement plan
 
-Status: proposed 2026-10-08. Nothing below is done unless its checkbox says so.
+Status (end of 2026-10-08): nearly all of it is done on branch `improvement-plan`; the first
+batch is merged to `main`, the rest is not (see "Merge state"). `[x]` done, `[~]` done in part or
+waiting on data, `[-]` declined or deferred on purpose, `[ ]` open.
+
+**Still open:** E3 (Class 2 for no-runtime projects, low priority), E4 (run `ui-capture` end to end
+on a real project; needs a real run), what to do with `bookmarks-workspace`, and the data-dependent
+items: C3 (hook-stop reduction target, measure with `spine-stats friction` after the merge), D4's
+token before/after, D8's finer `/ship` breakdown.
+
+**Merge state:** merged to `main` at `9c1a8a3` (event schema, reason-coded hook events, `set-state`,
+`spine-stats`, the baseline, the team/cross-repo removal, budget, floor refactor). NOT yet merged:
+the write-target parser rewrite, `set-state` gates, abandon + DISPOSITION, `checkpointed` removal,
+the skill splits into `reference/` files, the docs split, the enforcement map, and the new README.
+Installed projects run whatever is on `main` in `/Users/michaelbart/spine`, so merging changes what
+their sessions execute.
+
+**D4 result:** always-loaded skill text 5,610 -> 3,799 lines across all skills (task 692 -> 358,
+ship 626 -> 334, verify 538 -> 408, design 444 -> 316). Moves were verbatim and proven by a
+preservation check; four spots the common path always needs were put back in main after review.
 Update this file in the same commit that completes an item (tick the box, add
 the commit SHA). A future session should start here, read "Ground rules" and
 "Dependencies", then pick the first unticked item whose prerequisites are done.
