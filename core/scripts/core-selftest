@@ -2772,6 +2772,19 @@ else
   fail "repo-lint: readme-commands output wrong: $rl_out"
 fi
 
+# references: every reference file is pointed to; every pointer resolves.
+mkdir -p "$rl_root/core/skills/foo/reference"
+echo "# a" >"$rl_root/core/skills/foo/reference/a.md"; echo "# b" >"$rl_root/core/skills/foo/reference/b.md"
+printf 'When X: read reference/a.md and follow it. Also reference/missing.md.\n' >>"$rl_root/core/skills/foo/SKILL.md"
+rl_out="$("$REPO_LINT" --root "$rl_root" references 2>&1)" || true
+if grep -q "reference/b.md is never pointed to" <<<"$rl_out" && grep -q "points to reference/missing.md, which does not exist" <<<"$rl_out" \
+   && ! grep -q "a.md" <<<"$rl_out"; then
+  pass "repo-lint: references flags an unpointed reference file and a pointer to a missing one"
+else
+  fail "repo-lint: references output wrong: $rl_out"
+fi
+rm -rf "$rl_root/core/skills/foo/reference"; sed -i.bak '$d' "$rl_root/core/skills/foo/SKILL.md"; rm -f "$rl_root/core/skills/foo/SKILL.md.bak"
+
 # budget: every cap fails when exceeded and passes when satisfied.
 printf 'l1\nl2\nl3\nl4\nl5\n' >>"$rl_root/core/skills/foo/SKILL.md"
 : >"$rl_root/core/scripts/s1"; : >"$rl_root/core/scripts/s2"

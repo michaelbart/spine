@@ -50,60 +50,7 @@ code can change underfoot and invalidate this task's grounding after
 ${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md
 ```
 
-**Before treating STALE as real drift, cross-check each drifted file
-against this task's own record** (disclosed fix — the naive "any STALE
-verdict is drift" rule produces a guaranteed false positive on every task
-that touches a file it also read as grounding, which is most tasks). A
-drifted file is
-**expected, not drift**, if any of the following is true: (a) it appears
-in `work/<task-id>/plan.md`'s own `## Predicted touch` list — this task's
-own approved implementation changed it; (b) it's
-explained by a `work/<task-id>/deviations.md` record with `Status:
-resolved` (e.g. a manifest file changed because an approved
-new-dependency deviation added one); or (c) it's named in
-`work/<task-id>/verify.md`'s own "Adversary verdicts" section against a
-kept finding marked `FIXED` there — an adversary-found fix applied and
-recorded during `/verify` is exactly as "this task's own approved work"
-as (a)/(b), and forcing every such fix through
-`deviations.md` too would make the circuit breaker fire on legitimate,
-already-adversarially-verified work with nothing left to stash (disclosed
-fix); or (d) it is `work/<id>/milestone.md` for the
-milestone this task itself belongs to (`work/<task-id>/milestone` names
-`<id>`), and every changed line `git diff <sha> -- work/<id>/milestone.md`
-shows traces to this task's own mandated bookkeeping in that shared file —
-the classify-time replacement of the milestone's first `TBD` member-task
-line with this task's own id (`core/skills/task/SKILL.md`'s `--milestone`
-header note, made before research even ran) and/or a `## Known gaps for
-future member tasks` entry whose `source` field cites this task's own
-`work/<task-id>/verify.md` (the edit §3a below makes at ship time,
-possibly made early during `/verify` under the same triage convention). A
-milestone-tagged task's `research.md` citing `work/<id>/milestone.md` as
-grounding — the expected case, since `core/skills/task/SKILL.md` loads it
-as planning context for research to read — makes this guaranteed on the
-classify-time edit alone, on every such task, not an edge case (disclosed
-fix). A changed
-line that isn't one of those two things — another member task's own `TBD`
-slot resolved, a different task's Known-gaps entry, an edit to
-`## Capability targets` — is a real change and stays fully driftable; (d)
-accounts for only this task's own hand in the milestone file, never the
-file wholesale. Only a file covered by
-**none of the four** is genuine unexplained drift. If every drifted file
-is expected by this rule: proceed normally — not a halt, not a deviation,
-does not touch the circuit breaker.
-
-If any drifted file is **not** covered by any of these checks: this is a real
-deviation, not a soft warning — append a
-`work/<task-id>/deviations.md` record, tier `halt` (grounding drifted
-since this was last verified, the same halt tier already assigned to
-schema/auth surprises), and **it counts
-toward the circuit breaker** (`core/skills/task/SKILL.md`'s existing
-three-deviation rule) — decided and defended here, not left as an open
-question: the circuit breaker's actual trigger condition is "the research
-this plan stands on is no longer trustworthy," which is exactly as true
-when the code moved underneath it as when the original research was
-simply wrong.
-Proceeding means going back to `core/skills/task/SKILL.md` step 2
-(research), not continuing here.
+**When `check-stale` printed STALE for at least one file:** read `${CLAUDE_SKILL_DIR}/reference/regrounding-drift.md` and follow it exactly before continuing.
 
 If ok: `git pull --rebase` onto the current mainline, then re-run the floor:
 
@@ -169,50 +116,7 @@ reason="<the reason given>"`.
 
 ## 2. Decisions
 
-**Implement decisions this task's plan cited.** Read
-`work/<task-id>/plan.md`'s `## Grounds on decisions` section (per
-`core/templates/plan.md` — absent entirely if the plan cited none; skip
-this part in that case). For each bullet there: read
-`docs/decisions/D-<seq>-*.md`, append
-this task's *actual* diff paths (`git diff --name-only <base>..HEAD`, not
-the plan's predicted-touch list — the diff is what's real) to its
-`## Implementing paths` section, and if its `- Status:` line currently
-reads `adopted`, flip it to `implemented` — a single-line edit, nothing
-else in the file changes (`core/scripts/decision-hash` excludes that line
-by design, specifically so this flip never invalidates a research.md that
-already cites this decision). If the cited decision's status is already
-`implemented` (a later task building on the same decision) or
-`superseded`, still append this task's paths to `## Implementing paths`
-but leave the status line alone — don't un-supersede a record or re-flip
-an already-implemented one.
-
-**Distill new decisions from this task's own deviations.** Read
-`work/<task-id>/deviations.md`. For any *resolved* record whose resolution
-establishes a rule future tasks should follow — not every trivial
-record-and-proceed note, only ones a researcher on a later task would
-actually want to find — write a new record from
-`${CLAUDE_SKILL_DIR}/../../templates/decision.md`, citing this task ID. Do
-the same for any halt-tier escalation resolved during this task. Skip this
-part (write nothing) if nothing this task hit rises to that bar — a
-decision record manufactured to have something to show is worse than none.
-
-Allocate the next id — one more than the highest existing
-`docs/decisions/D-<n>-*.md` (or `1` if none exist yet):
-
-```
-ls docs/decisions/D-*.md 2>/dev/null | sed -E 's|.*/D-([0-9]+)-.*|\1|' | sort -n | tail -1
-```
-
-Write `docs/decisions/D-<n>-<kebab-slug>.md`. Unlike a `/design`-authored
-decision, a ship-distilled one is never written speculatively — the code
-that prompted it already exists, as this task's own diff — so write it
-directly as `- Status: implemented` (skip the `adopted` intermediate;
-there is no window where a ship-distilled decision sits un-implemented),
-`## Implementing paths` pre-filled from the same diff-path list used
-above, and `## Alternatives rejected` reading "n/a — distilled from a
-resolved deviation, see `work/<task-id>/deviations.md`" unless a real
-alternative was genuinely weighed and rejected in the deviation's own
-`Options considered` field.
+**When `work/<task-id>/plan.md` has a `## Grounds on decisions` section or `work/<task-id>/deviations.md` has a `- Status: resolved` record:** read `${CLAUDE_SKILL_DIR}/reference/decision-distillation.md` and follow it exactly before continuing.
 
 **Regenerate the decision index.** If this task touched `docs/decisions/`
 at all above — a status flip, an `## Implementing paths` append, or a
@@ -242,195 +146,15 @@ cited), so there's no ordering hazard between them.
 
 ### 3a. Flagged-finding triage
 
-The routing gap this step closes: an adversary-confirmed, cross-task-relevant finding that gets
-deliberately flagged rather than fixed in this task's own `/verify` pass
-has, until now, had no path into the one place a future member task's
-planning actually looks (`## Known gaps` in
-`milestone.md`, loaded by `core/skills/task/SKILL.md`'s `--milestone`
-handling) — it stayed fully documented in this task's own `verify.md`/
-`notes.md` and fully invisible to whoever plans the task that needs it.
-
-**Gather.** Read every `work/<task-id>/artifacts/<agent>-verdict.json` this
-task's `/verify` produced (falsifier always, security per §2's adversary
-count) **and `ui-fidelity-verdict.json` when step 1e produced one**. Collect every kept verdict whose `disposition`
-(`core/ADAPTER-CONTRACT.md §5`) is `"not_fixed"` or absent — absent is
-never treated as resolved, same discipline as everywhere else in this
-system a gate could otherwise silently read as passing.
-
-**Dedup against what's already tracked.** Before asking anything, read
-`work/<id>/milestone.md`'s `## Known gaps for future member tasks` section
-(absent or empty on this milestone's first ship — nothing to dedup
-against yet). **Before treating any existing entry as well-formed, verify
-its shape:** each entry must be a fenced block with an `id: gap-<n>` line
-matching `core/templates/milestone.md`'s own format, and the file must
-have a `<!-- next-gap-id: N -->` counter. If any entry is plain prose
-(no fence, no `id:` line) or the counter is missing, **flag it to the
-human before continuing** — report each malformed entry by quoting its
-text, explain that it can't be machine-cited by future tasks, and ask
-whether to reformat it into the proper `gap-<n>` shape now (content
-unchanged, prose → fenced block) or leave it as-is and note it in
-`notes.md` as non-machine-citable. Never silently absorb malformed entries
-as if they were well-formed — the carry-forward mechanism degrades
-invisibly if you do. For each well-formed candidate, check whether its
-`claim`/`evidence.file` substantially matches an existing `gap-<n>`
-entry's `source` field (a cheap containment check against the
-machine-fenced block, not semantic matching — same fidelity `check-stale`'s
-own file-drift comparison already uses). A match: don't include it in the
-question below; instead record in `notes.md`, "already tracked as
-`gap-<n>`, not re-asked" — a suppressed question is still a decision, and
-must read differently from a finding nobody ever looked at. This is what
-keeps two sibling member tasks that independently trip the same underlying
-gap from re-triaging it twice.
-
-**Zero candidates remain** (nothing was flagged, or everything flagged is
-already tracked): nothing further to do, no section in the briefing (§4)
-— this is a gate that correctly never applied, not a degraded one.
-
-**`ui-fidelity` findings always need a human disposition, at every
-autonomy.** Unlike the branch below, a kept `not_fixed` (or absent
-`disposition`) `ui-fidelity` finding — including a `driver_failed` state —
-is never deferred to post-hoc PR review and never dropped as not
-"cross-task-relevant": stop and show each one (severity, state, claim,
-evidence) and require one of three answers — *fix now* (return to
-implementation, then re-run `/verify`), *carry* into `milestone.md` Known
-gaps (same `gap-<n>` mechanics as below), or *decline* with a stated reason
-recorded in `notes.md`. The visual-fidelity check is the only place a
-screen that looks wrong gets noticed; a finding nobody answered is exactly
-the miss it exists to prevent. `auto` tasks stop here too —
-this is a deliberate exception to their no-scheduled-stop rule. Ask it with
-`AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
-
-<!-- touchpoint:start -->
-> **Deciding:** what to do about a visual mismatch the screenshot review found. It's yours because only you know whether it matters to the design.
-> **Need to know:** <the finding in one plain sentence>. Screenshot: `<path>`.
-> **Recommend:** <Fix now | Carry it | Decline> — <one-line reason>
-> 1. **Fix now** — next: I go back and fix it, then re-run the checks; cost: about <n> minutes; undo: yes
-> 2. **Carry it** — next: it merges as is and is logged as a known issue for a later task to see; cost: the mismatch ships for now; undo: yes, fix later
-> 3. **Decline it** — next: it merges as is and I record your reason; cost: nobody tracks it further; undo: no, it is dropped
-> **Safe to ignore:** the technical evidence; the screenshot shows it.
-<!-- touchpoint:end -->
-
-**One or more other candidates remain — branch on `work/<task-id>/autonomy`**
-(absent = `guided`, same convention §5's PR-opening step already uses):
-
-- **`guided`** — ask now, interactively, before proceeding to §3b/§4: for
-  each candidate, show severity + claim + evidence pointer (file:line or
-  command), and ask which should carry into `milestone.md`'s Known gaps
-  for future member tasks to see — "none" is a complete, valid answer, not
-  a thing to talk the human out of. This blocks the same way plan approval
-  already blocks; it is not a merge
-  gate (§1's two checks are unchanged, adversary findings still never fail
-  `/verify` by that skill's own report step), just a question that has to
-  be asked before this task's ship completes. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
-
-  <!-- touchpoint:start -->
-  > **Deciding:** which of the problems found during checking should be written down for future tasks to see. It's yours because it decides what the next person here is warned about.
-  > **Need to know:** <n> findings survived review: <for each: how serious, one plain sentence, where to look>. None of them blocked this task.
-  > **Recommend:** <carry these | carry none> — <one-line reason>
-  > 1. **Carry the ones you pick** — next: I add each to the milestone's list of known issues; cost: one line each; undo: yes, delete the line
-  > 2. **Carry none** — next: I move on; cost: nothing is recorded, so the next task won't know; undo: yes, until this ship finishes
-  > **Safe to ignore:** the ones you don't pick; they stay in `verify.md`.
-  <!-- touchpoint:end -->
-- **`auto`** — no scheduled stop exists here, so don't
-  manufacture one. Draft the candidate entries (same shape the "apply the
-  human's picks" step below produces for `guided`) into a new "Proposed
-  milestone gap entries — undecided" section of the briefing (§4) and the
-  PR description (§4a),
-  explicitly not yet applied to `milestone.md`. The human's post-hoc PR
-  review — the same relocated touchpoint these autonomies already use for
-  plan review — is where these get triaged, by hand-editing `milestone.md`
-  or leaving them. Never write to the always-loaded `milestone.md` without
-  a human having actually looked, whether that look happens now (`guided`)
-  or at PR review.
-
-**For `guided`, apply the human's picks now.** For each carried finding:
-allocate the next id from `milestone.md`'s own `next-gap-id` counter
-(`core/templates/milestone.md`'s comment — a monotonic counter, never
-"highest id currently present," so a gap-<n> §3c already removed this
-milestone's history is never reused for something unrelated), then
-increment that counter in the file. Append a new fenced entry per
-`core/templates/milestone.md`'s own comment — `source` = this task's
-`verify.md` path plus the agent/severity, prose drafted from the verdict's
-own `claim`/`evidence` plus `milestone.md`'s `## Member tasks` list (never
-copied verbatim from `verify.md`'s adversary-voice prose, which is written
-for an attacker's audience, not a future planner's). For each declined
-finding: record the decision and its stated reason in `notes.md` — a
-finding the human looked at and declined must read differently,
-permanently, from one nobody ever asked about.
+**When `work/<task-id>/milestone` exists:** read `${CLAUDE_SKILL_DIR}/reference/milestone-flagged-triage.md` and follow it exactly before continuing.
 
 ### 3b. Milestone done-definition
 
-Read `work/<id>/milestone.md`'s `## Member tasks` list. For this task's
-own id, treat it as done — the merge gate (§1) already passed and §6 is
-about to set `state` = `done`. For every *other* listed member task, check
-its real `work/<other-task-id>/state`. If any entry is still `TBD`, or any
-other member task's state isn't actually `done`, this isn't the
-milestone's final ship — say nothing further, just note in passing (one
-line, not a section) that member tasks remain. **If every member task is a
-real id and every one is done** (by the rule above), this is the
-milestone's completing ship: check the milestone's `## Done-definition`
-against real state, **live, right now** — never trust
-`.spine/capabilities.json`'s `implemented` flag by itself, since that flag
-can go stale between whenever some earlier task set it and this exact
-ship (state reads `done`, the flag reads `implemented`, and the real
-capability is still broken from a cold start — a real gap a downstream
-project's own M1 completion surfaced: the only reason it was caught at all
-was a human asking "what's next" and reading a capability's adapter by
-hand). If `## Capability targets` lists any capability, re-run conformance
-for real, this exact moment, not a cached record of some earlier run:
-
-```
-${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance --all \
-  --project <project root> \
-  > work/<task-id>/artifacts/done-definition-conformance.txt 2>&1
-```
-
-Use *this* live result, not the cached `capabilities.json` flag, to decide
-whether each listed capability is genuinely met right now —
-`adapter-conformance --all` already exercises each capability's own
-pass/fail/cold self-test scenarios, and `cold` specifically proves
-smoke-seed/smoke-run/smoke-golden self-heal a torn-down stack rather than
-assuming an earlier capability in the sequence left it running
-(`core/ADAPTER-CONTRACT.md §2.2/§3.8`) — this is what actually catches the
-"provably true from scratch," not "reported true once," distinction the
-gap above turned on. If it could not run at all, this is the
-could-not-run case in the tooling-gap discipline (`core/skills/task/
-SKILL.md`'s header note): note the gap and say plainly in the briefing
-that the done-definition is **unverified**, not met — never let a
-could-not-run check silently read as passing. Report the result (met, not
-met, or unverified) as its own section in the briefing (§4) — a milestone
-that ships its final task without its done-definition actually being true
-is exactly the "skeleton-skip" anti-pattern this build exists to make
-impossible, so **do not let this pass silently**: if the done-definition
-isn't met (or couldn't be checked), say so plainly in the briefing rather
-than treating milestone completion as automatic just because every member
-task individually shipped.
-
-After reporting the done-definition result, check whether
-`work/M<n+1>/milestone.md` exists (where `<n>` is this milestone's
-number). If it does, say nothing — the next milestone is already planned.
-If it does not, add one line to the briefing's **Milestone** section:
-`"M<n> complete. No M<n+1> defined yet — run /roadmap to plan the next
-slice."` This is purely informational, never a gate.
+**When `work/<task-id>/milestone` exists:** read `${CLAUDE_SKILL_DIR}/reference/milestone-done-and-gaps.md` and follow it exactly before continuing.
 
 ### 3c. Known-gap resolution
 
-Read `work/<task-id>/plan.md`'s `## Resolves known gaps` section
-(`core/templates/plan.md`, absent entirely if this plan cited none — skip
-this step in that case, same as `## Grounds on decisions` in §2). For each
-`gap-<n>` bullet there, remove that exact fenced entry from
-`work/<id>/milestone.md`'s `## Known gaps for future member tasks` — find
-by id, delete only that entry, leave `next-gap-id` and every other entry
-untouched (never renumber remaining entries; a gap's id is permanent once
-allocated, same reasoning `core/templates/milestone.md`'s own comment
-gives for never reusing one). If a cited `gap-<n>` doesn't actually exist
-in `milestone.md` (a stale citation, or a typo in the plan), don't fail
-the ship over it — note it in `notes.md` ("plan cited gap-<n>, not found
-in milestone.md — nothing removed") and move on; a plan-time citation
-error is a plan-quality issue for a future human reader to notice, not a
-merge-gate concern (§1's two checks are unchanged). This is deliberately
-the mirror of §2's decision-status-flip mechanic: find by id, edit exactly
-that one thing, nothing else in the file changes.
+**When `work/<task-id>/plan.md` has a `## Resolves known gaps` section:** read `${CLAUDE_SKILL_DIR}/reference/milestone-done-and-gaps.md` and follow it exactly before continuing.
 
 ## 4. Write the delta briefing
 
@@ -575,24 +299,7 @@ behavior below regardless of the task's own autonomy:
 - **`guided`** — do not push. Committing locally is this skill's job; pushing or
   opening a PR is the human's call, made after reading the briefing. This is the
   unchanged pre-Phase-4 behavior.
-- **`auto`** — open a **draft** PR now via the `open-pr`
-  capability (`core/ADAPTER-CONTRACT.md` §3.5), body =
-  `work/<task-id>/pr-description.md` (§4a), head = the current branch, so the
-  human's one remaining touchpoint is reviewing/merging it:
-
-  ```
-  SPINE_PR_TITLE="<commit subject>" \
-    SPINE_PR_BODY_FILE=work/<task-id>/pr-description.md \
-    <project root>/.spine/adapters/open-pr
-  ```
-
-  **Always a draft — this skill never merges** (proposal §6.2; the human marks
-  ready and merges). Record the returned PR URL in the briefing (§4). If `open-pr`
-  is `not-applicable`/absent or exits non-zero, degrade to the `guided` behavior:
-  the commit is already made, so say plainly "couldn't open the PR (<reason>) —
-  push and open it by hand" and note the gap; never silently drop it. (Profile-
-  gated auto-open for `guided`, or disabling it for a team that prefers
-  hand-opened PRs, is Phase 5.)
+**When `work/<task-id>/autonomy` reads `auto`, or `.spine/profile.json` `pr_open` is `all`:** read `${CLAUDE_SKILL_DIR}/reference/pr-opening-auto.md` and follow it exactly before continuing.
 
 ## 6. Close out
 

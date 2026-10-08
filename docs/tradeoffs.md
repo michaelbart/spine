@@ -57,6 +57,16 @@ the ceremony around those artifacts into pure cost.
 
 ## Measured tradeoffs
 
+- **The gates trust files the model writes.** `docs/enforcement-map.md` classifies 92
+  rules: 53 are prose only, 26 depend on a script that a skill must tell the model to
+  run, and 11 are hooks (4 of those are the Claude Code harness's own frontmatter
+  rules). `phase-gate` and `path-escalate` read the `state` and `class` files, and a
+  task folder is writable during research and plan, so a model can move itself out of a
+  gated phase. `set-state` now refuses the common accidental skips (implementing with no
+  approval, shipping without a passing verify or with open deviations), but it reads files
+  the model also writes. The system assumes a cooperative model and catches mistakes;
+  it is not a defence against one that is trying to get around it.
+
 - **Adversary findings inform `/ship`; they do not gate it.** A `high` finding does not
   fail `/verify`. At ship time it prompts (`guided`) or goes to the milestone's Known
   gaps (`auto`). The hard gates are the deterministic floor, zero open `deviations.md`

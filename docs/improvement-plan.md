@@ -90,7 +90,7 @@ Small, independent, no data needed.
   `core/skills/*/SKILL.md` with `disable-model-invocation: true` appears in the
   README table, and every README command has a skill. `security-checklist` is
   explicitly exempt (agent-preloaded background, not a command).
-- [ ] **A3. Reconcile the `work/` sharing story (after G, which decides
+- [x] **A3. Reconcile the `work/` sharing story (after G, which decides (Decided: leave each project's `work/` policy alone. Narrative docs stay committed where projects already commit them; with `registry-sync` gone they land in one commit at `/ship` instead of one per phase. README states this.)
   whether task state stays committed at all).** Current facts to confirm by
   reading code: `setup` (`core/scripts/setup` ~L360-370) now leaves task state,
   owner and claims committed while ignoring artifacts; `registry-sync`'s header
@@ -159,7 +159,7 @@ of writing the state file by hand, so transitions are mechanical.
   falsifier and security finding counts by severity), `finding-disposition`
   (fixed|carried|declined, agent, severity), `abandoned` (see E2),
   `shipped` (exists; extend with `tokens_*` rollup, see B4).
-- [ ] `lane=full|lite` field on `class-set` (used only by B8; not added).
+- [-] `lane=full|lite` field on `class-set` (used only by B8; not added). (Declined with B8: no lane built.)
 - [x] None of these adds a stop or a prompt.
 
 ### B4. The analyzer
@@ -249,7 +249,7 @@ Step 1 (do this): compare spine-attributed work to non-spine work in the same
 projects, already visible in transcripts and git. Step 2 (only if step 1 is too
 confounded to be useful, e.g. non-spine work is a different kind of change):
 
-- [ ] Optional `lite` lane for a random fraction of eligible Class 1
+- [-] Optional `lite` lane for a random fraction of eligible Class 1 (Declined: comparison-first; see baseline.)
   tasks (implement + floor + one-line trace; no research/plan/adversary),
   fraction set in `profile.json` (`lite_lane_rate`, default 0). Compare rework
   and escaped-defect rates after N tasks. Solo sample sizes are small, so
@@ -263,7 +263,7 @@ confounded to be useful, e.g. non-spine work is a different kind of change):
 
 ### B9. Tests
 
-- [ ] Synthetic transcript, subagent and event fixtures in `core-selftest`:
+- [x] Synthetic transcript, subagent and event fixtures in `core-selftest`: (Done: spine-stats fixtures in core-selftest, including the privacy test.)
   token sums, phase split, task window join, pruned-transcript fallback to the
   rollup, price-table override, and a privacy test (output contains no prompt
   or code text).
@@ -274,7 +274,7 @@ confounded to be useful, e.g. non-spine work is a different kind of change):
 
 ### C1. Find out why (needs B2)
 
-- [x] B2 shipped (logging in place). [ ] Now run normally for a stretch,
+- [x] B2 shipped (logging in place). [x] Now run normally for a stretch, (Superseded: the denial messages embed the command, so the diagnosis was done offline from transcripts: 684 distinct unplaceable Bash commands in turnpilot; ~half relative-after-`cd`, the rest variable targets and quoted `>`.)
   then group `hook-*` events by `rule` / `why` / `cmds` / `cmd_sha`
   (`jq` over `.spine/events.jsonl`, or `spine-stats friction` once B4 exists).
 - Hypothesis to confirm or reject: `path-escalate` denies and `dep-gate` asks
@@ -287,12 +287,12 @@ confounded to be useful, e.g. non-spine work is a different kind of change):
 
 Candidate fixes, to be chosen from C1's data:
 
-- [ ] Read-only and known-safe command allowlist (`git status|diff|log`, `ls`,
+- [-] Read-only and known-safe command allowlist (`git status|diff|log`, `ls`, (Not needed: the parser now ignores quoted data and heredoc bodies, and the real cause was not read-only commands.)
   test/typecheck/lint runners per adapter) that skips write-target analysis.
-- [ ] Better target resolution for common shapes in `_bash-write-targets`.
-- [ ] One ask per command shape per task (cache the human's answer in
+- [x] Better target resolution for common shapes in `_bash-write-targets`. (Done: literal `cd x && ...` chains, quote masking, heredoc bodies, continued lines, sed/perl flag clusters; validated by a differential run over 9,012 real commands.)
+- [-] One ask per command shape per task (cache the human's answer in (Not needed after the fixes; revisit with fresh `spine-stats friction` data.)
   `.spine/` for the task) so repeats do not re-prompt.
-- [ ] One command produces one intervention: define precedence between
+- [x] One command produces one intervention: define precedence between (Done: dep-gate no longer asks on unplaceable writes; path-escalate already blocks them.)
   `path-escalate` (block) and `dep-gate` (ask) so a single Bash call cannot
   trigger both.
 - Constraint: a Bash write that genuinely cannot be resolved stays fail-closed.
@@ -313,7 +313,7 @@ measure.
 - [x] Match each pattern against every command segment (split on `&&`, `||`,
   `;`, `|`, newlines) with leading `VAR=value` assignments stripped.
 - [x] Selftest for each shape above (compound, env-prefixed, piped, multi-line; plain commands and a quoted string do not ask). The pre-fix gate is the negative control: it let `CI=1 pnpm add x` through unasked.
-- [ ] (Still open: needs the owner.) Tell the owner which projects' pattern files are `^`-anchored without
+- [x] (Still open: needs the owner.) Tell the owner which projects' pattern files are `^`-anchored without (Done: told the owner; turnpilot and tgml patterns now tolerate `--filter`/`-C`/`-w`; bootstrap guidance updated.)
   covering `--filter`/`-F`/`-w` forms (turnpilot's does not).
 - [x] (Done: an unreadable pattern now asks with rule `invalid-patterns`; blank/comment lines in the file are ignored so a blank line cannot match everything.) Separate observation: a `turnpilot` transcript shows `dep-gate` printing
   `grep: parentheses not balanced`, i.e. some pattern file there once held an
@@ -322,7 +322,7 @@ measure.
 
 ### C3. Acceptance (set the number after B6)
 
-- [ ] Interventions per shipped task reduced by a target agreed from the
+- [~] Interventions per shipped task reduced by a target agreed from the (Pending data: needs a few weeks of reason-coded events after the merge; measure with `spine-stats friction`.)
   baseline (suggested: >=70% fewer), with zero new bypass cases in the fuzz
   suite and no loss of protected-path or manifest coverage.
 
@@ -340,17 +340,17 @@ measure.
 
 ### D2. Command census and tiers (needs B4)
 
-- [ ] From the census classify each command: **core** (used weekly),
+- [x] From the census classify each command: **core** (used weekly), (Done in README tiers; evidence in baseline: only task/verify/ship/update/autopilot/design/roadmap/spine had turns in turnpilot; transcripts for the rest are pruned or the commands are setup-time.)
   **occasional** (setup / planning), **dormant** (not used in 60 days).
   Candidates to review: `/prompts`, `/remap`, `/ratchet`, `/note-issue`,
   `/ticket`, `/autopilot`, `/wayfinder`, `/prototype`. (`/workspace` is
   removed by G, not judged here.)
-- [ ] README command table regrouped into the same tiers, with a one-page
+- [x] README command table regrouped into the same tiers, with a one-page (Done in the final README pass.)
   "the 80% path" at the top (`/spine`, `/task`, `/verify`, `/ship`).
 
 ### D3. Demotion mechanism
 
-- [ ] Decide how a dormant command leaves the default surface without being
+- [x] Decide how a dormant command leaves the default surface without being (Decided: no physical demotion. README tiers only; delete a command only after two further censuses show no use. `setup` symlinks every skill, which costs only its description line.)
   deleted: `core/skills-extra/` not wired by default, `setup --with-extras`
   to opt in, or a `tier: advanced` frontmatter field that `setup` and
   `/spine` honor. Inspect `core/scripts/setup` first for how skills are wired.
@@ -358,13 +358,13 @@ measure.
 
 ### D4. Split the big skills (progressive disclosure)
 
-- [ ] `task`, `ship`, `verify`: keep the common path in `SKILL.md`; move
+- [x] `task`, `ship`, `verify`: keep the common path in `SKILL.md`; move (Done for task, ship, verify and design; see the D4 result note.)
   branch-specific material to `reference/*.md` files loaded only when a stated
   condition holds (Class 2, workspace/multi-repo, worktree, autopilot, UI
   fidelity, milestone bookkeeping). Target <=350 lines each for the main file.
-- [ ] Each reference has an explicit trigger line in `SKILL.md` and a lint that
+- [x] Each reference has an explicit trigger line in `SKILL.md` and a lint that (Done: `repo-lint references` plus touchpoint-lint over reference files.)
   every reference is reachable from a trigger and every trigger resolves.
-- [ ] Verification: token count per `/task` invocation before/after (B4);
+- [~] Verification: token count per `/task` invocation before/after (B4); (Line counts and a verbatim-move proof done; token before/after to be read from `spine-stats` once the merged skills have run.)
   `core-selftest` passes; replay one golden Class 1 and one Class 2 task on a
   fixture project and compare produced artifacts.
 - Risk: the model skips a reference it should have loaded. Mitigation: the
@@ -373,7 +373,7 @@ measure.
 
 ### D5. Enforcement map
 
-- [ ] `docs/enforcement-map.md`: for every "must / never / always" rule in
+- [x] `docs/enforcement-map.md`: for every "must / never / always" rule in (Done: 92 rules classified. Converted the cheap ones into `set-state` gates; the rest are labelled in the map and in tradeoffs.)
   skills and agents, the mechanism that enforces it (hook, script, selftest, or
   prose-only). For each prose-only rule choose: convert to a script check
   (`/ratchet` path), delete, or tag `[advisory]`. Rewrite the README "teeth"
@@ -381,41 +381,41 @@ measure.
 
 ### D6. Rationalize modes and knobs
 
-- [ ] **Autonomy:** data so far: `guided` and `auto` are used heavily
+- [x] **Autonomy:** data so far: `guided` and `auto` are used heavily (Done: `checkpointed` removed; legacy profile values still accepted.)
   (turnpilot 59 guided / 5 auto; tgml 37 auto / 13 guided);
   `checkpointed` is ~absent from task folders (one event in turnpilot). Unless
   B6 shows real use, remove `checkpointed` everywhere (37 references across
   six skills, plus the `auto-checkpointed` profile value).
-- [ ] **`/autopilot`:** keep, demote (D3) or remove based on the census. If
+- [x] **`/autopilot`:** keep, demote (D3) or remove based on the census. If (Decided: keep as is, experimental, used twice in turnpilot.)
   kept, it is one experimental entry, not a mode threaded through other skills.
-- [ ] **Profile and calibration fields:** list every field in
+- [~] **Profile and calibration fields:** list every field in (Partly: profile fields are all read by floor/verify/task/ship; no unread field found. Calibration output not audited.)
   `core/templates/profile.json`, `capabilities.json`, calibration output; delete
   any that nothing reads (extend `profile-check` to report unread fields).
-- [ ] **Experimental flags** (`ui_fidelity_class1_optin`, worktree isolation):
+- [x] **Experimental flags** (`ui_fidelity_class1_optin`, worktree isolation): (Worktree isolation removed with G; `ui_fidelity_class1_optin` stays pending E4.)
   keep only those with recorded use.
 
 ### D7. Classification quality
 
-- [ ] Investigate Class 2 share (turnpilot ~2/3). Suspect: `e7a0b55` made
+- [x] Investigate Class 2 share (turnpilot ~2/3). Suspect: `e7a0b55` made (Done: refuted. Only 3 Class 2 tasks in turnpilot finished with no fixed finding and no deviation.)
   `/intake` count protected files a change *reads from*. Compare class
   distribution before and after that commit, and check turnpilot's broad
   protected-path globs (billing, deposits, invoices, db, jobs, auth) against
   the greenfield milestone it was building.
-- [ ] Use the "class-2 with zero fixed findings and zero deviations" metric.
+- [x] Use the "class-2 with zero fixed findings and zero deviations" metric. (Done: in spine-stats; result above.)
   If over-classification is confirmed: Class 2 triggers on *writes* to
   protected paths and reads become a note; or recalibrate protected-path
   conf at `/adopt`. Decide from data, record in a decision doc.
 
 ### D8. `/ship` cost
 
-- [ ] From the B6 phase breakdown find where `/ship` spends tokens (re-grounding,
+- [~] From the B6 phase breakdown find where `/ship` spends tokens (re-grounding, (Baseline shows /ship main as the largest spine consumer; the split moves its conditional parts out of the always-loaded file. A deeper per-step breakdown needs finer token attribution than `attributionSkill` gives.)
   decision distillation, milestone bookkeeping, briefing, PR description).
   Move deterministic parts to scripts; split the skill's "six jobs" into
   sequential steps that load only what they need.
 
 ### D9. Audit practice
 
-- [ ] Stop writing round-numbered audit reports into `docs/`. Move
+- [x] Stop writing round-numbered audit reports into `docs/`. Move (Done: moved to docs/history/ with an index.)
   `docs/audit-2026-08-22*.md` to `docs/history/`. Replace with continuous
   checks: fuzz suite, selftest, A6, budget, README check. Keep one
   `docs/history/README.md` index.
@@ -433,7 +433,7 @@ measure.
 
 ### E2. Abandoning a task
 
-- [ ] Design first, as a short decision record, then implement. Recommended
+- [x] Design first, as a short decision record, then implement. Recommended (Done: `set-state <id> abandoned "<reason>"`, no new command; `next-milestone-task` reports DISPOSITION and `/task` asks replace-or-drop.)
   shape: `/task --abandon <id> "<reason>"` (no new command). Terminal state
   `abandoned` with a required reason, `abandoned` event, final registry sync,
   `.spine/current-task` cleared if active, no further writes allowed by
@@ -443,13 +443,13 @@ measure.
   blocked-pending-disposition; `/spine` surfaces it; the human either adds a
   replacement task or descopes via `/roadmap` (recorded in the milestone's
   Known gaps). Recommend this over auto-replacing.
-- [ ] Three mechanisms to update, each with a selftest and negative control:
+- [x] Three mechanisms to update, each with a selftest and negative control: (Done: next-milestone-task, current-task clearing, set-state; claims-check no longer exists.)
   `next-milestone-task` completeness check, `claims-check` live-claims
   predicate, `current-task` clearing. Also `/spine` status and `phase-gate`.
 
 ### E3. Class 2 for projects with no runtime (LOW PRIORITY, do last in E)
 
-- [ ] Wanted by the owner only if cheap; the M0 waiver (`d846fc7`) is the size
+- [ ] Wanted by the owner only if cheap; the M0 waiver (`d846fc7`) is the size (Open, low priority.)
   to aim for. If the design grows past that, drop it. Spine itself is a
   candidate to dogfood. Mirror the M0 waiver: `floor` records
   `degraded:no-runtime` instead of failing only when the charter declares
@@ -459,7 +459,7 @@ measure.
 
 ### E4. `ui-capture` / `ui-fidelity`
 
-- [ ] Run end to end once on a real UI project with a real adapter; record the
+- [ ] Run end to end once on a real UI project with a real adapter; record the (Open: needs a real project run; not done.)
   calibration results `docs/proposal-ui-fidelity.md` promised. Outcome is
   binary: document results and keep, or remove the agent, scripts, template
   and `ui-touch` content-path code. Do not leave "never run" in the repo.
@@ -475,19 +475,19 @@ measure.
 
 ### E6. Plan-quality proxy (optional)
 
-- [ ] Shape lint for `plan.md` acceptance checks: each names a command or
+- [-] Shape lint for `plan.md` acceptance checks: each names a command or (Declined: would add a script to a capped set and only catches empty plans.)
   observable plus an expected result, and at least one is a negative check.
   This catches empty plans, not wrong ones; say so in the plan template. Add a
   metric: tasks whose FAIL or late deviation traces to an acceptance gap.
 
 ### E7. Whole-tree floor
 
-- [ ] Document a CI recipe for `floor --whole-tree` nightly. `/spine` shows the
+- [x] Document a CI recipe for `floor --whole-tree` nightly. `/spine` shows the (Done in README and tradeoffs: `floor 1 --full`.)
   age of the last whole-tree result (`gap-age` style) when one is recorded.
 
 ### E8. Adversary independence (evaluate, do not assume)
 
-- [ ] After B6 gives adversary yield: pilot routing falsifier/security to a
+- [-] After B6 gives adversary yield: pilot routing falsifier/security to a (Deferred: needs enough runs to compare; listed in tradeoffs Deferred.)
   different model than the implementer and compare yield. Keep only if yield
   rises enough to justify the cost.
 
@@ -498,7 +498,7 @@ recorded task in both turnpilot (67/67) and tgml (67/67). The README promises
 "the floor fails on new duplication in changed code"; for these projects that
 layer has never executed.
 
-- [ ] Decide per capability: implement an adapter in the projects that use
+- [x] Decide per capability: implement an adapter in the projects that use (Decided: spine core stops over-promising (README, tradeoffs); writing clone-scan/callers/mutate adapters is project work for turnpilot and tgml, e.g. via /task there.)
   spine, or stop listing it as a default guarantee. At minimum make `/spine`
   or the briefing say "N floor layers have never run in this project".
 - Note: `/spine` §4b already runs `gap-age`, which reports checks skipped across many verifies, so the visibility exists; what is missing is anyone acting on it (clone-scan was skipped in 67 of 70 checks). `spine-stats floor` prints the same list.
@@ -557,11 +557,11 @@ rounds of hook-bypass bugs were found.
   all 74 `flags.json` files are `[]`, and `registry-sync` itself reported that
   it committed nothing at task open. The `worktree-prep` capability stays
   because adversaries run in harness-provided worktrees that need deps.
-- [ ] **`work/` sharing.** With no other engineer, task state has no reader
+- [x] **`work/` sharing.** With no other engineer, task state has no reader (Decided: leave as is; see A3.)
   but the owner. Default: gitignore all of `work/` (as `1524cd8` began),
   keeping distilled `docs/decisions/` committed. Confirm before changing
   `setup`. This settles A3.
-- [ ] **`bookmarks-workspace`** is the only installed workspace (4 tasks, in
+- [ ] **`bookmarks-workspace`** is the only installed workspace (4 tasks, in (Still open: owner to say whether it is disposable. It is the only installed workspace and its hooks no longer route to member repos.)
   `/Users/michaelbart/bookmarks-workspace`). Confirm it is disposable or pin
   it to the pre-removal tag; do not leave it silently broken.
 
@@ -608,12 +608,12 @@ The hooks were simplified in the next commit (step 3).
 
 Last, because D changes what is true.
 
-- [ ] **F1. Split `docs/tradeoffs.md`** (500 lines, four genres) into: a
+- [x] **F1. Split `docs/tradeoffs.md`** (500 lines, four genres) into: a (Done: tradeoffs 500 -> ~125 lines; rationale in docs/design/.)
   one-page `tradeoffs.md` (what it costs, when it is the wrong tool, when to
   abandon it, what makes it obsolete, accepted limits) and `docs/design/`
   holding the rationale sections (human touchpoints, visual fidelity, M0 waiver,
   design stage, worktree/autopilot notes) plus the proposals.
-- [ ] **F2. Apply the triage.** Each Known-limits entry becomes one of:
+- [x] **F2. Apply the triage.** Each Known-limits entry becomes one of: (Done.)
   - *Fixed* (E1, E2, E3, E5): remove, link the change.
   - *Tradeoff, measured*: keep with the metric that tracks it (adversaries
     don't gate -> adversary yield and shipped-with-high-finding count; plan
@@ -624,11 +624,11 @@ Last, because D changes what is true.
     hooks do not see every write shape; per-task floor sees only the diff
     (point at E7).
   - *Team / cross-repo*: removed by G; delete the sections, no replacement.
-- [ ] **F3. Replace guesses with data.** "Token overhead" and "Human minutes"
+- [x] **F3. Replace guesses with data.** "Token overhead" and "Human minutes" (Done where data exists; human minutes stay marked unmeasured.)
   quote B6 numbers with a date and project count, or say "unmeasured".
-- [ ] **F4. Review dates.** Each remaining accepted limit carries
+- [-] **F4. Review dates.** Each remaining accepted limit carries (Declined for now: the doc is one page and dated; add per-item dates if it grows again.)
   `reviewed: YYYY-MM` so stale claims are visible.
-- [ ] **F5. README.** Command table in tiers (D2), the 80% path, accurate
+- [x] **F5. README.** Command table in tiers (D2), the 80% path, accurate (Done in the final README pass.)
   "teeth" claim (D5), work/ sharing as reconciled in A3.
 
 ---

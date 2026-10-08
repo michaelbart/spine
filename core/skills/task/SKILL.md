@@ -10,138 +10,9 @@ argument-hint: [description of the work] [--milestone <milestone-id>]
 You are running `/task`, the spine. `$ARGUMENTS` is the
 task description as given, plus an optional `--milestone <milestone-id>`.
 
-**If the description is empty, try auto-continue before asking for one.**
-First, the normal resume check still wins: if `.spine/current-task` already
-exists, this is not an empty-description case at all — skip straight to
-**Resuming** below and ignore everything in this bullet. Only when there is
-no active task and no description was typed, run:
+**When the task description in `$ARGUMENTS` is empty:** read `${CLAUDE_SKILL_DIR}/reference/milestone-and-auto-continue.md` and follow it exactly before continuing.
 
-```
-${CLAUDE_SKILL_DIR}/../../scripts/next-milestone-task --project <project root> \
-  [--milestone <id> if one was given]
-```
-
-This is a single deterministic call instead of hand-scanning every
-`work/M*/milestone.md` and every member task's own `state` file via
-separate reads — same completeness test `/roadmap` and `/ship` §3b use
-(every `## Member tasks` entry a real task-id, every one of those tasks'
-own `state` reading `done`), computed once in the one place, live, so it
-can't drift the way a cached "last completed milestone" pointer could
-once a `## Closes milestone gap` splice (§3 below) reopens a milestone
-that already looked complete. Its one-line output branches five ways:
-
-- **`TBD <milestone-id> <description>`** — propose it and stop: "Continue
-  with `<milestone-id>`'s next task: `<description>`?" — before doing
-  anything else. This is a real touchpoint, not a
-  courtesy notice: nothing has been created yet (no task folder), so it's
-  the cheapest possible point to catch a wrong guess, one keystroke against retyping the whole
-  description by hand. On confirmation, proceed exactly as if the human
-  had typed `<that description> --milestone <that-milestone-id>`. On
-  rejection or a correction, use what the human says instead (a different
-  entry, a different milestone, or a hand-typed description) — don't
-  re-guess. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
-
-  <!-- touchpoint:start confirm -->
-  > **Start the next planned task in `<milestone title>`: "<description>"?** It's next in the plan's order, and nothing is created until you say yes.
-  > **Yes** (recommended) — I begin researching it. **No** — tell me a different task or milestone instead.
-  <!-- touchpoint:end -->
-- **`BLOCKED <milestone-id> <blocking-token>`** — that milestone's next
-  queued task can't start yet: its immediate predecessor (`<blocking-token>`
-  is a task-id, or the literal `TBD` if that predecessor hasn't even been
-  created) isn't done. Say so plainly ("`<milestone-id>`'s prior task isn't
-  done yet") and fall through to asking for a description — never skip
-  ahead to a different milestone on your own.
-- **`WAITING <milestone-id>`** — that milestone is mid-flight (every member
-  task already has a real id, none are `TBD`) but nothing in it is done
-  yet either, so there's nothing queued to propose. Say so plainly and
-  fall through to asking for a description.
-- **`DISPOSITION <milestone-id> <task-id>`** — a planned task in that milestone
-  was abandoned, so it can't finish as written. Ask before anything else, with
-  `AskUserQuestion`:
-
-  <!-- touchpoint:start confirm -->
-  > **Replace the abandoned task "<its description>" in `<milestone title>`, or drop it from the plan?** It was set aside on purpose, and the milestone can't finish until you choose.
-  > **Replace it** (recommended) — I queue it again as a fresh task. **Drop it** — I remove it from the plan and note why.
-  <!-- touchpoint:end -->
-
-  Replace: set that entry in `work/<milestone-id>/milestone.md` back to `TBD`
-  (keep its description) and carry on as the `TBD` case. Drop: delete the entry,
-  add the description and the reason (second line of `work/<task-id>/abandoned`)
-  under `## Known gaps for future member tasks`, and re-run the script.
-- **`NONE`** — no milestone exists yet, or every one found is already
-  complete. Fall through to asking for a description, saying briefly why
-  auto-continue didn't fire.
-- If the script could not run at all, this is a tooling gap — say so
-  plainly to the human ("couldn't check for a queued milestone task") and
-  fall through to asking for a description; don't treat a script that
-  couldn't execute as "nothing queued."
-
-**If `--milestone <id>` is given:** look for `work/<id>/milestone.md`.
-**If it does not exist, the milestone is new — before creating it, stop
-and confirm with the human rather than silently creating an unplanned
-milestone.** This is the point `/roadmap`'s own sequencing and gap-absorption
-(`core/skills/roadmap/SKILL.md` §1a/§3) would normally already have run —
-skipping straight to task creation is exactly the path that lets Known Gaps
-entries never get absorbed anywhere. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
-
-<!-- touchpoint:start confirm -->
-> **Create `<milestone title>` here, or plan it first with `/roadmap`?** It has no plan file yet, and creating it here skips the step that sorts out leftover issues.
-> **Plan it first** (recommended) — you run `/roadmap`, then come back. **Create it here** — I make a minimal milestone and ask about leftover issues from finished ones.
-<!-- touchpoint:end -->
-
-This is informational, not a
-hard block — same "never a gate" stance `/ship` takes on the identical
-suggestion — the human may legitimately want an ad hoc milestone id. If the
-human says proceed: **also check every already-shipped milestone**, not
-just the immediately preceding one — read each `work/M*/milestone.md`
-directly, checking for open entries in its `## Known gaps` section. For
-every shipped milestone with open entries, read them aloud and ask what to
-do with each: carry it verbatim into `<id>`'s own Known Gaps section (same
-id, `source`, prose — the append-verbatim convention
-`core/skills/roadmap/SKILL.md` §3 uses), fold it into this task's own scope
-instead, explicitly decline it (say so, move on — never silently drop, same
-completeness standard `/roadmap` §4 holds itself to), or defer it — leave
-it exactly where it is and say nothing more now. Deferring is a safe,
-legitimate answer here (unlike declining, it isn't final): the gap stays in
-its original milestone's own Known Gaps section and this same stop will
-re-ask about it at the next new-milestone creation.
-
-Ask once per leftover issue, with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
-
-<!-- touchpoint:start -->
-> **Deciding:** what to do with one problem an earlier milestone knowingly left open. It's yours because nobody fixed it, and only you can say whether it belongs to this work.
-> **Need to know:** "<the issue in one plain sentence>", left by `<earlier task>`. Nothing is lost; it stays listed in its old milestone until you decide.
-> **Recommend:** <carry it | fold it in | ask me later> — <one-line reason>
-> 1. **Carry it forward** — next: I copy it unchanged into this milestone's list of known issues; cost: none; undo: yes
-> 2. **Fold it into this task** — next: this task's scope grows to fix it; cost: extra work in this task; undo: yes, until the plan is approved
-> 3. **Decline it** — next: I record that you chose not to fix it; cost: it stays unfixed for good; undo: no, this one is final
-> 4. **Ask me later** — next: it stays where it is and I ask again when the next milestone starts; cost: none; undo: yes
-> **Safe to ignore:** the other leftover issues; each is asked separately.
-<!-- touchpoint:end -->
-
-Only then create
-`work/<id>/milestone.md`, seeded from
-`core/templates/milestone.md` plus whatever gap entries were carried
-forward (bump `next-gap-id` past the highest carried id). **If
-`work/<id>/milestone.md` already exists, none of this applies** — either
-`/roadmap` already ran and did it, or an earlier task in this same milestone
-already did.
-
-Read `work/<id>/milestone.md` (design-stage extension,
-`core/templates/milestone.md`) before classifying — its `## Member tasks`
-list and `## Capability targets` both become planning context for every
-phase below. Once
-this task's ID is generated (step 1), replace this milestone's first
-still-`TBD` member-task line with the real task ID (`Edit` on
-`milestone.md` — this is bookkeeping, not a phase artifact). **Do
-this before writing `work/<task-id>/state` in step 1, not after** —
-`phase-gate` only restricts `Edit`/`Write` to a task's own
-`work/<task-id>/` once that task has a `state` file reading `research` or
-`plan`; with no `state` file written yet, this edit is simply outside the
-hook's gating window, not something the hook has to carve out a special
-case for. Record `work/<task-id>/milestone` = `<id>`, one line, so `/ship`
-(final member task's own done-definition check) and a resumed session both
-know this task belongs to a milestone without re-parsing `$ARGUMENTS`.
+**When `$ARGUMENTS` contains `--milestone <id>`:** read `${CLAUDE_SKILL_DIR}/reference/milestone-and-auto-continue.md` and follow it exactly before continuing.
 
 State lives in four places, and every phase transition below updates them
 — they are not decoration, the hooks (`core/hooks/phase-gate`,
@@ -191,16 +62,7 @@ must resolve `../../` against the symlink's real target (`<spine>/core/...`).
 Collapsing it as text yields a nonexistent `.claude/scripts/...` path and a
 "no such file" error.
 
-**Tooling-gap discipline (applies to every script invocation below):**
-every time you invoke a core script, distinguish three outcomes — "ran and
-passed," "ran and failed" (a real result, act on it normally), and **could
-not run at all** (blocked, denied, or errored before the script's own logic
-executed). On "could not run": append a line to `work/<task-id>/notes.md`
-(create it, header `# Notes`, if it doesn't exist yet):
-`TOOLING GAP: <script> could not run — <one-line consequence>.` Be concrete
-about the consequence. Never let a could-not-run script silently read as
-"nothing to report." This carries forward into `verify.md`'s own "Tooling
-gaps" section.
+**When a core script could not run at all (blocked, denied, or errored before its own logic executed):** read `${CLAUDE_SKILL_DIR}/reference/plan-implement-edge-cases.md` and follow it exactly before continuing.
 
 
 **Voice.** Every message this skill leaves for the human follows
@@ -210,78 +72,7 @@ decision per message, and put surprises first.
 
 ## 1. Classify — the first recurring human touchpoint
 
-**If `.spine/current-intake` exists, this task came through `/intake`**
-(`core/skills/intake/SKILL.md`). Read it — `{ticket, class, autonomy, type,
-description, class_below_recommended, recommended_class}` — and treat the
-class as already confirmed: the human confirmed it in `/intake`'s menu, so do
-**not** re-suggest or re-prompt the class below. Use `description` as the
-task description if `$ARGUMENTS` carried none. Proceed straight to task-ID
-generation with that class. Two things ride along in the setup step below:
-write `work/<task-id>/ticket` = the ticket key (one line; omit the file if
-the ticket was null), which `/ship` reads for the `Spine-Ticket:` trailer;
-write `work/<task-id>/autonomy` = the handoff's `autonomy` (a Class 2 task is
-forced to `guided` regardless of what the handoff says — the ceiling);
-
-**Ticket branch (Extension F, experimental — `/intake`-originated, Class 1/2
-only), done here rather than in `/intake` itself:** this point comes after the
-Resuming check above already resolved that no other task is active in
-this directory — the one place a branch switch can't collide
-with another task's uncommitted work sitting in the same tree. If `ticket` is
-non-null, first check whether the current branch already resolves to this
-same key: check whether `git rev-parse --abbrev-ref HEAD` already contains
-the ticket key as a substring. A match means the human already branched by
-hand — nothing to do. Otherwise, before generating the task ID below (so the task
-folder's own commits land on the right branch from the start):
-
-**Compute `<branch>` from this project's own naming convention, not a fixed
-shape.** Read `.spine/branch-naming.conf` if it exists (one line, a template
-using `{ticket}`, `{slug}`, `{type}`, `{user}`); if absent, the template is
-`{ticket}-{slug}` (this extension's original, unconfigurable default —
-unchanged for any project that never opted in). Substitute: `{ticket}` = the
-ticket key; `{slug}` = a kebab-slug of the description; `{type}` = the
-handoff's `type` (`feature`|`fix`) — a template containing `{type}` with no
-`type` in the handoff (a stale pre-upgrade `.spine/current-intake`, or this
-call site reached with no handoff at all) is a tooling gap: fall back to
-`feature` and don't halt the branch creation over it, but remember to add a
-`TOOLING GAP:` line to `notes.md` once the task folder exists a few steps
-below — the folder doesn't exist yet at this point in the flow, this can't
-be logged immediately; `{user}` = `git config user.name`, slugified the
-same way as `{slug}`.
-**A committed `.spine/branch-naming.conf` whose template doesn't contain
-`{ticket}` is malformed** — the substring check above depends on the ticket
-key actually appearing in the branch name — fail loud (tooling gap, ask the
-human) rather than silently using it or silently falling back to the
-default; this should have been caught at write time (`core/skills/bootstrap/
-SKILL.md` §4 / `core/skills/adopt/SKILL.md` §3) and reaching it here at all
-means that validation was skipped or the file was hand-edited since.
-
-- A local branch already named `<branch>` exists (`git rev-parse --verify
-  --quiet refs/heads/<branch>`) — check it out, don't recreate it (a resumed
-  ticket).
-- Otherwise a remote-tracking one exists (`git rev-parse --verify --quiet
-  refs/remotes/<remote>/<branch>`, `<remote>` read the same way as below) —
-  `git checkout -b <branch> <remote>/<branch>`.
-- Otherwise, create it fresh from current HEAD: `git checkout -b <branch>`.
-  Then, if the branch you were just on has a configured remote
-  (`git config branch.<previous-branch>.remote`), immediately `git push -u
-  <remote> <branch>` — this is what gives `open-pr`'s "uses the
-  current branch when `SPINE_PR_HEAD` is unset" (`core/ADAPTER-CONTRACT.md`
-  §3.5) a real head branch to open a PR from, instead of silently assuming
-  the human already branched by hand. No remote configured on the previous
-  branch: skip the push, stay local (a normal solo/single-machine project, not
-  a gap). A push failure here (network, permissions) is non-fatal — note it
-  and continue on the local branch; `/ship`'s push retries it naturally once
-  the human resolves it by hand.
-
-One more thing rides along in the setup step below: for a direct
-`/task` with no handoff, write the autonomy the human just chose in the step
-above (Class 2 / a downgraded task ⇒ `guided`); and if
-`class_below_recommended` is true, add a `notes.md` line recording the
-downgrade — the downgrade stays visible without consuming a circuit-breaker
-slot (it is a classification choice, not a plan-vs-reality deviation, so it
-is **not** a `deviations.md` record). Then **delete `.spine/current-intake`**
-and continue to §2. The class-suggestion list below is
-only for a `/task` invoked directly, with no intake handoff.
+**When the file `.spine/current-intake` exists:** read `${CLAUDE_SKILL_DIR}/reference/intake-handoff-and-ticket-branch.md` and follow it exactly before continuing.
 
 Every task gets a class, and the human confirms it — not the model alone.
 Suggest one, don't decide it unilaterally (for a direct `/task` you also
@@ -390,16 +181,7 @@ limit — survey the actual subsystem and its real callers. This line is a
 real design decision; defend or revise it in `docs/tradeoffs.md`, don't
 silently drift from it task to task.
 
-**UI-touching tasks: the handoff is required grounding.** If the task's
-description or likely touch set includes a declared UI path or content
-path (`.spine/ui-paths.conf`, `.spine/ui-content-paths.conf`), tell the
-researcher to read and cite, in the header's `files:` list, the affected
-screen's `docs/ui/screens/<id>.json` **and** each of that screen's
-screenshots (every path in its `screenshots` map), plus
-`docs/ui/components.md` where a component's behavior matters. A UI task
-researched only from code is how content gets invented; the headers are
-also what makes `check-stale` notice when a mockup is replaced.
-
+**When the task's description or likely touch set includes a path declared in `.spine/ui-paths.conf` or `.spine/ui-content-paths.conf`:** read `${CLAUDE_SKILL_DIR}/reference/ui-path-steps.md` and follow it exactly before continuing.
 The researcher's entire reply is the complete `research.md` content
 (including its header) — write it verbatim to `work/<task-id>/research.md`.
 
@@ -417,17 +199,7 @@ task") and proceed on the assumption research *might* be stale, noting that
 explicitly when you present the plan for approval so the human's review
 accounts for it.
 
-**False-positive rule (own bookkeeping is not drift).** If the only drifted
-items are `work/<id>/milestone.md` for this task's own milestone, and every
-changed line in `git diff <sha> -- work/<id>/milestone.md` is this task's own
-classify-time replacement of the milestone's first `TBD` line with its task
-id (the same clause-(d) reading `core/skills/ship/SKILL.md` §0 applies at ship
-time), it is not drift. Keep the research: delete the `> **STALE**` banner
-`check-stale` wrote into `research.md`, append one line to `notes.md`
-("check-stale flagged only my own TBD-to-task-id edit in milestone.md;
-treated as a false positive, research kept"), and go on to write the plan. Any
-other drifted item, or any changed line you cannot attribute to that one edit,
-means regenerate as above — never guess.
+**When `check-stale` reports drift and the only drifted item is `work/<id>/milestone.md` for this task's own milestone:** read `${CLAUDE_SKILL_DIR}/reference/plan-implement-edge-cases.md` and follow it exactly before continuing.
 
 Write `work/<task-id>/plan.md` yourself, following
 `${CLAUDE_SKILL_DIR}/../../templates/plan.md`'s structure exactly, and
@@ -451,30 +223,7 @@ don't invent a citation just to clear the section. If any decision from
 `/design` grounds this plan, add the `## Grounds on decisions` section per
 `core/templates/plan.md`.
 
-**If this task does *not* already belong to a milestone** (`work/<task-id>/
-milestone` unset — no `--milestone` was given), still check whether this
-plan's own scope is required to make some existing milestone's `##
-Done-definition` true despite not being one of that milestone's listed `##
-Member tasks` — the shape a prior member task's own `briefing.md` flagging
-a real gap in its follow-ups most often takes. If so, write the `##
-Closes milestone gap` section per `core/templates/plan.md` naming that
-milestone, then act on it right now, before presenting the plan: resolve
-`work/<id>/milestone.md`, append a new numbered entry to its `## Member
-tasks` with this task's own real id (no `TBD` — the task already exists)
-and a one-line description drawn from `## The gist`'s first sentence, and
-write `work/<task-id>/milestone` = `<id>`. Say this plainly when presenting
-the plan for approval — "this also closes M<n>'s done-definition gap,
-splicing it in as member task <k>" — same visibility standard as any other
-milestone-affecting edit this skill makes. This is the fix for the exact
-blind spot a real ad-hoc gap-closing task exposed: without it, a task that
-genuinely closes a milestone's done-definition gap never gets a
-`work/<task-id>/milestone` pointer, so none of `/ship`'s §3a/§3b/§3c
-milestone bookkeeping ever engages for it and the milestone's own record
-never shows a 5th task was actually required to reach "done." If the named
-milestone doesn't resolve to a real `milestone.md`, or `work/<task-id>/
-milestone` was already set to a *different* id than this section names,
-that's a conflict — surface it to the human, never silently pick one or
-fabricate the file.
+**When `work/<task-id>/milestone` is unset (no `--milestone` was given):** read `${CLAUDE_SKILL_DIR}/reference/plan-implement-edge-cases.md` and follow it exactly before continuing.
 
 Check every `## Predicted touch` entry against `.spine/protected-paths.conf`. If any match and `work/<task-id>/class` is not
 already `2`, auto-escalate: rewrite the class file to `2`, **and
@@ -486,39 +235,9 @@ say so plainly when you present the plan — this is plan-triggered
 escalation; it does not need a separate confirmation prompt beyond the
 plan approval you're about to ask for anyway.
 
-**UI-touching plans: run `content-sources-check` before presenting the plan.**
+**When the plan's predicted touch includes a path declared in `.spine/ui-paths.conf` or `.spine/ui-content-paths.conf`:** read `${CLAUDE_SKILL_DIR}/reference/ui-path-steps.md` and follow it exactly before continuing.
 
-```
-${CLAUDE_SKILL_DIR}/../../scripts/content-sources-check <task-id> --project <project root>
-```
-
-Exit 0 (including "not applicable") proceeds. Exit 1 means the plan's
-`## Content sources` is missing, cites a nonexistent or untracked source,
-omits a fixture/content file, or contains `source: none`. **Do not present
-the plan.** For each `source: none`, stop and ask the human what the
-content is or where it comes from (halt tier — the same stop-and-ask a
-`halt` deviation is), then rewrite the entry as a real path or
-`source: human — <what they said>` and re-run. This applies at every
-class and autonomy, `auto` included: there is no self-approving your way
-past content nobody defined. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`):
-
-<!-- touchpoint:start -->
-> **Deciding:** what a piece of on-screen text should say, or where it comes from. It's yours because nothing in the project defines it, and I won't invent wording or sample data.
-> **Need to know:** The plan puts "<the text or file>" on screen, and I found no source for it.
-> **Recommend:** Just tell me the wording — it's the fastest way to be right.
-> 1. **Give me the text** — next: I record it as your answer and carry on to the plan; cost: a minute; undo: yes
-> 2. **Point me to where it lives** (a file or link) — next: I read it, cite it, and carry on; cost: a minute; undo: yes
-> **Safe to ignore:** every entry that already has a source.
-<!-- touchpoint:end -->
-
-**If `work/<task-id>/autonomy` is `auto`, there is no plan-approval stop.**
-Write the plan exactly as above — it is still written, and `/ship` attaches it
-to the PR for review, trading pre-implementation plan review for PR-time review
-(the disclosed `auto` tradeoff — see `docs/tradeoffs.md`). Record `approval.json` with `"autonomy": "auto"` set,
-and proceed straight to §4. This can only happen at Class 1
-(the ceiling); if §3's protected-path check just auto-escalated this task to
-Class 2, `work/<task-id>/autonomy` was set to `guided` above, so this branch no
-longer applies and you fall through to the stop below. For `guided`:
+**When `work/<task-id>/autonomy` is `auto`:** read `${CLAUDE_SKILL_DIR}/reference/auto-autonomy-steps.md` and follow it exactly before continuing.
 
 **Present the plan and stop — this is the second recurring human
 touchpoint.** Do not proceed to implementation in the same turn. Wait for
@@ -553,27 +272,7 @@ On approval: run
 Work the plan's steps directly (you have full tool access again; `phase-gate`
 no longer applies, `path-escalate`/`dep-gate` still do). For each decision
 you hit, **first ask whether it's a setup event, not a deviation at all**:
-did it teach you the plan's understanding of *the product* was wrong, or
-only that this project's own tooling config (`.spine/adapters/*`,
-`.spine/capabilities.json`, `.spine/protected-paths.conf`) was imperfect —
-a latent adapter bug (e.g. pulling in a broken build target) with no
-bearing on the plan's own reasoning, a stale capability status getting
-corrected, and the like? The first is a real deviation, handled by the
-three tiers below. The second is a **setup event**: fix it, append one
-line to `work/<task-id>/notes.md` (create it, header `# Notes`, if it
-doesn't exist yet) — `SETUP: <what was touched, what was wrong, how it was
-fixed>` — and keep going. **Never a `deviations.md` record** — it doesn't
-count toward the circuit breaker and doesn't appear in the briefing's
-"What surprised us," because it isn't a plan-vs-reality mismatch about the
-product; `core/skills/verify/SKILL.md` step 5 merges these `SETUP:` lines
-into `verify.md`'s own "Setup events" section (mirroring exactly how a
-`TOOLING GAP:` line already flows into that file's "Tooling gaps" section)
-so it's still visible, never silent, just not conflated with a real
-deviation. **A class escalation is never a setup event, even when it
-traces to a plan-time check the escalation itself proves was a miss** — a
-missed blast-radius call is exactly the "the plan's understanding of the
-product was wrong" signal the circuit breaker exists to catch; it stays a
-`halt`-tier deviation below, same as always.
+**When a decision comes up during implementation that does not match the plan:** read `${CLAUDE_SKILL_DIR}/reference/plan-implement-edge-cases.md` and follow it exactly before continuing.
 Whenever the class is rewritten mid-implementation, log it too:
 `${CLAUDE_SKILL_DIR}/../../scripts/spine-event class-escalated from=<old> to=2
 when=implement`.
@@ -590,22 +289,7 @@ literal, not judgment-call vocabulary translation:
   `${CLAUDE_SKILL_DIR}/../../templates/deviations.md`'s shape; tier
   `record-and-proceed`, status `resolved` immediately since proceeding *is*
   the resolution), then keep going.
-- **I'll stop and ask before** (`halt`) — schema, public contracts, new
-  dependencies, auth logic, or anything protected-path (the hooks enforce
-  the file-level cases independently). Append a deviations.md record with
-  status `open`, stop implementing, and ask the human in the form below. This is a legitimate non-recurring touchpoint — it does not
-  happen on every task, only when reality diverges from the plan in a
-  halt-tier way. Ask it with `AskUserQuestion`, in this form (per `core/templates/human-touchpoint.md`). Cite no decision, gap or class
-  id unless you say in a few words what it is:
-
-  <!-- touchpoint:start -->
-  > **Deciding:** <the specific thing that came up, e.g. "whether I may change the database layer">. It's yours because the plan said I'd check with you before touching <schema | public contracts | packages | login logic | protected files>.
-  > **Need to know:** <what I found while building, in plain words>. <Why the plan didn't cover it>. <What each path would touch>. Nothing has been changed for this yet.
-  > **Recommend:** <option> — <one-line reason>
-  > 1. **<the smaller path>** — next: <what happens>; cost: <time or risk>; undo: <yes/no/how>
-  > 2. **<the larger path>** — next: <what happens>; cost: <time or risk>; undo: <yes/no/how>
-  > **Safe to ignore:** <records I'll update either way>
-  <!-- touchpoint:end -->
+**When a decision matches the plan's `halt` list (`I'll stop and ask before`):** read `${CLAUDE_SKILL_DIR}/reference/plan-implement-edge-cases.md` and follow it exactly before continuing.
 
 Log each one as you record it, so a later recap can compare what was logged
 with what the diff shows:
@@ -613,16 +297,7 @@ with what the diff shows:
 for a `deviations.md` record, and `... spine-event deviation kind=setup` for a
 `SETUP:` note.
 
-**Circuit breaker:** count every deviations.md record regardless of tier.
-On the third for this task, the plan is invalidated — `git stash push -u -m
-"spine: circuit breaker, work/<task-id>"` to preserve what you'd built
-without losing it, run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> research`, and tell the human plainly: three wrong guesses means the
-research was wrong once, not that each guess should be patched forward.
-Fresh research is required before re-planning.
-
-If a resolution (halt or otherwise) cites a `docs/charter.md` line, it must
-end amend-or-reaffirm: the human either edits that charter line or
-reaffirms it as-is, dated, and the deviations.md resolution records which.
+**When this task's third `deviations.md` record is being written, or a resolution cites a `docs/charter.md` line:** read `${CLAUDE_SKILL_DIR}/reference/plan-implement-edge-cases.md` and follow it exactly before continuing.
 
 ## 5. Verify and ship
 
@@ -666,17 +341,7 @@ completes), use this form; it replaces any freeform summary. Show only the
 > **Worth knowing:** <anything surprising, left open on purpose, or not proven, in plain words; or "nothing">
 <!-- touchpoint:end -->
 
-**auto** — no scheduled human stop. **Follow `core/skills/verify/SKILL.md` inline**
-(the falsifier's stub-out probe is *mandatory*
-in this mode — it is the partial backstop for the plan review `auto` skipped).
-Read `verify.md`'s
-`Result:`. On `PASS`, **follow `core/skills/ship/SKILL.md` inline**, which for an
-`auto` task opens a **draft PR** (never merges — `core/skills/ship/SKILL.md` §5a)
-and stops at "PR ready for review." On `FAIL`, this is an
-*exception* stop: go back to implementation, fix, re-run verify inline; if the fix
-hits a `halt`-tier decision or trips the circuit breaker (§4), stop and pull the
-human in exactly as §4 says. The human's single touchpoint is reviewing the
-finished PR.
+**When `work/<task-id>/autonomy` is `auto`:** read `${CLAUDE_SKILL_DIR}/reference/auto-autonomy-steps.md` and follow it exactly before continuing.
 
 For every mode, `/ship` (however it runs) handles the merge gate, the commit
 trailer(s), the briefing, and clearing `.spine/current-task`.
