@@ -193,135 +193,59 @@ touches_migration_path() {
   return 1
 }
 
-run_simple() {
-  # run_simple <capability> — no stdin, no args
-  local cap="$1" st reason adapter out code
+run_cap() {
+  # run_cap <capability> <how> — the one dispatch every capability goes through.
+  # how: simple (no stdin, no args) | stdin ($changed_files on stdin) | scoped
+  # (stdin, or `--full` and no stdin in --full mode: lint, typecheck) | artifact
+  # / artifact-stdin (takes an output-path arg, SPINE_BASE_REF in its environment,
+  # artifact-stdin also feeds $changed_files).
+  local cap="$1" how="$2" st reason adapter out code art_path="" detail
   st="$(status_of "$cap")"
-  if [[ "$st" == "implemented" ]]; then
-    adapter="$adapters_dir/$cap"
-    if [[ ! -x "$adapter" ]]; then
-      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
-      add_result "$cap" "fail" "adapter missing/not executable"
-      overall_fail=1; return 1
-    fi
-    out="$(cd "$project" && "$adapter" 2>&1)"; code=$?
-    if [[ $code -eq 0 ]]; then
-      echo "PASS: $cap — $out"
-      add_result "$cap" "pass" "$out"
-    else
-      echo "FAIL: $cap"
-      echo "$out"
-      add_result "$cap" "fail" "$out"
-      overall_fail=1; return 1
-    fi
-  else
+  if [[ "$st" != "implemented" ]]; then
     reason="$(reason_of "$cap")"
     echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
     add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
+    return 0
   fi
+  adapter="$adapters_dir/$cap"
+  if [[ ! -x "$adapter" ]]; then
+    echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
+    add_result "$cap" "fail" "adapter missing/not executable"
+    overall_fail=1; return 1
+  fi
+  case "$how" in
+    simple) out="$(cd "$project" && "$adapter" 2>&1)"; code=$? ;;
+    stdin) compute_changed_files; out="$(cd "$project" && printf '%s\n' "$changed_files" | "$adapter" 2>&1)"; code=$? ;;
+    scoped)
+      if [[ "$full_mode" -eq 1 ]]; then
+        out="$(cd "$project" && "$adapter" --full 2>&1)"; code=$?
+      else
+        compute_changed_files; out="$(cd "$project" && printf '%s\n' "$changed_files" | "$adapter" 2>&1)"; code=$?
+      fi ;;
+    artifact|artifact-stdin)
+      art_path="$artifacts_dir/$cap.md"
+      if [[ "$how" == "artifact-stdin" ]]; then
+        compute_changed_files
+        out="$(cd "$project" && printf '%s\n' "$changed_files" | SPINE_BASE_REF="$base_ref" "$adapter" "$art_path" 2>&1)"; code=$?
+      else
+        out="$(cd "$project" && SPINE_BASE_REF="$base_ref" "$adapter" "$art_path" 2>&1)"; code=$?
+      fi ;;
+  esac
+  if [[ $code -ne 0 ]]; then
+    echo "FAIL: $cap"
+    echo "$out"
+    add_result "$cap" "fail" "$out"
+    overall_fail=1; return 1
+  fi
+  detail="$out${art_path:+ (artifact: $art_path)}"
+  echo "PASS: $cap — $detail"
+  add_result "$cap" "pass" "$detail"
   return 0
 }
-
-run_with_stdin() {
-  # run_with_stdin <capability> — feeds $changed_files on stdin
-  local cap="$1" st reason adapter out code
-  st="$(status_of "$cap")"
-  if [[ "$st" == "implemented" ]]; then
-    adapter="$adapters_dir/$cap"
-    if [[ ! -x "$adapter" ]]; then
-      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
-      add_result "$cap" "fail" "adapter missing/not executable"
-      overall_fail=1; return 1
-    fi
-    compute_changed_files
-    out="$(cd "$project" && printf '%s\n' "$changed_files" | "$adapter" 2>&1)"; code=$?
-    if [[ $code -eq 0 ]]; then
-      echo "PASS: $cap — $out"
-      add_result "$cap" "pass" "$out"
-    else
-      echo "FAIL: $cap"
-      echo "$out"
-      add_result "$cap" "fail" "$out"
-      overall_fail=1; return 1
-    fi
-  else
-    reason="$(reason_of "$cap")"
-    echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
-    add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
-  fi
-  return 0
-}
-
-run_scoped() {
-  # run_scoped <capability> — changed-file-set capability (lint, typecheck).
-  # Normal mode: feeds $changed_files on stdin, same as run_with_stdin.
-  # --full mode: invokes the adapter with `--full`, no stdin, whole-tree.
-  local cap="$1" st reason adapter out code
-  st="$(status_of "$cap")"
-  if [[ "$st" == "implemented" ]]; then
-    adapter="$adapters_dir/$cap"
-    if [[ ! -x "$adapter" ]]; then
-      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
-      add_result "$cap" "fail" "adapter missing/not executable"
-      overall_fail=1; return 1
-    fi
-    if [[ "$full_mode" -eq 1 ]]; then
-      out="$(cd "$project" && "$adapter" --full 2>&1)"; code=$?
-    else
-      compute_changed_files
-      out="$(cd "$project" && printf '%s\n' "$changed_files" | "$adapter" 2>&1)"; code=$?
-    fi
-    if [[ $code -eq 0 ]]; then
-      echo "PASS: $cap — $out"
-      add_result "$cap" "pass" "$out"
-    else
-      echo "FAIL: $cap"
-      echo "$out"
-      add_result "$cap" "fail" "$out"
-      overall_fail=1; return 1
-    fi
-  else
-    reason="$(reason_of "$cap")"
-    echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
-    add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
-  fi
-  return 0
-}
-
-run_artifact() {
-  # run_artifact <capability> [stdin: changed_files|none] — takes output-path arg
-  local cap="$1" needs_stdin="$2" st reason adapter out code art_path
-  st="$(status_of "$cap")"
-  art_path="$artifacts_dir/$cap.md"
-  if [[ "$st" == "implemented" ]]; then
-    adapter="$adapters_dir/$cap"
-    if [[ ! -x "$adapter" ]]; then
-      echo "FAIL: $cap — marked implemented but $adapter is missing or not executable" >&2
-      add_result "$cap" "fail" "adapter missing/not executable"
-      overall_fail=1; return 1
-    fi
-    if [[ "$needs_stdin" == "yes" ]]; then
-      compute_changed_files
-      out="$(cd "$project" && SPINE_BASE_REF="$base_ref" printf '%s\n' "$changed_files" | "$adapter" "$art_path" 2>&1)"; code=$?
-    else
-      out="$(cd "$project" && SPINE_BASE_REF="$base_ref" "$adapter" "$art_path" 2>&1)"; code=$?
-    fi
-    if [[ $code -eq 0 ]]; then
-      echo "PASS: $cap — $out (artifact: $art_path)"
-      add_result "$cap" "pass" "$out (artifact: $art_path)"
-    else
-      echo "FAIL: $cap"
-      echo "$out"
-      add_result "$cap" "fail" "$out"
-      overall_fail=1; return 1
-    fi
-  else
-    reason="$(reason_of "$cap")"
-    echo "DEGRADED: $cap ($st) — ${reason:-no reason recorded}"
-    add_result "$cap" "degraded:$st" "${reason:-no reason recorded}"
-  fi
-  return 0
-}
+run_simple() { run_cap "$1" simple; }
+run_with_stdin() { run_cap "$1" stdin; }
+run_scoped() { run_cap "$1" scoped; }
+run_artifact() { run_cap "$1" "$([[ "$2" == "yes" ]] && echo artifact-stdin || echo artifact)"; }
 
 finish_and_exit() {
   if [[ -n "$out_path" ]]; then

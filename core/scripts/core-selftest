@@ -262,6 +262,21 @@ else
   fail "floor: class 0 degraded case wrong (exit=$c0_code): $(head -5 "$tmp_root/logs/c0na.log" | tr '\n' ' ')"
 fi
 
+# floor dispatch: artifact adapters get SPINE_BASE_REF in their own environment,
+# including the ones that also take the changed-file set on stdin (callers).
+br_proj="$(c0_fixture na)"
+printf '#!/bin/bash\ncat >/dev/null\nprintf "%%s" "${SPINE_BASE_REF:-unset}" >"$1"\necho "stub ok"\n' >"$br_proj/.spine/adapters/callers"
+printf '#!/bin/bash\nprintf "%%s" "${SPINE_BASE_REF:-unset}" >"$1"\necho "stub ok"\n' >"$br_proj/.spine/adapters/dep-diff"
+chmod +x "$br_proj/.spine/adapters/callers" "$br_proj/.spine/adapters/dep-diff"
+jq '.callers={"status":"implemented"} | ."dep-diff"={"status":"implemented"}' "$br_proj/.spine/capabilities.json" >"$br_proj/caps.tmp" && mv "$br_proj/caps.tmp" "$br_proj/.spine/capabilities.json"
+git -C "$br_proj" add -A
+( cd "$br_proj" && "$FLOOR" 1 --base my-base-ref >"$tmp_root/logs/baseref.log" 2>&1 ) || true
+if [[ "$(cat "$br_proj/.spine/floor-artifacts/callers.md" 2>/dev/null)" == "my-base-ref" && "$(cat "$br_proj/.spine/floor-artifacts/dep-diff.md" 2>/dev/null)" == "my-base-ref" ]]; then
+  pass "floor: artifact adapters (with and without stdin) receive SPINE_BASE_REF"
+else
+  fail "floor: SPINE_BASE_REF not passed: callers=$(cat "$br_proj/.spine/floor-artifacts/callers.md" 2>&1) dep-diff=$(cat "$br_proj/.spine/floor-artifacts/dep-diff.md" 2>&1)"
+fi
+
 # ---------------------------------------------------------------------------
 # floor: smoke_in_floor (.spine/profile.json) Class 1 opt-out
 # ---------------------------------------------------------------------------
@@ -2152,6 +2167,18 @@ if [[ "$su_code" == "0" && "$skill_link_target" == "$REAL_SPINE/core/skills/task
   pass "setup: a full run creates real symlinks into this spine checkout and writes no version pin"
 else
   fail "setup: full run -> expected a task skill symlink and no core-pin.json, got exit=$su_code link=$skill_link_target pin=$(ls "$su_proj/.spine/core-pin.json" 2>&1)"
+fi
+
+su_proj="$(new_setup_fixture)"
+"$SETUP" --project "$su_proj" --spine "$REAL_SPINE" >/dev/null 2>&1
+ln -s "$REAL_SPINE/core/skills/gone-skill" "$su_proj/.claude/skills/gone-skill"
+ln -s "/nonexistent/elsewhere" "$su_proj/.claude/skills/not-ours"
+su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" 2>&1)" || true
+if [[ ! -L "$su_proj/.claude/skills/gone-skill" && -L "$su_proj/.claude/skills/not-ours" && "$su_out" == *"removed dangling link gone-skill"* \
+   && -L "$su_proj/.claude/skills/task" ]]; then
+  pass "setup: prunes dangling links into spine, leaves unrelated dangling links and live links alone"
+else
+  fail "setup: dangling-link prune wrong: $su_out"
 fi
 
 su_proj="$(mktemp -d "$tmp_root/setupproj.XXXXXX")"

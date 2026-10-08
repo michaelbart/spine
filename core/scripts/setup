@@ -158,6 +158,15 @@ if [[ "$is_self_install" -eq 0 ]]; then
     sync_symlink "$project/.claude/rules/$name" "$f" || fail=1
   done
   sync_symlink "$project/.claude/hooks" "$resolved_spine/core/hooks" || fail=1
+  # Links to things spine no longer ships (a skill or rule removed from core)
+  # would otherwise dangle forever. Only links that point into this spine
+  # checkout are touched.
+  for link in "$project"/.claude/skills/* "$project"/.claude/agents/* "$project"/.claude/rules/*; do
+    [[ -L "$link" && ! -e "$link" ]] || continue
+    case "$(readlink "$link")" in
+      "$resolved_spine"/*) rm -f "$link"; echo "setup: removed dangling link $(basename "$link") (no longer shipped by spine)" ;;
+    esac
+  done
   [[ "$fail" -eq 0 ]] || { echo "setup: symlink sync failed, see above" >&2; exit 2; }
 fi
 
