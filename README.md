@@ -94,23 +94,16 @@ one-page briefing when it ships. That's the whole recurring interaction —
 research, the floor, and adversarial review all happen without you in the
 loop.
 
-**A second engineer joining an installed project** clones this repo on
-their own machine, then runs `core/scripts/setup --project <path>` once.
-Idempotent — safe to re-run any time.
-
 ## Staying installed
 
 Updating the core is `git pull` in this checkout — zero commits in any
 installed project. Run `/update` in a project afterward to sync it and see
-what changed. A team pins the core version each project trusts
-(`.spine/core-pin.json`); `/update` and `/task` both surface a mismatch
-loudly rather than let one engineer's hooks silently enforce something a
-colleague's don't. Full mechanics in `docs/tradeoffs.md`.
+what changed.
 
 ## Layout
 
 ```
-core/scripts/          the deterministic layer — floor, conformance, claims, ...
+core/scripts/          the deterministic layer — floor, conformance, check-stale, ...
 core/hooks/            the three PreToolUse gates (phase, protected-path, dependency)
 core/skills/           every slash command — see the table below
 core/agents/           researcher, falsifier, security, surveyor — fresh-context
@@ -141,7 +134,6 @@ settling a category) genuinely isn't enough, never by default.
 | `/wayfinder` | `[--map <map-id>]` | For an effort too large and foggy for `/design`'s six categories or `/roadmap`'s known list: charts it as a map of decision tickets, resolved one per session, until it clears into real `docs/vision.md` entries and (where warranted) real decisions. |
 | `/roadmap` | `[--after M<n>]` | Sequences the next milestones from `docs/vision.md`, absorbing anything flagged along the way. You confirm the order before anything's written. |
 | `/prototype` | `<question>` | Build a concrete, disposable artifact to settle a visual/behavioral question discussion can't. No class, no plan, no floor, no ship — the declared exception to research → plan → implement, usable any time. |
-| `/workspace` | `--root <path> [--repo <name>=<path> ...] [--from-design <project-path>]` | Multi-repo only — sets up a workspace root coordinating several repos through declared contracts. |
 
 **Every task**
 
@@ -189,7 +181,7 @@ settling a category) genuinely isn't enough, never by default.
 | `/prompts` | `[product-spec \| feature-handoff \| ui-handoff]` | Prints a ready-to-paste prompt for generating handoff material in another session — a product spec, a mid-project feature handoff, or a Claude Design UI handoff bundle. |
 | `/ratchet` | `<description>` | Turns a finding that's genuinely recurred twice into a deterministic check. |
 | `/remap` | *(none)* | Regenerates `docs/map.md` from real repo state. |
-| `/update` | `[--bump-pin]` | Syncs an installed project to this checkout after a `git pull`. |
+| `/update` | *(none)* | Syncs an installed project to this checkout after a `git pull`. |
 
 ## Typical flows
 
@@ -260,26 +252,6 @@ time you're unsure which step comes next.
    Class 1 tasks run it only if `ui_fidelity_class1_optin` is `true` in
    `~/.spine/user-config.json`.
 
-## Working with other engineers
-
-`/task` commits and pushes its task folder to the shared mainline before
-any code is written, so everyone sees the same open-task picture. Two
-mechanisms catch what git alone can't: a real write conflict with another
-open task blocks plan approval, and a task whose grounding changed
-underfoot gets flagged and can't advance until that's acknowledged. Class 2
-changes run guided at every step. Full accounting — including what still
-relies on an agent following instructions rather than a hook, and where
-this stops scaling — in `docs/tradeoffs.md`, under "Working with other
-engineers."
-
-## Cross-repo work
-
-`/workspace` is for a change spanning more than one repository. It creates
-one small workspace root holding the contract registry and the tasks that
-touch more than one repo at once — each member repo keeps its own normal
-spine install untouched. See `docs/tradeoffs.md`, under "Cross-repo work,"
-for the full model and its disclosed limits.
-
 ## Experimental
 
 A few opt-in extensions, each disclosed with its tradeoffs in
@@ -292,10 +264,6 @@ A few opt-in extensions, each disclosed with its tradeoffs in
   `.spine/branch-naming.conf` template (`{ticket}`/`{slug}`/`{type}`/`{user}`
   tokens, e.g. `feature/{ticket}-{slug}`) if one was set during
   `/bootstrap`/`/adopt`, else the plain `{ticket}-{slug}` default.
-- **Worktree isolation** — start a second `/task` in another terminal while
-  one's already active in the same checkout, and it offers a separate git
-  worktree instead of colliding with the first task's uncommitted work. See
-  `core/skills/task/SKILL.md`'s Resuming section and `docs/tradeoffs.md`.
 - **`/autopilot`** `[--milestone <id>]` — loops an already-planned milestone
   backlog end to end with no human stops at all, including the ones Class 2
   normally forces (its guided stops, halt-tier deviations). Every override

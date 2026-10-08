@@ -6,7 +6,7 @@ and when. One JSON object per line. It is gitignored and per-machine.
 **Rules (do not break these):**
 
 - Nothing reads it to decide anything. It exists so a later recap
-  (`core/scripts/spine-stats`, planned in `docs/improvement-plan.md` B4) can say
+  (the `spine-stats` analyzer, planned in `docs/improvement-plan.md` B4) can say
   what actually happened.
 - Writing never fails a task: `core/scripts/spine-event` and
   `core/hooks/_spine-event` return 0 and print nothing on every failure path.

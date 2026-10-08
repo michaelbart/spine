@@ -21,55 +21,17 @@ stripped), capture closes at the next `^## ` heading or EOF. That heading
 text and single-dash-space bullet form must appear byte-for-byte inside
 the fence — see the fenced block below.
 
-**`## Grounds on decisions`, `## Ship order`, and `## Contract change`
-are read by `/task` and `/ship`'s own instructions**, not a compiled
+**`## Grounds on decisions` is read by `/task` and `/ship`'s own instructions**, not a compiled
 parser — but the heading text and bullet grammar are just as load-
 bearing, because those skills fail silently and partially on a
 malformed section, never loudly the way a script would. Keep them exact.
 
-**Multi-repo tasks (Extension B, one plan for the whole workspace task —
-one task folder at the workspace, one plan, one human approval):** every
-`## Predicted touch` entry is repo-qualified,
-`<repo-name>:<path>` (e.g. `api:src/routes/items.ts`), even for a repo
-this plan only touches once. `/verify` is what splits these apart per
-repo when it runs `conformance` and `contract-touch` (it writes a
-scratch, single-repo copy of the predicted-touch list before invoking
-either) — neither script itself parses the `<repo-name>:` prefix; both
-take one `--project` per invocation and resolve repos from
-`workspace.json`'s own `repos[]` list. An unqualified entry in a
-multi-repo plan still cannot be scored or diffed against anything, so
-the repo-qualification rule stands regardless of which script ends up
-doing the split.
-
-Two sections apply only to a multi-repo plan, both omitted entirely (not
-left empty) for a single-repo one:
-
-- `## Ship order` — required the moment `## Predicted touch` names more
-  than one repo, or has any unqualified (workspace-native) entry alongside
-  at least one repo-qualified one. Ordered list of repo names, one per
-  line, plus the reserved name `workspace` for the workspace root's own
-  commit (its `work/<task-id>/` artifacts, and any unqualified predicted-
-  touch path like a contract spec) wherever it belongs in the sequence —
-  omit `workspace` only if `## Predicted touch` has no unqualified entry.
-  Producer before consumer for an additive contract change (declared here,
-  validated by `/ship` against `workspace.json`'s registry direction — the
-  plan is the human review surface, not something `/ship` derives
-  silently). Validation failing here halts the ship, it
-  does not silently reorder.
-- `## Contract change` — required only when this task's diff touches a
-  declared contract (`core/scripts/contract-touch` would report it
-  touched). One of `expand`, `migrate`, `contract`, or `additive`
-  (`core/rules/contracts.md`). A `breaking` classification `contract-touch`
-  computes from the real diff, on a plan that doesn't declare `expand` or
-  `contract` here, fails `/verify` outright — this line records intent,
-  the mechanical check (based on the diff, not this line) is what actually
-  gates.
 -->
 
 # Plan: `<task-id>` — <title in plain words>
 
 <!-- MACHINE: header -->
-task: <task-id>   class: <0|1|2>   owner: <git identity>   milestone: <id|none>
+task: <task-id>   class: <0|1|2>   milestone: <id|none>
 grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan grounds on any docs/decisions/ record, add>, decisions <D-id, D-id, ...>
 <!-- /MACHINE -->
 
@@ -129,7 +91,6 @@ grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan
      against the real diff after implementation — a low score means this
      list was wrong, which means research or planning missed something.
      Be concrete; "various files in lib/" is not a predicted-touch entry.
-     Multi-repo: every entry is repo-qualified, `<repo-name>:<path>`.
      Write the bare path, no backticks/code-fencing around it — conformance
      compares this string byte-for-byte against real `git diff` output,
      which is never backtick-wrapped; a Markdown-formatted path silently
@@ -181,36 +142,9 @@ grounding: research `<research sha>` (`work/<task-id>/research.md`)<if this plan
 <!-- Optional — omit this whole section if this plan doesn't cite any
      docs/decisions/ record. /ship reads this to know which decisions to
      append this task's real implementing paths onto and flip
-     adopted -> implemented. Multi-repo: a bullet may be repo-qualified,
-     `<repo-name>:D-<seq>`, for a member repo's own local decision store
-     (unqualified means the workspace root's own store) — same convention
-     research.md's grounding-decisions: header already uses. -->
+     adopted -> implemented. -->
 
 - D-<seq> — <why this plan grounds on it>
-- <repo-name>:D-<seq> — <why this plan grounds on it>
-<!-- /MACHINE -->
-
-<!-- MACHINE: ship-order -->
-## Ship order
-
-<!-- Multi-repo only — omit entirely for a single-repo plan. Ordered list
-     of repo names from `## Predicted touch`. /ship validates this against
-     workspace.json's contract registry direction (producer before
-     consumer for an additive change) before staging the merge. -->
-
-1. <repo-name>
-2. <repo-name>
-<!-- /MACHINE -->
-
-<!-- MACHINE: contract-change -->
-## Contract change
-
-<!-- Only when this task's diff touches a declared contract. One of:
-     expand | migrate | contract | additive. See core/rules/contracts.md —
-     a `breaking` diff classification on a plan that doesn't say `expand`
-     or `contract` here fails `/verify` outright, regardless of this line. -->
-
-<expand | migrate | contract | additive>
 <!-- /MACHINE -->
 
 <!-- MACHINE: resolves-known-gaps -->

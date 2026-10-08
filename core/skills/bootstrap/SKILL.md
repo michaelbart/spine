@@ -145,7 +145,7 @@ reason. If the capability doesn't apply to this project's shape at all
 (e.g. `smoke-*` with nothing to run yet), mark `not-applicable`, also with a
 specific reason — never leave a capability unmentioned.
 
-**Three of the eighteen are workflow adapters, not floor gates** (§3.4/§3.5/§3.6)
+**Three of the capabilities are workflow adapters, not floor gates** (§3.4/§3.5/§3.6)
 — generate them from the team's own tools, no separate interview question for
 any of them. `ticket-fetch`: wrap the tracker the engineers actually use — its
 own CLI or REST API; mark `not-applicable`, reason "no ticket source", if
@@ -219,11 +219,8 @@ This creates every `.claude/skills/<name>`, `.claude/agents/<name>.md`,
 agent/rule, still pointing at this checkout — the *set* of names doesn't
 change, only how the pointer gets there and whether it's committed), adds
 them to `<project>/.gitignore` (generated locally on every machine from
-here on, never committed), merges the machine-local Bash-allow pattern into
-`<project>/.claude/settings.local.json`, and initializes
-`<project>/.spine/core-pin.json` at this checkout's current `HEAD` sha,
-mode `warn` (Extension C §2.1 — a maintainer bumps this deliberately after
-testing a newer core; see the README's "Staying installed" section).
+here on, never committed), and merges the machine-local Bash-allow pattern into
+`<project>/.claude/settings.local.json`.
 
 Write `<project>/CLAUDE.md` from
 `${CLAUDE_SKILL_DIR}/../../templates/CLAUDE.md` verbatim — including its
@@ -245,18 +242,16 @@ in automatically (`core/scripts/map-age`), and it is kept fresh the same way.
 
 `mkdir -p <project>/docs/decisions <project>/work` and touch `.gitkeep` in
 `docs/decisions`. Create `<project>/work/.gitignore` with this exact content
-(committed to the repo so every team member gets it):
+(committed to the repo):
 
 ```
 # Raw tool output (verdict JSON, floor results, captures) is large and
 # per-run; verify.md summarizes it. Everything else in a task folder is
-# shared on purpose: state, owner and claims.json are what registry-sync
-# and claims-check read to see other engineers' tasks, and the narrative docs give future sessions context.
+# committed on purpose: the narrative docs give future sessions context.
 */artifacts/
 ```
 
-This lets `registry-sync` share a task's state and claims with the
-rest of the team and keeps only the bulky raw artifacts off the PR diff.
+This keeps only the bulky raw artifacts off the PR diff.
 
 ## 6. Commit the install and hand off
 

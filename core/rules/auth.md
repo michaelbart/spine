@@ -8,8 +8,7 @@ paths:
 # Auth discipline
 
 This rule loads whenever a file under an `auth/`-, `authn/`-, or
-`authz/`-named directory is read. Like `core/rules/migrations.md` and
-`core/rules/contracts.md`, it says nothing about a specific auth
+`authz/`-named directory is read. Like `core/rules/migrations.md`, it says nothing about a specific auth
 technology, session model, or framework — that's the `security` adversary
 agent's job (`core/agents/security.md`, its preloaded `security-checklist`
 skill) and this project's own `.spine/adapters/`. This rule is the

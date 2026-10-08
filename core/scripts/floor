@@ -25,7 +25,7 @@
 # (.spine/adapters/**, .spine/capabilities.json, and siblings — see
 # is_bookkeeping below) — same exclusion core/scripts/conformance already
 # applies to its own diff, for the identical reason: a task's own
-# flags.json/deviations.md/artifacts/ writes, and a task's own edits to
+# deviations.md/artifacts/ writes, and a task's own edits to
 # its adapters/capabilities manifest, are never reviewable application
 # source, and left in, they reach every diff-scoped capability (lint,
 # typecheck, secret-scan, clone-scan, callers) as literal input. `callers`
@@ -135,7 +135,7 @@ changed_files=""
 # an adapter bug found mid-verify) are never reviewable application code —
 # same exclusion core/scripts/conformance already applies to its own
 # "actual" diff, and for the identical reason: left in, a task's own
-# work/<task-id>/** writes (flags.json, deviations.md, artifacts/, the
+# work/<task-id>/** writes (deviations.md, artifacts/, the
 # task's own milestone.md bookkeeping edit) or .spine/** tooling-config
 # edits reach diff-scoped capabilities like `callers` as literal grep
 # targets, which fails them outright on content that was never meant to
@@ -148,7 +148,6 @@ is_bookkeeping() {
     .spine/capabilities.json) return 0 ;;
     .spine/protected-paths.conf) return 0 ;;
     .spine/install-command-patterns.conf) return 0 ;;
-    .spine/core-pin.json) return 0 ;;
     # Claude Code meta-tooling config (settings, hooks, skills, scripts) is
     # never reviewable application source — same rationale as .spine/** above.
     # Real example that motivated this: .claude/settings.json flagged as
@@ -167,9 +166,8 @@ compute_changed_files() {
     # those new files (e.g. a brand-new migration, a new source file with a
     # secret or a type error) were invisible to every diff-scoped
     # capability below. git ls-files --others (untracked, respecting
-    # .gitignore) closes that gap — same fix core/scripts/conformance,
-    # contract-touch, and claims-check already apply to their own
-    # changed-file sets.
+    # .gitignore) closes that gap — same fix core/scripts/conformance
+    # already applies to its own changed-file set.
     changed_files="$(cd "$project" && { git diff --name-only "$base_ref" -- .; git ls-files --others --exclude-standard -- .; } 2>/dev/null | sort -u | while IFS= read -r f; do is_bookkeeping "$f" || printf '%s\n' "$f"; done || true)"
   fi
 }

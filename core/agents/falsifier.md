@@ -125,9 +125,8 @@ construct the caller-side case that depended on it and show it now breaks
 or silently does the wrong thing.
 
 The caller map (and any other `work/<task-id>/...` artifact path the
-delegation message points you at — `dep-diff.md`, a multi-repo
-`contract-touch.json` list, anything else under that task's own `work/`
-folder) is generated fresh during this same `/verify` run, before you were
+delegation message points you at — `dep-diff.md`, anything else under that task's own
+`work/` folder) is generated fresh during this same `/verify` run, before you were
 dispatched — but it's written to the *real* project's working tree, not
 committed, and your worktree clone was cut from the last commit. Unlike
 the diff, there's no patch to apply here to bring it in — it was never
@@ -158,24 +157,6 @@ already made, and a lint-shaped issue your worktree still shows is most likely a
 fix the live tree already has that your snapshot predates — either way not yours
 to report, and chasing it burns the budget the caller gave you on nothing.
 
-**(d) Cross-repo mandate — only when the delegation message includes a
-touched-contracts list** (a multi-repo task whose diff `core/scripts/
-contract-touch` reported touching at least one contract; single-repo
-verify runs never carry this, skip (d) entirely if it wasn't given to you).
-You additionally receive, per touched contract: its name, its producer and
-consumer repos, and the spec itself. Hunt **undeclared coupling**: for each
-consumer repo listed, check whether it reaches into the producer *outside*
-anything the contract actually declares — a raw import of a producer-
-internal path, an HTTP call to an endpoint the spec doesn't cover, a
-hand-copied assumption about a shape the spec doesn't define. Undeclared
-coupling is a real defect, not a blind spot to tolerate, not a style
-note — file it at the severity the actual blast radius implies. Evidence stays `file_line`, same as (a)-(c), but
-`evidence.file` must be repo-qualified (`"<repo-name>:<path>"`, matching
-`## Predicted touch`'s own convention) since a bare path is ambiguous
-across repos. A clean result — every consumer's reach into the producer
-traces to something the contract actually declares — is a real finding
-here too, report it as a clean pass, not a skipped mandate.
-
 **Reporting discipline, verifying evidence, pace, and reply shape — see
 `core/ADAPTER-CONTRACT.md §5.1` ("Shared adversary discipline") and follow
 it exactly**, themed to "scenario" language where it says "attack" (falsifier
@@ -185,7 +166,7 @@ subsection is the single canonical copy of this text; do not treat this
 file's own prose as an independent restatement of it. The two fields §5.1
 leaves to each agent file: `"agent"` reads exactly `"falsifier"`, and
 `attacked` lists one entry per thing you actually attacked — (a)/(b)/(c)
-[/(d) if given a touched-contracts list] plus your three questions,
+plus your three questions,
 non-empty even on a clean bill.
 
 ## Design-mode mandate

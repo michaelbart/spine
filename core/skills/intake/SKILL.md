@@ -14,8 +14,7 @@ to opt into, no rigor a real change should skip. You **classify and route**;
 you never decide the class silently, and the class you propose is a revocable
 hypothesis (research and `path-escalate` can still overturn it downstream).
 
-Project root: the workspace root if `workspace.json` exists here, otherwise
-this project. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`; adapters
+Project root: this project. Scripts at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`; adapters
 at `<project root>/.spine/adapters/<name>`. `${CLAUDE_SKILL_DIR}` is a
 placeholder you expand to this skill's own directory; hand the resulting
 path — including the `../../` — to the shell verbatim. Do **not** lexically
@@ -23,21 +22,6 @@ collapse `skills/intake/../..` to `.claude/`: `.claude/skills/intake` is a
 symlink into the spine core checkout, so the shell must resolve `../../`
 against the symlink's real target (`<spine>/core/...`). Collapsing it as text
 yields a nonexistent `.claude/scripts/...` path and a "no such file" error.
-
-## 0. Preflight
-
-Run the cheap health check, exactly as `core/skills/task/SKILL.md` step 0 and
-`/spine` do:
-
-```
-${CLAUDE_SKILL_DIR}/../../scripts/setup --check --project <project root>
-```
-
-`ok`/`unpinned`: continue. `mismatch-warn`: show it, continue.
-`mismatch-strict`: stop, same as `/task` — don't classify or fetch anything
-until it's resolved. Could-not-run: note it and continue (this is low-stakes
-until the task actually starts). If the install looks broken, say so and point
-at `/spine` for the full diagnosis.
 
 ## 1. Get the ticket
 

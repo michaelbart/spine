@@ -16,20 +16,6 @@ a symlink into the spine core checkout, and collapsing the text yields a
 nonexistent `.claude/scripts/...` path. Read `work/<task-id>/class`
 first — everything below branches on it.
 
-**Multi-repo detection (Extension B)**: if `workspace.json` exists at the
-project root, this is a workspace-root session and `work/<task-id>/plan.md`'s
-`## Predicted touch` entries are repo-qualified (`<repo-name>:<path>`) —
-every step below that mentions "per repo" applies; **a project with no
-workspace.json runs every step below exactly as it always has, once,
-against itself** — this is the zero-behavioral-change guarantee at the
-skill level, not just the hook level. Derive the **edited repos** set from
-`## Predicted touch`'s repo-name prefixes (the repos this task actually
-changed) before step 1 — this is the set that gets a full floor; every
-other repo a touched contract puts in blast radius gets `contract-check`
-only, never a floor (the edited-vs-affected rule — a consumer's own
-pre-existing, unrelated failures must never block a
-producer task forever).
-
 **Tooling-gap discipline applies to every script below** — see
 `core/skills/task/SKILL.md`'s own header section for the three-outcome
 rule (ran-passed / ran-failed / could-not-run) and how to record it
@@ -68,85 +54,18 @@ decision per message, and put surprises first.
 
 ## 1. Floor
 
-Single-repo:
-
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/floor <class> --task <task-id> \
   --out work/<task-id>/artifacts/floor-result.json
 ```
 
-**Multi-repo**: run this once per repo in the *edited* set, each with
-`--project <repo-abs-path>` (from `workspace.json`) so it runs against that
-repo's own `.spine/adapters/` and its own git history — `floor` itself is
-unmodified (the edited-vs-affected rule lives in `/verify`'s orchestration,
-not in `floor`'s own dispatch). `--task <task-id>` makes
-`floor` write `callers.md`/`dep-diff.md` to *that repo's own*
-`work/<task-id>/artifacts/` (verified for real: `floor` resolves this path
-from its own `--project`, never from `--out` — no repo-name suffix needed
-or produced, since `~/repoA/work/<task-id>/artifacts/callers.md` and
-`~/repoB/work/<task-id>/artifacts/callers.md` are already distinct paths
-by construction). Only `--out` itself (the floor-result JSON, whatever
-path you give it) needs an explicit repo-distinguishing name if you choose
-to collect them all in one place — `work/<task-id>/artifacts/
-floor-result-<repo-name>.json` at the **workspace root** is the
-recommended convention, so the aggregation in §5 has one place to read
-every repo's pass/fail summary from, while the fuller `callers.md`/
-`dep-diff.md` content the adversaries read stays wherever `floor` actually
-put it: each repo's own `work/<task-id>/artifacts/`.
-
-This fail-fasts on the first failing capability (per repo, in multi-repo
-mode — one repo's floor failing doesn't stop another repo's floor from
-still running and being recorded) and, for `--task`, writes
+This fail-fasts on the first failing capability and, for `--task`, writes
 `callers`/`dep-diff` artifacts under `work/<task-id>/artifacts/` — the
-adversaries read those, not the raw diff themselves. If any repo's floor
+adversaries read those, not the raw diff themselves. If the floor
 fails, still assemble `verify.md` (§5) so the failure and everything
 reached before it is on record, then report FAIL to the caller. Don't run
 the adversaries against a diff a deterministic floor already rejected —
 that's wasted adversary budget on something that's going to change anyway.
-
-## 1b. Contract conformance (multi-repo only, skip entirely otherwise)
-
-```
-${CLAUDE_SKILL_DIR}/../../scripts/contract-touch --project <workspace-root> \
-  --out work/<task-id>/artifacts/contract-touch.json
-```
-
-For each `touched_contracts[]` entry:
-
-- **Breaking-change gate.** If `spec_change == "breaking"`, read
-  `plan.md`'s `## Contract change` line. Anything other than `expand` or
-  `contract` there: this task fails verify outright — "breaking contract
-  change without an expand/contract milestone step declared, see
-  core/rules/contracts.md" — regardless of what the plan's prose claims
-  elsewhere. This is a deterministic check; it reads the real diff's
-  classification, never the plan's self-report alone.
-- **Registry staleness.** If `registry_stale` is true, surface it in
-  `verify.md` verbatim (§5) — this is a warning about `contract-touch`'s
-  own blast-radius detection possibly being wrong, not a pass/fail signal
-  by itself, but it must never be silently dropped (core/rules/
-  contracts.md).
-- **Gate the producer and every consumer, always** — `contract-check`
-  eligibility is not the same thing edited-vs-affected governs; it governs
-  *floor* eligibility only (step 1). A repo party to a touched contract
-  gets `contract-check` whether or not this task edited it: an edited
-  repo gets its `contract-check` result *in addition to* its full floor
-  (step 1) — this is what makes "contract-check gating the consumer" true
-  even in the additive worked example, where the consumer is directly
-  edited in the same task — while an affected-only repo (not in step 1's
-  edited set) gets `contract-check` **and nothing else**, never a floor.
-  For the producer plus every name in `consumers`: check
-  `.spine/capabilities.json` in that repo for `contract-check`'s status.
-  If `implemented`, run it directly — **not through `floor`, even for an
-  edited repo** —
-  `SPINE_CONTRACT_NAME=<name> SPINE_CONTRACT_SPEC_PATH=<workspace-root>/<spec_path>
-  .spine/adapters/contract-check` (CWD at that repo's root, per
-  `core/ADAPTER-CONTRACT.md §3.2`). Record pass/fail exactly like a floor
-  capability, in its own "Contract conformance" section (§5) — never
-  folded into that repo's own floor table, even when both ran for the same
-  repo. If not `implemented`, record it degraded with its recorded
-  reason — same "never silently skip a gate" discipline as every other
-  capability. A consumer gated this way never also runs its own floor for
-  this task — that's the entire point of the edited-vs-affected rule.
 
 ## 1c. UI render check (only when the diff touches a declared UI path)
 
@@ -155,17 +74,12 @@ ${CLAUDE_SKILL_DIR}/../../scripts/ui-touch --project <project root> \
   --out work/<task-id>/artifacts/ui-touch.json
 ```
 
-Single-repo by default; multi-repo runs this once per repo in the
-*edited* set (same set step 1 already derived), `--project <repo-abs-path>`,
-each writing its own `work/<task-id>/artifacts/ui-touch-<repo>.json`.
-
-If `ui_touched` is `false` for every repo checked: skip the rest of this
-step entirely — no `ui-render` invocation, no section in `verify.md` (same
-omit-whole-section rule step 1b's "Contract conformance" already uses when
-nothing was touched — this is not a degraded or skipped gate, it's a gate
+If `ui_touched` is `false`: skip the rest of this
+step entirely — no `ui-render` invocation, no section in `verify.md`
+(this is not a degraded or skipped gate, it's a gate
 that correctly never applied).
 
-If `ui_touched` is `true` for any repo: check whether this class is
+If `ui_touched` is `true`: check whether this class is
 eligible to run `ui-render` at all, same gating shape `core/scripts/floor`
 already uses for `mutate`:
 
@@ -181,22 +95,21 @@ neither a pass nor a capability gap, it is a deliberate calibration choice,
 and must read as one, not as an unexplained absence.
 
 Eligible: check `.spine/capabilities.json` for `ui-render`'s status in
-that repo. If `implemented`, run it directly — **not through `floor`** —
-`.spine/adapters/ui-render` (CWD at that repo's root, per
+the project. If `implemented`, run it directly — **not through `floor`** —
+`.spine/adapters/ui-render` (CWD at the project root, per
 `core/ADAPTER-CONTRACT.md §3.3`). Record pass/fail in its own "UI render"
-section (§5) — never folded into the floor table, same discipline as
-"Contract conformance." If not `implemented` (`unavailable`/
+section (§5) — never folded into the floor table. If not `implemented` (`unavailable`/
 `not-applicable`), record it degraded with its recorded reason — same
 "never silently skip a gate" discipline as every other capability.
 
 ## 1d. UI conformance check (only when the diff touches a declared UI path)
 
 Reuses the exact `ui-touch` result step 1c already produced this pass —
-never a second invocation. If `ui_touched` was `false` for every repo
-checked: skip this step entirely, same omit-whole-section rule step 1c
+never a second invocation. If `ui_touched` was `false`:
+skip this step entirely, same omit-whole-section rule step 1c
 itself uses.
 
-If `ui_touched` was `true` for any repo: check class eligibility, same
+If `ui_touched` was `true`: check class eligibility, same
 opt-in shape step 1c uses, its own separate key:
 
 ```
@@ -210,9 +123,9 @@ conformance" section — a deliberate calibration choice, not an
 unexplained absence.
 
 Eligible: check `.spine/capabilities.json` for `ui-conformance`'s
-status in that repo. If `implemented`, run it directly — **not through
-`floor`** — `.spine/adapters/ui-conformance` (CWD at that repo's
-root, per `core/ADAPTER-CONTRACT.md §3.9`). Record pass/fail in its own
+status. If `implemented`, run it directly — **not through
+`floor`** — `.spine/adapters/ui-conformance` (CWD at the
+project root, per `core/ADAPTER-CONTRACT.md §3.9`). Record pass/fail in its own
 "UI conformance" section (§5) — never folded into "UI render," even
 though both gate on the same `ui-touch` result; they check different
 things (a real render vs. declared-token/component fidelity) and each
@@ -228,7 +141,7 @@ The one check that compares a real render against the handoff's screenshots.
 screen *looks like its reference*, state by state, and that no copy or
 number appeared that the spec and screenshots don't define
 (`core/ADAPTER-CONTRACT.md` §3.10). Reuses step 1c's `ui-touch` result,
-never a second invocation; `ui_touched` `false` for every repo checked:
+never a second invocation; `ui_touched` `false`:
 skip this step entirely, no section (same omit-whole-section rule).
 
 Class eligibility, its own key:
@@ -294,9 +207,7 @@ adversary cost tiers" and its "content-hash correction" addendum). Before
 dispatching `falsifier` (and `security`, if running), compute this task's
 current blast radius for that agent — the diff's changed-file set (step 1's,
 bookkeeping already excluded) union this run's fresh `callers.md` file
-list, plus `dep-diff.md`'s for `security`, plus (multi-repo) any
-`contract-touch.json` touched-contract spec paths for `falsifier`'s
-cross-repo mandate — then get the tier mechanically, not by hand-deriving
+list, plus `dep-diff.md`'s for `security` — then get the tier mechanically, not by hand-deriving
 it:
 
 ```
@@ -349,7 +260,7 @@ rejected — see `docs/tradeoffs.md`).
 Record coverage at dispatch time, not after: whenever an adversary *is*
 dispatched (fully or focused), write `work/<task-id>/artifacts/
 <agent>-coverage.json` — `{"files": {"<path>": "<sha256 of that file's
-content as given to the adversary>", ...}, "contracts": [...], "ran_at":
+content as given to the adversary>", ...}, "ran_at":
 "<ISO timestamp>"}` — alongside its verdict files, so the *next* `/verify`
 pass on this task, or this run's own mid-verify re-check a few paragraphs
 below, has something to compare against.
@@ -403,22 +314,13 @@ rather than shipping on an incomplete adversarial pass. Say it in this form (per
 
 - `subagent_type: falsifier` — delegation message points at
   `work/<task-id>/plan.md`, the diff, and `work/<task-id>/artifacts/
-  callers.md` (single-repo) or, multi-repo, each edited repo's own
-  `<repo-abs-path>/work/<task-id>/artifacts/callers.md` (plural — one per
-  edited repo, real paths, not a single merged file). **Single-repo: state
+  callers.md`. **State
   the absolute project root path too**, not just the relative
   `work/<task-id>/...` paths — falsifier's own worktree clone generally has
   no `work/` folder at all (it's generated fresh this run, never
   committed), so it needs an unambiguous real path to resolve `callers.md`
   against directly, mirroring design mode's own `docs/charter.md` carve-out
-  (`core/agents/falsifier.md` mandate (c)). Multi-repo already gives this —
-  each `<repo-abs-path>/...` path is already absolute. **Multi-repo, when
-  step 1b found any touched contract**: additionally include the
-  workspace root's `work/<task-id>/artifacts/contract-touch.json`'s
-  `touched_contracts` list and each one's spec file path — this is what
-  arms `core/agents/falsifier.md`'s "Cross-repo mandate (d)." Say
-  explicitly in the delegation message that this list is present so
-  mandate (d) applies; falsifier never infers it from the diff alone.
+  (`core/agents/falsifier.md` mandate (c)).
   Also say explicitly whether `.spine/adapters/worktree-prep` exists and is
   `implemented` (read from `capabilities.json`) and its path — this is what
   arms mandate (b)'s step 0; falsifier never infers availability from the
@@ -427,8 +329,8 @@ rather than shipping on an incomplete adversarial pass. Say it in this form (per
   ahead of mandate (a): falsifier compares it against its own worktree's
   `git rev-parse HEAD` to name a stale-base mismatch precisely if the
   apply fails, rather than guessing.
-- `subagent_type: security` (if running) — same, plus each edited repo's
-  own `work/<task-id>/artifacts/dep-diff.md`.
+- `subagent_type: security` (if running) — same, plus
+  `work/<task-id>/artifacts/dep-diff.md`.
 
 Each replies with exactly one JSON object (`core/ADAPTER-CONTRACT.md §5`).
 Write each verbatim to `work/<task-id>/artifacts/<agent>-verdict-raw.json`,
@@ -514,22 +416,10 @@ other capability-gated check in this file already does.
 
 ## 4. Conformance
 
-Single-repo:
-
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/conformance work/<task-id>/plan.md \
   --out work/<task-id>/artifacts/conformance.json
 ```
-
-**Multi-repo**: `conformance` itself is unmodified — it still takes one
-`--project` and one plan file. Run it once per edited repo: write a scratch
-copy of `plan.md`'s `## Predicted touch` section containing only that
-repo's entries with the `<repo-name>:` prefix stripped
-(`work/<task-id>/artifacts/predicted-touch-<repo>.md`, a minimal file with
-just the `## Predicted touch` heading and that repo's own bullets — this
-is what `conformance`'s own parser needs, nothing more), then
-`conformance work/<task-id>/artifacts/predicted-touch-<repo>.md --project
-<repo-abs-path> --out work/<task-id>/artifacts/conformance-<repo>.json`.
 
 Never blocks anything (Layer 4) — it scores the plan, not the change.
 
@@ -540,16 +430,9 @@ Fill `${CLAUDE_SKILL_DIR}/../../templates/verify.md`'s structure into
 this document quotes scripts, it doesn't paraphrase them:
 
 - Floor results table from `floor-result.json`'s `results` array — one row
-  per entry, pass/fail/degraded verbatim. Multi-repo: one whole "Floor
-  results — `<repo-name>`" section per edited repo, from that repo's own
-  `floor-result-<repo>.json` — never merge two repos' rows into one table.
-- **Contract conformance** (multi-repo only, per `core/templates/
-  verify.md`'s own section): one line per contract `contract-touch`
-  reported touched — name, `spec_change`, `registry_stale` — and, for every
-  gated-not-edited consumer from step 1b, its `contract-check` result.
-  "None" only if `contract-touch` found nothing touched.
+  per entry, pass/fail/degraded verbatim.
 - **UI render** (per `core/templates/verify.md`'s own section, omitted
-  entirely if step 1c found no UI path touched in any repo): the
+  entirely if step 1c found no UI path touched): the
   `ui-render` result — pass/fail with the adapter's own diagnostics on
   fail, `SKIPPED (Class 1, ui_render_class1_optin not set)` if this class
   wasn't eligible, or degraded with its recorded reason if the capability
@@ -573,8 +456,7 @@ this document quotes scripts, it doesn't paraphrase them:
   `disposition` (`fixed`/`not_fixed`) back into `ui-fidelity-verdict.json` as
   for the adversaries. `ui-fidelity` is not an adversary for §2's
   `class1_adversaries` count.
-- Conformance line from `conformance.json` (or one line per
-  `conformance-<repo>.json`, multi-repo).
+- Conformance line from `conformance.json`.
 - One subsection per adversary that ran *or was reused*, from its filtered
   verdict file: the `attacked` list, then each kept verdict, then the
   kept/dropped counts (dropped count comes from `verdict-filter`'s own
@@ -634,8 +516,7 @@ ${CLAUDE_SKILL_DIR}/../../scripts/spine-event adversary agent=<falsifier|securit
 ```
 
 Reply to the caller with exactly: `PASS` or `FAIL`, plus the one-line reason
-if FAIL (which capability, which repo's floor, an ungated consumer's failed
-`contract-check`, step 1b's breaking-change gate, step 1c's `ui-render`
+if FAIL (which capability, step 1c's `ui-render`
 failure, step 1e's `ui-capture` failure, or step 3.5's "secret detected in adversary evidence" — "adversaries
 ran, see verify.md" is not a FAIL by itself — adversary *findings* don't
 fail verify, they inform `/ship` and the briefing; a secret in the

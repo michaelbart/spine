@@ -99,13 +99,12 @@ ${CLAUDE_SKILL_DIR}/../../scripts/adapter-conformance --all --project <project>
 Same rule as bootstrap: nothing gets marked `implemented` without passing
 its own known-pass/known-fail run.
 
-Include the three workflow adapters the same way `core/skills/bootstrap/SKILL.md`
+Include the two workflow adapters the same way `core/skills/bootstrap/SKILL.md`
 §4 describes — from the surveyor's `## Workflow adapters` section: `ticket-fetch`
 (the tracker the digest identifies — write `.spine/ticket-pattern.conf` from the
-observed key shape it reports), `open-pr` (the PR host it identifies), and
-`worktree-prep` (the gitignored dependency dir(s)/package manager it reports);
-mark any of them `not-applicable` with a real reason if the digest found no
-such tool or nothing to provision.
+observed key shape it reports) and `open-pr` (the PR host it identifies);
+mark either `not-applicable` with a real reason if the digest found no
+such tool.
 
 Also write `.spine/branch-naming.conf` from that same section's observed
 branch-naming template — present it for confirm-or-edit rather than asking

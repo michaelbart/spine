@@ -26,8 +26,7 @@ structural rather than stylistic (Class 2's forced `guided` autonomy and
 its plan-approval stop), becomes "decide on your own judgment, log it,
 keep going." What does **not** change: the deterministic floor, the
 falsifier's mandatory stub-out probe, the security adversary,
-`claims-check`, `conformance`, and `contract-touch` all still run for real
-and can still fail a task outright. This removes stops, never checks. This
+and `conformance` all still run for real and can still fail a task outright. This removes stops, never checks. This
 is a disclosed experiment (`docs/tradeoffs.md`),
 not the default or recommended way to use spine — say so plainly if asked
 about it, and never let it run silently disguised as an ordinary `/task`.
@@ -42,18 +41,11 @@ remain genuine stops:
    point at `/roadmap` (an already-scoped effort) or `/wayfinder` (a foggy
    one) instead of guessing at milestone boundaries — `/autopilot` consumes
    an already-planned backlog, it doesn't invent one. Stop here.
-2. Core version check, identical to `core/skills/task/SKILL.md` Step 0:
-   ```
-   ${CLAUDE_SKILL_DIR}/../../scripts/setup --check --project <project root>
-   ```
-   `mismatch-strict` stops here, same message and same reason as `/task`'s
-   own Step 0 — this machine's core is out of sync, no judgment call fixes
-   that. `ok`/`unpinned`/`mismatch-warn` continue.
-3. Git identity resolvable — `git config user.name` and `user.email` both
+2. Git identity resolvable — `git config user.name` and `user.email` both
    non-empty, same requirement `/task`'s classify step already has. If
    either is empty, stop and say so exactly as `/task` does; never invent
    an identity.
-4. If `.spine/current-task` already names an active task **and**
+3. If `.spine/current-task` already names an active task **and**
    `.spine/autopilot-active` does *not* exist, that task belongs to a human,
    not to a prior autopilot run — refuse to start, say plainly that a task
    is already active here and autopilot doesn't take over manual work, and
@@ -61,7 +53,7 @@ remain genuine stops:
    also exists, this is a resumed autopilot run — skip to §3, continuing
    that task inline exactly where its own `state` file says, and log a
    `run-resumed` entry (§2) before proceeding.
-5. Otherwise: write `.spine/autopilot-active` (one line, the start
+4. Otherwise: write `.spine/autopilot-active` (one line, the start
    timestamp) and append a run-separator header to
    `.spine/autopilot-log.md` (create it with a one-line file header if it
    doesn't exist yet — this file accumulates across every `/autopilot`
@@ -76,13 +68,13 @@ Every override below appends one line to `.spine/autopilot-log.md`:
 ```
 
 `<kind>` is one of: `class-2-escalation`, `class-2-plan-self-approved`,
-`claims-check-override`, `halt-deviation-autoresolved`,
-`circuit-breaker-reset`, `flag-autoacknowledged`, `new-milestone-confirmed`,
+`halt-deviation-autoresolved`, `circuit-breaker-reset`,
+`new-milestone-confirmed`,
 `run-resumed`, or `task-abandoned-unattended` (§5 — the one kind that means
 a real failure, not a decision, and gets called out separately at the end).
 `<pointer>` is whatever file a human would need to open to actually verify
 the decision — `work/<task-id>/deviations.md#Deviation N`,
-`work/<task-id>/approval.json`, `work/<task-id>/flags.json`, etc. This file
+`work/<task-id>/approval.json`, etc. This file
 is the entire deliverable of the "review it after, not during" bargain —
 treat every line as something a skeptical human will actually go check.
 
@@ -116,12 +108,10 @@ Follow `core/skills/task/SKILL.md` step by step, in this session, exactly
 the way that skill's own §5 already directs `checkpointed`/`auto` autonomy
 to follow `/verify`/`/ship` inline rather than through the Skill tool — same
 technique, applied here to the whole of `/task`'s own procedure, not just
-its tail end. **Nothing this run does leaves the machine — every
-`registry-sync` call it makes (task/SKILL.md's own registry-sync calls,
-`claims-check`, `propagate`, all of it) carries `--no-push`.** Every
+its tail end. **Nothing this run does leaves the machine.** Every
 commit stays real and local; nothing reaches a remote until a human
 reviews the end-of-run report and decides to push it themselves. This is
-by explicit instruction, not inferred, and it's the second way (alongside
+by explicit instruction, not inferred, and it's one way (alongside
 skipping `open-pr`, below) this run's artifacts differ from ordinary
 `auto` autonomy.
 
@@ -138,20 +128,13 @@ tradeoff.
 Apply these overrides at the exact point `task/SKILL.md`'s own text says to
 stop or ask — everything else in that skill (research, plan-writing,
 implementation, the floor, the falsifier, the security adversary,
-`claims-check`, `conformance`, `contract-touch`) runs completely unchanged:
+`conformance`) runs completely unchanged:
 
 - **Plan approval** — already skipped by `auto` autonomy; nothing new here.
 - **Class 2 plan approval** (`task/SKILL.md` §3) — Class 2 is forced
   `guided`, so this stop still exists; approve it yourself: write
   `work/<task-id>/approval.json` as usual with `"autonomy": "autopilot"` set.
   Log a `class-2-plan-self-approved` entry pointing at `approval.json`.
-- **`claims-check` block** (`task/SKILL.md` §3) — take the "override"
-  resolution `claims-check`'s own output already names as one of its three
-  paths; append the `deviations.md` record that resolution already requires
-  (tier `record-and-proceed`, since choosing to override *is* the
-  resolution — identical to what a human choosing override would write).
-  Log a `claims-check-override` entry naming the conflicting task, owner,
-  and surface `claims-check` reported.
 - **Halt-tier deviation** (`task/SKILL.md` §4) — do not stop. Decide using
   the plan's own "What I'll decide alone vs. stop and ask" section's
   context plus the best available judgment, exactly as if this were a
@@ -167,21 +150,12 @@ implementation, the floor, the falsifier, the security adversary,
   true" opening clause.
 - **Circuit breaker** (`task/SKILL.md` §4, the third deviation on this
   task) — perform the mechanical reset exactly as written (`git stash push
-  -u`, `state` back to `research`, bump `deviation_count`,
-  `registry-sync`) but do not stop for a human: immediately re-delegate to
-  the `researcher` agent and continue this same task through plan and
+  -u`, `state` back to `research`, bump `deviation_count`) but do not stop
+  for a human: immediately re-delegate to the `researcher` agent and continue this same task through plan and
   implement again, inline. Log a `circuit-breaker-reset` entry. Track resets
   per task-id within this run; on the **second** reset for the same task
   (six total deviations on one task), do not attempt a third — go to §5
   instead.
-- **Flag-blocked advance** (`task/SKILL.md`'s header note, every phase
-  transition) — read the flag for real, decide for real whether the
-  grounding it names still holds. Acknowledge it either way (`"acknowledged":
-  true, "acknowledged_by": "autopilot"`, `"acknowledged_at"` set). If
-  judged to still hold, log a `flag-autoacknowledged` entry with the
-  reasoning. If judged not to hold, that's a real deviation — also apply
-  the halt-tier row above (this compounds, it doesn't replace the
-  acknowledgment).
 - **`verify` FAIL** — `auto` autonomy already self-heals this (fix,
   re-verify inline, per `task/SKILL.md` §5) without stopping; nothing new
   here unless the fix itself hits a halt-tier deviation or the circuit
@@ -202,19 +176,6 @@ implementation, the floor, the falsifier, the security adversary,
   behavior differs from ordinary `auto` autonomy in a way that removes an
   *artifact* (and a network action), not a stop — the explicit choice made
   for this build, not a judgment call to re-litigate per task.
-- **Worktree cleanup** (`ship/SKILL.md` §6, Extension D) — if this task
-  happens to be running in a spine-created worktree, still ask the human at
-  the end of `/autopilot`'s whole run whether to keep or remove it (fold
-  it into §6's summary, don't ask mid-run) using `AskUserQuestion` in this form (per `core/templates/human-touchpoint.md`):
-
-  <!-- touchpoint:start confirm -->
-  > **Keep or remove the temporary copy of the project this run used, at `<path>`?** It's the only place to inspect the run's changes before anything reaches a remote; nothing has been pushed.
-  > **Keep** (recommended) — I leave it; remove it after you've reviewed the report. **Remove** — I delete it now, and that can't be undone.
-  <!-- touchpoint:end -->
-
-  A worktree left behind for a human to inspect is a feature here, not
-  friction, given nothing else during the run gets reviewed until the end
-  either.
 
 ## 5. Runaway guard — a real failure, not a decision
 
@@ -251,8 +212,5 @@ a file:
   a pointer per entry that a human can actually go verify each one — this
   is the single human touchpoint the whole run has, so it needs to be
   genuinely checkable, not a summary that just asserts things went fine.
-- If any task ran in a spine-created worktree (Extension D), ask now
-  whether to keep or remove each one (`core/skills/ship/SKILL.md` §6's
-  own keep/remove choice, just deferred to here per §4's note above).
 
 Point at `.spine/autopilot-log.md` for the complete, unsummarized list.

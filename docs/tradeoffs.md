@@ -48,14 +48,6 @@ effort: a map that keeps spawning tickets faster than it resolves them is
 a sign the effort was never one map's worth of scope, not a reason to
 push through anyway.
 
-**Multi-repo and multi-engineer overhead scale differently.** A change
-spanning repos through `/workspace` pays a second floor run per affected
-repo and a contract check in both directions, but review stays flat — one
-plan, one approval, regardless of repo count. Working alongside other
-engineers adds a conflict check before plan approval and a couple of
-re-grounding checks at ship time; those are cheap in script time, the real
-cost is a colleague's attention when their task overlaps yours.
-
 ## Where this is the wrong tool
 
 - **Tiny repos you hold in your head.** The artifact trail (research.md,
@@ -113,7 +105,7 @@ Conceded by design, not bugs waiting to be fixed:
   narrow one (e.g. always run the floor's lint/type layer even when
   everything else is skipped), not a redesign.
 - **Class 2 is permanently unreachable for a project with no smoke-testable
-  runtime.** Unlike `contract-check`/`ui-render`/`ui-conformance`/
+  runtime.** Unlike `ui-render`/`ui-conformance`/
   `ticket-fetch`/`open-pr`/`worktree-prep`, `smoke-seed`/`smoke-run`/`smoke-golden` have no
   legitimate `not-applicable` escape hatch — the floor's Class 2 gate
   treats anything other than `implemented` as a hard fail (`core/scripts/
@@ -129,7 +121,7 @@ Conceded by design, not bugs waiting to be fixed:
   milestone's "Known gaps" list (`checkpointed`/`auto`). A human can say
   "ship it anyway, just flag it" and the merge gate doesn't stop them. The
   only hard ship-time gates are the deterministic floor, zero open
-  `deviations.md` entries, and (multi-repo) contract/render checks. This
+  `deviations.md` entries, and the render checks. This
   is deliberate — a hard block on adversary opinion would recreate the
   review-bottleneck rubber-stamping this system exists to avoid — but
   it means "adversarial review" is disclosure with visibility, not
@@ -214,8 +206,8 @@ Conceded by design, not bugs waiting to be fixed:
   reader built later needs to tolerate the older shape too, or accept it
   will miss/misparse a project's earliest tasks.
 - **Secrets, credentials, and PII handling have no auto-loaded discipline
-  rule, unlike migrations/contracts/auth.** `core/rules/migrations.md`,
-  `core/rules/contracts.md`, and `core/rules/auth.md` all load automatically
+  rule, unlike migrations/auth.** `core/rules/migrations.md`
+  and `core/rules/auth.md` both load automatically
   when a matching path is read, because each has a reasonably reliable
   directory-naming convention to scope a `paths:` glob against. Secrets/
   credentials/PII don't — a credential can be touched from anywhere a
@@ -226,30 +218,18 @@ Conceded by design, not bugs waiting to be fixed:
   today; a fourth `core/rules/` file was deliberately not written to paper
   over that gap with an unreliable glob that would look like coverage
   without actually providing it.
-- **Worktree isolation (Extension D, experimental) delays registry
-  visibility to a merge.** When `/task` spins up a second task into a
-  worktree (`core/skills/task/SKILL.md`'s Resuming section),
-  `EnterWorktree` puts that task on its
-  own new branch — git can't check the same branch out in two worktrees
-  at once. `registry-sync` still pushes `work/<task-id>/` to whatever
-  branch is checked out, which is now that task's own branch, not the
-  project's shared default. A colleague's `claims-check` won't see that
-  task's registry entry until the branch merges. Harmless
-  for the same engineer running two terminals on one machine (both
-  worktrees share the local `.git`); a real gap for the cross-engineer
-  coordination story the registry otherwise assumes.
 - **`/autopilot` (experimental) removes every human stop `/task` has,
   including the ones spine treats as structural rather than stylistic —
   by explicit request, not by accident.** Class 2's forced `guided`
   autonomy, halt-tier deviations, the
-  circuit breaker, `claims-check` blocks, and flag-blocked advances all
+  circuit breaker, and the other human stops all
   normally exist because some decisions are judged to need a human in the
   loop, not just a slower one. `/autopilot` (`core/skills/autopilot/
   SKILL.md`) self-resolves every one of them
   and defers the entire review to a single end-of-run report instead of
   per-decision, per-task review. What stays real and unweakened: the
   deterministic floor, the falsifier's stub-out probe, the security
-  adversary, `claims-check`, `conformance`, and `contract-touch` — this
+  adversary, and `conformance` — this
   removes *stops*, never *checks*, mirroring the same distinction the
   `autonomy` field already draws for ordinary `auto` tasks, just pushed
   to its extreme point. **Every commit stays local — `/autopilot` never
@@ -260,74 +240,13 @@ Conceded by design, not bugs waiting to be fixed:
   disclosed as possibly-temporary; not the default or recommended way to
   use spine.
 
-## Working with other engineers
-
-Real-time coordination between engineers working the same repo is built
-for roughly 2–4 people, not more, and it's honest about what's actually
-mechanical:
-
-- **One layer is a real hook; everything else is a script an agent is
-  instructed to act on.** The write-blocking hooks are the one tier a
-  session can't simply choose to skip. A conflict check before plan
-  approval, ship-time re-grounding, and flag acknowledgment
-  are all real scripts that compute a real, correct
-  answer — but acting on that answer is skill instruction, not an enforced
-  gate. A session that writes the target state file directly instead of
-  following the instructions can walk past any of them.
-- **Git identity is a coordination primitive, not authentication.**
-  `git config user.name`/`user.email` is trivially spoofable — exactly as
-  trustworthy as a commit author field always was, no more.
-- **What breaks past about four engineers.** Overrides and conflicts rise
-  faster than one person's attention can track them, and every ship still
-  produces its own briefing with nothing aggregating across them — volume
-  outpaces what a human skimming for patterns can actually catch.
-
-The mitigating fact, same as everywhere else in this system: a human reads
-the plan and the briefing, and that's where a pattern of silent bypass
-would actually surface.
-
-## Cross-repo work
-
-A change spanning more than one repository coordinates through a small
-workspace root and a declared contract registry:
-
-- **Declared surfaces, not meaning.** The conflict check only sees what a
-  plan declares it will touch — a collision in undeclared territory is
-  invisible to it by construction. The registry-driven check fails safe
-  (treats a contract as touched) when a declared path goes missing
-  entirely, but not on every possible drift shape.
-- **Contract checks validate shape, not behavior.** They confirm a field
-  exists with the right name on both sides of a contract, never that it's
-  computed correctly. A correctly-named, incorrectly-computed field passes
-  cleanly — only the adversary review, which reads for behavior rather than
-  structure, catches that class of bug.
-- **`contract-touch`'s breaking-change classification catches every
-  removal-or-modification-shaped break, never an addition-shaped one.**
-  `core/rules/contracts.md` requires a breaking spec change to decompose
-  into an expand/migrate/contract milestone, mechanically enforced by
-  `contract-touch` reading the spec diff — but a newly *required* field is,
-  line-for-line, a pure addition, indistinguishable from a newly *optional*
-  one by a diff-only heuristic. Whether a field is required or optional is
-  stack-specific spec semantics this stack-blind check doesn't parse; a
-  required-field addition has to be caught by plan approval or adversary
-  review instead, same as any other behavior-shaped gap above.
-- **A staged multi-repo ship has a real, bounded inconsistency window.**
-  Between the first repo's commit and the last, an in-between state
-  genuinely exists. It's safe only because the declared ship order
-  guarantees every intermediate state stays contract-compatible by
-  construction — the window doesn't disappear, it's just never unsafe.
-- **Install ties to a machine-local path.** The core is cloned once per
-  machine and referenced by an absolute path; a second engineer needs
-  either the identical clone path or to re-run setup and regenerate their
-  own local wiring.
-
 ## The design stage
 
 `/design` turns a charter into a reviewed set of foundational decisions
 before any code exists. Its own cost shape: contract coverage and a
 project's decision store are only as good as someone keeping them current,
 and nothing mechanically verifies either is complete. Composing `/design`
-with a fresh multi-repo `/workspace` setup and a skeleton first milestone —
+with a skeleton first milestone —
 all before any code exists — is the specific ceremony-compounding risk to
 watch for on a brand-new project's first day. The decision cap (a fixed
 limit on how many decisions one session can adopt) and shipping a skeleton
@@ -342,7 +261,7 @@ for a walking skeleton: milestone 0's own job is to *build* smoke, yet its
 first tasks are Class 2 by necessity — dependency manifests, `db/`, `auth/`
 are protected paths — so none of them could pass a floor whose smoke layer
 didn't exist yet. Found for real on the first M0 task of a greenfield
-project (workspace scaffold), which could only have shipped via
+project (the workspace scaffold), which could only have shipped via
 `/ship --bypass`, a rule meant for emergencies.
 
 The fix is a narrow waiver, not a softer gate. `floor` now records
@@ -444,14 +363,8 @@ surprise:
 | Scheduled cleanup of pre-existing duplication | Duplication checks only run against a task's own changed files, never sweep existing debt |
 | A product-spec layer | The charter deliberately stays at constraints, not a spec — a product spec itself stays optional and human-authored, never generated. `docs/vision.md` is the one exception, and only partly: it's still never invented outright, but `/wayfinder` (added since this row was first written) does write it, one confirmed line at a time, when the milestone shape was genuinely unknown rather than just unwritten — see `core/skills/wayfinder/SKILL.md` §4. |
 | A concurrency or stress-test lane | The smoke-test capability is the insertion point if this gets built |
-| Deterministic detection of undeclared cross-repo coupling | Only the adversary review looks for this today; no mechanical scan does |
-| A workspace-wide cost rollup across member repos' own task histories | No per-repo cost tracking exists to roll up in the first place |
-| One repo belonging to more than one workspace | Unsupported — a workspace assumes exclusive ownership of its member repos |
-| Abandoning a task (a terminal state short of `done`) | `work/<task-id>/state` today only ever reaches `done` via `/ship`; nothing lets an engineer close out a task they've decided not to finish. Deceptively not a one-file fix: at least three existing mechanisms treat "not `done`" as "still open" and would each need to learn a new `abandoned` state — `core/scripts/next-milestone-task`'s milestone-completeness check, `core/scripts/claims-check`'s live-claims predicate, and `.spine/current-task` clearing if the abandoned task is the active one. The real design fork underneath all of that: when a milestone's own member task gets abandoned, does that slot need a brand-new replacement task before the milestone can ever reach done, or does the milestone itself need re-scoping through `/roadmap`? That's a design decision on the order of choosing `/wayfinder`'s ticket types, not a mechanical add — give it its own design pass before touching any of the three mechanisms above. |
+| Abandoning a task (a terminal state short of `done`) | `work/<task-id>/state` today only ever reaches `done` via `/ship`; nothing lets an engineer close out a task they've decided not to finish. Deceptively not a one-file fix: at least two or three existing mechanisms treat "not `done`" as "still open" and would each need to learn a new `abandoned` state — `core/scripts/next-milestone-task`'s milestone-completeness check, `phase-gate`'s view of which tasks may write, and `.spine/current-task` clearing if the abandoned task is the active one. The real design fork underneath all of that: when a milestone's own member task gets abandoned, does that slot need a brand-new replacement task before the milestone can ever reach done, or does the milestone itself need re-scoping through `/roadmap`? That's a design decision on the order of choosing `/wayfinder`'s ticket types, not a mechanical add — give it its own design pass before touching any of the three mechanisms above. |
 | Reverting a shipped task | No mechanism today undoes a task after `/ship` — the only path is a fresh, manually-authored task that happens to reverse the change. Not even the framing is settled yet: is "rollback" a `git revert` of the ship commit(s) (fast, but bypasses research/plan/verify for the undo itself — exactly the kind of unreviewed change spine exists to prevent), or a real compensating task that goes through the normal classify → research → plan → verify → ship discipline (safer, but slower, and still has to decide what happens to anything the original task's `plan.md` cited — a decision's `## Implementing paths`, a milestone's `## Known gaps for future member tasks` entry it resolved, a `docs/decisions/` record distilled from it)? Bigger and less scoped than abandoning a task above; needs its own dedicated design conversation, not a bolt-on. |
-| Conformance-gated pin bumps | `core/skills/update/SKILL.md` §3 offers to bump `.spine/core-pin.json` after only a human skim of the changelog (`git log <old>..<new>`) — unlike an adapter (`adapter-conformance`) or a profile (`profile-check`), nothing re-validates this project's own adapters/hooks against the *new* core before the bump is committed. A core change that alters a hook's argument shape or an adapter-contract expectation would only surface later, as a confusing task-time failure, not at the bump itself. |
-| Immediate local notice of a pin bump | The only detection point is `setup --check`, run at the top of `/task`/`/spine` — a machine that's behind a just-bumped pin finds out at its next spine command, which could be well after the bump landed, not right after its own next `git pull` of the project. Closing this needs a mechanism outside Claude Code's own hook system entirely — an ordinary git `post-merge` hook calling `setup --check` — which itself isn't distributable today the way `.claude/hooks` is (`.git/hooks` isn't version-controlled; it would need its own install step, e.g. `setup` writing it or a committed `core.hooksPath` dir). |
-| Committing `.claude/hooks/` for real instead of symlinking it | Symlinking is why `hook-guard` and the whole core-pin/skew-check machinery need to exist at all — a committed hook can't be silently absent or version-mismatched the way a symlink into an unset-up or out-of-date spine clone can. Real cost: hooks stop auto-updating with `git pull spine`, becoming per-project update friction instead. Full proposal, migration path, and open questions: `docs/proposal-committed-hooks.md`. |
 
 ## Human touchpoints (`human-touchpoint.md`, `touchpoint-lint`)
 

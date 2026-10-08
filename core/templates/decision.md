@@ -122,9 +122,3 @@ change must mean the decision changed, never that someone tidied it.
      decisions`). The real files that made this decision concrete — never
      hand-edited to "correct" a stale entry, only added to as further
      tasks implement more of it. "None yet" until that first happens. -->
-
-## Contracts implied
-
-<!-- Optional. "None" unless this decision implies a producer/consumer
-     boundary between repos (Extension B, ws/contracts/<name>/) — most
-     single-repo decisions will say "none." -->

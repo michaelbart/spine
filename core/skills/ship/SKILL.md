@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Gate, commit, and brief a task that's passed verification — re-grounds against what changed underfoot since research, runs the merge gate, distills/updates decisions, does milestone bookkeeping (flagged-finding triage, done-definition check, known-gap resolution), writes the delta briefing and PR description, and (multi-repo) drives a resumable staged commit across repos. Invoked by /task at the ship phase, or directly as `/ship --bypass <reason>` for a genuine emergency.
+description: Gate, commit, and brief a task that's passed verification — re-grounds against what changed underfoot since research, runs the merge gate, distills/updates decisions, does milestone bookkeeping (flagged-finding triage, done-definition check, known-gap resolution), writes the delta briefing and PR description, and commits. Invoked by /task at the ship phase, or directly as `/ship --bypass <reason>` for a genuine emergency.
 disable-model-invocation: true
 argument-hint: <task-id> [--bypass <reason>]
 ---
@@ -16,7 +16,7 @@ symlink into the spine core checkout, and collapsing the text yields a
 nonexistent `.claude/scripts/...` path.
 
 **This skill does six distinct jobs, in order — not one "gate and commit"
-step.** A single-repo, non-milestone, guided task still passes through all
+step.** A non-milestone, guided task still passes through all
 six; the ones that only apply conditionally say so inline. Use this as a
 map, not a summary — each job's own section is where the real detail
 lives:
@@ -32,8 +32,7 @@ lives:
    member task (§3b), known-gap resolution (§3c).
 5. **§4/§4a Briefing and PR description** — the one-page human-facing
    summary, and (if `open-pr` applies) the PR body.
-6. **§5/§6 Commit and close-out** — including, multi-repo, a
-   resumable staged commit sequence across repos.
+6. **§5/§6 Commit and close-out.**
 
 
 **Voice.** Every message this skill leaves for the human follows
@@ -41,11 +40,11 @@ lives:
 send" list: gloss or drop internal names, IDs and commit hashes, keep one
 decision per message, and put surprises first.
 
-## 0. Ship-time re-grounding (Extension C §2.4)
+## 0. Ship-time re-grounding
 
-The window between plan approval and ship is unguarded otherwise — a
-neighbor's task can merge and invalidate this task's grounding after
-`check-stale` already passed at plan time. Two re-runs:
+The window between plan approval and ship is unguarded otherwise — the
+code can change underfoot and invalidate this task's grounding after
+`check-stale` already passed at plan time. Re-run it:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md
@@ -58,14 +57,14 @@ that touches a file it also read as grounding, which is most tasks). A
 drifted file is
 **expected, not drift**, if any of the following is true: (a) it appears
 in `work/<task-id>/plan.md`'s own `## Predicted touch` list — this task's
-own approved implementation changed it, not a neighbor; (b) it's
+own approved implementation changed it; (b) it's
 explained by a `work/<task-id>/deviations.md` record with `Status:
 resolved` (e.g. a manifest file changed because an approved
 new-dependency deviation added one); or (c) it's named in
 `work/<task-id>/verify.md`'s own "Adversary verdicts" section against a
 kept finding marked `FIXED` there — an adversary-found fix applied and
-recorded during `/verify` is exactly as "this task's own approved work,
-not a neighbor's" as (a)/(b), and forcing every such fix through
+recorded during `/verify` is exactly as "this task's own approved work"
+as (a)/(b), and forcing every such fix through
 `deviations.md` too would make the circuit breaker fire on legitimate,
 already-adversarially-verified work with nothing left to stash (disclosed
 fix — see docs/tradeoffs.md); or (d) it is `work/<id>/milestone.md` for the
@@ -84,10 +83,10 @@ as planning context for research to read — makes this guaranteed on the
 classify-time edit alone, on every such task, not an edge case (disclosed
 fix). A changed
 line that isn't one of those two things — another member task's own `TBD`
-slot resolved, a different task's Known-gaps entry, an edit to `##
-Inter-task contracts` or `## Capability targets` — is a neighbor's real
-change and stays fully driftable; (d) accounts for only this task's own
-hand in a shared file, never the file wholesale. Only a file covered by
+slot resolved, a different task's Known-gaps entry, an edit to
+`## Capability targets` — is a real change and stays fully driftable; (d)
+accounts for only this task's own hand in the milestone file, never the
+file wholesale. Only a file covered by
 **none of the four** is genuine unexplained drift. If every drifted file
 is expected by this rule: proceed normally — not a halt, not a deviation,
 does not touch the circuit breaker.
@@ -96,68 +95,31 @@ If any drifted file is **not** covered by any of these checks: this is a real
 deviation, not a soft warning — append a
 `work/<task-id>/deviations.md` record, tier `halt` (grounding drifted
 since this was last verified, the same halt tier already assigned to
-schema/contract/auth surprises), and **it counts
+schema/auth surprises), and **it counts
 toward the circuit breaker** (`core/skills/task/SKILL.md`'s existing
 three-deviation rule) — decided and defended here, not left as an open
-question: neighbor-caused drift isn't this plan's own fault, but the
-circuit breaker's actual trigger condition is "the research this plan
-stands on is no longer trustworthy," which is exactly as true when a
-neighbor invalidated it as when the original research was simply wrong.
-Treating it differently would need a second, parallel invalidation
-channel this system doesn't have and shouldn't grow one just for this.
+question: the circuit breaker's actual trigger condition is "the research
+this plan stands on is no longer trustworthy," which is exactly as true
+when the code moved underneath it as when the original research was
+simply wrong.
 Proceeding means going back to `core/skills/task/SKILL.md` step 2
 (research), not continuing here.
 
-If ok: `git pull --rebase` onto the current mainline (single-repo: this
-project; multi-repo: the workspace root, then each repo in `## Ship
-order`), then re-run the floor:
+If ok: `git pull --rebase` onto the current mainline, then re-run the floor:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/floor <class> --task <task-id> \
   --out work/<task-id>/artifacts/floor-result-postrebase.json
 ```
 
-The second merger always re-verifies against the first's reality — this
-is what makes that literally true instead of aspirational. If this
+This re-verifies the diff against whatever actually landed. If this
 post-rebase floor fails, that's a real merge-gate failure (§1 below), not
 a deviation — the diff itself now conflicts with what actually landed.
 
-**Third re-grounding check: the real diff against other open tasks'
-claims** (Phase D self-red-team finding — narrow-claims verification).
-The plan-time `claims-check` (`task/SKILL.md` §3) only ever sees this
-task's own *declared* `predicted_touch` — a task that under-declared its
-claims to dodge a real conflict was invisible to it by construction. This
-closes that specific hole against the diff that actually exists now:
-
-```
-${CLAUDE_SKILL_DIR}/../../scripts/claims-check <task-id> --project <project root> --diff <base-ref>
-```
-
-(multi-repo: once per repo in `## Ship order`, `--project <repo-path>`,
-`<base-ref>` that repo's own pre-task sha). Any `[UNDECLARED]`-tagged
-result is the defeat itself, caught, not a hypothetical — append a
-`deviations.md` record, tier `halt`, same as a stale `check-stale` result
-above, and it counts toward the circuit breaker the same way. A
-`[DECLARED]`-tagged hit means the plan-time check should have caught this
-already and didn't — most likely the colliding task's own claims changed
-after this one's plan was approved without `propagate` reaching this
-task; record it the same way, but note the distinction in the deviation
-record rather than treating both as the identical failure mode.
-
-**Honest limit, stated plainly rather than implied by silence**: this is
-discovered late (ship time, code already written) and is not as strong as
-plan-time prevention — reverting a real diff costs more than declining to
-approve a plan. It is real, mechanical, and specific (names the exact
-undeclared path and the exact colliding task), which is the distinction
-that matters — before this check existed, the identical defeat surfaced
-only as a generic `conformance` precision drop with no link back to which
-other task it endangered, indistinguishable from an ordinary, harmless
-scope change.
-
-**Fourth re-grounding check: the decision index, against whatever
+**Third re-grounding check: the decision index, against whatever
 `docs/decisions/` looks like right now.** §2 below regenerates
 `docs/decisions/INDEX.md` for *this* task's own decision edits, but a
-neighbor's task (or a hand-edit, or a `--bypass`) can have changed the
+hand-edit or a `--bypass` can have changed the
 store since without regenerating it — the same staleness shape
 `check-stale` exists to catch for `research.md`, one layer over:
 
@@ -165,16 +127,14 @@ store since without regenerating it — the same staleness shape
 ${CLAUDE_SKILL_DIR}/../../scripts/decision-index --project <project root> --check
 ```
 
-(multi-repo: once per repo in `## Ship order` that has its own
-`docs/decisions/`, `--project <repo-path>`.) A `STALE` result here is
+A `STALE` result here is
 never this task's own fault by construction — §2 hasn't run yet at this
 point in the skill — so it is not a deviation and does not touch the
 circuit breaker; it's a stale, inherited artifact this task is about to
 fix anyway once §2's regeneration runs. Note it in `notes.md` and move on — §2's own
 regeneration (which runs
 unconditionally whenever this task touched `docs/decisions/`, and should
-also run here if it's stale for a reason unrelated to this task, e.g. a
-neighbor's un-regenerated ship) is what actually resolves it before this
+also run here if it's stale for a reason unrelated to this task) is what actually resolves it before this
 task's own commit.
 
 ## 1. The merge gate — unless `--bypass`
@@ -199,20 +159,7 @@ form (per `core/templates/human-touchpoint.md`):
 > **To continue:** <fix it and re-run `/verify <task-id>` | answer the open question and I'll mark it resolved>.
 <!-- touchpoint:end -->
 
-**Multi-repo (Extension B): a third check.** If `plan.md` has a `##
-Ship order` section, validate it against `workspace.json`'s contract
-registry direction (declared in the plan, validated here, never silently
-derived): for every contract `work/<task-id>/
-artifacts/contract-touch.json` reports touched with `spec_change ==
-"additive"`, if both the producer and at least one consumer appear in
-`## Ship order`, the producer's position must come at or before every
-such consumer's. A violation halts here — "ship order for '<name>' ships
-the consumer before the producer, an additive change is never safe in
-that direction" — same non-negotiable framing as the floor/deviation
-checks above, not a soft warning.
-
-**`--bypass <reason>`** skips every check above (floor/deviations, ship
-order) — loudly, never silently. Record the bypass in `notes.md` and give it its own visible section in the briefing (§4). Bypass is for a genuine emergency
+**`--bypass <reason>`** skips every check above (floor/deviations) — loudly, never silently. Record the bypass in `notes.md` and give it its own visible section in the briefing (§4). Bypass is for a genuine emergency
 (production down, the fix touches auth) that can't wait on the harness —
 it is not a way to route around a check you disagree with. `--bypass` does
 not skip §0's ship-time re-grounding — that runs first, unconditionally;
@@ -225,18 +172,10 @@ reason="<the reason given>"`.
 **Implement decisions this task's plan cited.** Read
 `work/<task-id>/plan.md`'s `## Grounds on decisions` section (per
 `core/templates/plan.md` — absent entirely if the plan cited none; skip
-this part in that case). For each bullet there: resolve which store it
-lives in — **multi-repo**, a bullet may be repo-qualified,
-`<repo-name>:D-<seq>` (that member repo's own local `docs/decisions/`,
-kept from before it joined the workspace or added since); unqualified
-means the workspace root's own store ("one system charter at the
-workspace" extends naturally to workspace-level decisions, but a member
-repo's pre-existing local decisions are never silently absorbed into it).
-Read `<store-root>/docs/decisions/D-<seq>-*.md`, append
-this task's *actual* diff paths from **that store's own repo**
-(`git -C <store-root> diff --name-only <base>..HEAD`, not the plan's
-predicted-touch list — the diff is what's real; for the workspace root's
-own store this is an ordinary `git diff` at the workspace root) to its
+this part in that case). For each bullet there: read
+`docs/decisions/D-<seq>-*.md`, append
+this task's *actual* diff paths (`git diff --name-only <base>..HEAD`, not
+the plan's predicted-touch list — the diff is what's real) to its
 `## Implementing paths` section, and if its `- Status:` line currently
 reads `adopted`, flip it to `implemented` — a single-line edit, nothing
 else in the file changes (`core/scripts/decision-hash` excludes that line
@@ -278,15 +217,13 @@ alternative was genuinely weighed and rejected in the deviation's own
 **Regenerate the decision index.** If this task touched `docs/decisions/`
 at all above — a status flip, an `## Implementing paths` append, or a
 newly-distilled record — regenerate its store's index before this task's
-commit(s) in step 5:
+commit in step 5:
 
 ```
-${CLAUDE_SKILL_DIR}/../../scripts/decision-index --project <store-root>
+${CLAUDE_SKILL_DIR}/../../scripts/decision-index --project <project root>
 ```
 
-For a repo-qualified decision, `<store-root>` is that member repo's own
-path, not the workspace root — same split `check-stale`/`decision-hash`
-already use for repo-qualified citations. Skip entirely if this task
+Skip entirely if this task
 cited no decision and distilled none — the index doesn't need
 regenerating when the store it summarizes hasn't changed. Mechanical, no
 review needed.
@@ -295,13 +232,8 @@ review needed.
 
 Read `work/<task-id>/milestone` (absent = this task isn't part of a
 milestone — skip §3a/§3b/§3c entirely, no note needed in the briefing). If
-present, resolve `work/<id>/milestone.md` using the same probe order the
-task skill used at creation time: **if `workspace.json` exists at the
-project root**, check (1) `work/<id>/milestone.md` at the project root,
-then (2) `<member-repo-path>/work/<id>/milestone.md` for each repo in
-`workspace.json`'s `repos` array in order; use the first path found. **If
-`workspace.json` is absent**, use `work/<id>/milestone.md` at the project
-root. All three steps below run against the resolved path — §3a and §3c on
+present, use `work/<id>/milestone.md` at the project
+root. All three steps below run against it — §3a and §3c on
 *every* member-task ship, §3b only on the milestone's completing ship. §3a
 and §3c can run in either order — they touch the same section but never
 the same entries (§3a only ever allocates new ids off the monotonic
@@ -313,7 +245,7 @@ cited), so there's no ordering hazard between them.
 The routing gap this step closes: an adversary-confirmed, cross-task-relevant finding that gets
 deliberately flagged rather than fixed in this task's own `/verify` pass
 has, until now, had no path into the one place a future member task's
-planning actually looks (`## Inter-task contracts`/`## Known gaps` in
+planning actually looks (`## Known gaps` in
 `milestone.md`, loaded by `core/skills/task/SKILL.md`'s `--milestone`
 handling) — it stayed fully documented in this task's own `verify.md`/
 `notes.md` and fully invisible to whoever plans the task that needs it.
@@ -536,20 +468,8 @@ quotes, it doesn't re-derive:
   `deviations.md`-sourced "What surprised us" above, per
   `core/skills/task/SKILL.md` §4's boundary test; `Plan accuracy` from
   `conformance.json`'s score, in words.
-- **Contracts** (multi-repo only, omit entirely if `contract-touch.json`
-  reported nothing touched): per touched contract, its
-  `spec_change`/`registry_stale` and each gated consumer's `contract-check`
-  result straight from `verify.md`'s own "Contract conformance" section
-  (never re-derive), plus any undeclared-coupling finding the falsifier's
-  cross-repo mandate kept — registry coverage made visible, so neglect is
-  loud: a touched contract with zero findings and zero gaps is still
-  worth its one line, a clean bill is not the same as an omitted section.
 - **Overrides & bypasses** (omit entirely if none occurred): `--bypass`'s
-  own line is not optional when used; a plan-time claims-check override
-  (`work/<task-id>/deviations.md`'s own record of it, per
-  `core/skills/task/SKILL.md` §3) gets its own line here too. A ship-time `claims-check --diff`
-  `[UNDECLARED]` collision is a halt-tier deviation, not an override —
-  it belongs in "What surprised us," not here.
+  own line is not optional when used.
 - **Milestone** (omit entirely if this task isn't part of one): §3b's
   result — which milestone, and (only on the completing ship) whether its
   Done-definition is actually met by real state, said plainly either way.
@@ -593,13 +513,6 @@ the post-hoc-summary failure mode this step exists to prevent. Every
 sentence traces to plan.md, deviations.md, verify.md, approval.json, or one
 of the three artifacts above; nothing here is generated by re-reading code.
 
-**Multi-repo (Extension B):** one shared `pr-description.md`, written once
-at the workspace root — not one per repo (the record it reads
-from is task-scoped, not repo-scoped). Its `**Contracts**` section carries
-`## Ship order` plus each contract's `contract-touch.json` result. Omit the
-whole section on a single-repo task, or a multi-repo task whose
-`contract-touch` run found nothing touched.
-
 **Same over-cap tracking as §4's briefing, same reason**: `wc -l
 < pr-description.md` and `wc -w < pr-description.md` (redirect stdin),
 same ~600-word real "over cap" signal. Over cap means trim before shipping,
@@ -613,22 +526,22 @@ current branch name (`git rev-parse --abbrev-ref HEAD` and parse the
 ticket-pattern from `.spine/ticket-pattern.conf` if present, or fall back to
 the first `[A-Z]+-[0-9]+` match in the branch name). If either yields a key,
 add `Spine-Ticket: <key>` as an additional trailer
-line on this task's commit(s) — every repo, in the multi-repo case — alongside
+line on this task's commit alongside
 `Spine-Task:`, per `core/ADAPTER-CONTRACT.md` §6's composing-trailer rule. If it
 prints nothing (off-ticket), omit that line.
 
 **Commit a refreshed map on its own.** `/task` refreshes `docs/map.md` before
 research when it was stale or empty. If `git status --porcelain docs/map.md`
-shows a change (in each repo, for a multi-repo task), commit just that file
+shows a change, commit just that file
 first, so the refresh never lands inside the task's own diff or PR:
 
 ```
 git add -- docs/map.md && git commit -m "chore: refresh project map"
 ```
 
-No `Spine-Task:` trailer, same as a pin bump. Skip silently if unchanged.
+No `Spine-Task:` trailer, Skip silently if unchanged.
 
-Then, **single-repo**:
+Then:
 
 ```
 git add -A -- <the task's actual changed paths, work/<task-id>/, docs/decisions/>
@@ -645,61 +558,13 @@ EOF
 )"
 ```
 
-**Multi-repo (Extension B) — staged, ordered, never partial-silent**:
-commit each repo named in `## Ship order`, in that exact order, one at a
-time — never a single combined commit spanning repos (they
-are separate git histories). Before the first commit, write
-`work/<task-id>/state` = `shipping (1 of <n>)` at the **workspace root**
-(one shared state file, one task). For each repo in order:
-
-1. `git -C <repo-path> add -A -- <that repo's own changed paths>`.
-2. `git -C <repo-path> commit -m "..."` — same subject/body/trailer shape
-   as single-repo above, but the trailer is identical across every repo:
-   `Spine-Task: <task-id>` — spine's existing linkage primitive does the
-   cross-repo join; this is the whole mechanism, nothing else ties the
-   commits together.
-3. Update `work/<task-id>/state` = `shipping (<k+1> of <n>)` at the
-   workspace root immediately after each commit — this is what makes the
-   inconsistency window **visible and bounded**, not eliminated (the
-   commits are still separate events; nothing here makes them atomic). If
-   this skill's own session is interrupted mid-sequence, a resumed session
-   reads this state and knows exactly which repos already have their
-   commit and which don't — resume from the next repo in `## Ship order`,
-   never re-commit one already done, never skip one still pending.
-
-Also commit the workspace root's own changes (`work/<task-id>/`, any
-`docs/decisions/` or `contracts/` edits) as one more commit in the
-sequence, at the position `## Ship order`'s reserved `workspace` entry
-names (`core/templates/plan.md` — typically last, since its own artifacts
-— briefing, verify.md — describe the completed change) — same
-`Spine-Task:` trailer.
-
 For `--bypass`, add `Spine-Bypass: <reason>` as its own trailer line
 alongside (or instead of, if this was never a real task-folder task)
-`Spine-Task:` — on every repo's commit in the multi-repo case, not just
-one. Never omit both — every commit in this system should carry
+`Spine-Task:`. Never omit both — every commit in this system should carry
 `Spine-Task:` or `Spine-Bypass:` so the task origin is traceable from
 `git log`.
 
-**Propagate** (Extension C §2.5) — this task's own commit(s) just changed
-files (and possibly decisions/contracts) other open tasks may ground on:
-
-```
-git diff --name-only <base>..HEAD -- . | \
-  ${CLAUDE_SKILL_DIR}/../../scripts/propagate <task-id> --project <project root> \
-    --decisions <comma-list from plan.md's ## Grounds on decisions, if any> \
-    --contracts <comma-list from verify.md's Contract conformance section, if any>
-```
-
-Multi-repo: run once per repo actually committed in `## Ship order`
-(`--project <repo-path>`, changed paths repo-qualified to match
-`claims.json`'s own convention), plus once at the workspace root for its
-own commit. This never blocks the ship — it's informational at ship time,
-the same way `contract-touch` is; what it writes (flags in *other* tasks'
-folders) is what later blocks *their* phase advance, via
-`core/skills/task/SKILL.md`'s flag-blocked-advance check, not this one.
-
-**Pushing and opening the PR is autonomy-aware, gated by the team profile**
+**Pushing and opening the PR is autonomy-aware, gated by the profile**
 (read `work/<task-id>/autonomy`, `core/skills/task/SKILL.md`, absent = `guided`;
 and `.spine/profile.json`'s `pr_open`, `core/ADAPTER-CONTRACT.md` §7, absent =
 `auto-checkpointed`). `pr_open` decides which autonomies get a draft PR opened
@@ -747,32 +612,10 @@ First log it: `${CLAUDE_SKILL_DIR}/../../scripts/spine-event shipped` (it reads
 the task from `.spine/current-task`, so it must run before that file is
 removed below).
 
-Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> done` (this is the transition out of
-`shipping (n of n)` for a multi-repo task — every repo's commit from §5
-must have actually landed before this write, never write `done` while a
-repo in `## Ship order` is still pending). `registry-sync <task-id>` —
-this task's own final registry write; a `done` task no longer participates
-in `claims-check`/`propagate`'s open-task scan (both skip
-by `state`), so this is what actually removes it from the shared
-registry's live view, not just from this machine's local one. Remove
-`.spine/current-task`
+Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> done` (the commit from §5 must have
+actually landed before this write). Remove `.spine/current-task`
 (the task is no longer active — a subsequent trivial edit should default
-back to Class 0, not stay phase-gated against a finished task; for a
-multi-repo task this file lives at the workspace root only — member repos
-never had one).
-
-**Worktree cleanup (Extension D — experimental):**
-if this task's cwd path contains `/.claude/worktrees/` (the same cheap signal
-`core/skills/task/SKILL.md`'s Extension D branch uses), this task ran in a
-spine-created worktree. Ask once: "This task ran in worktree `<path>` — remove
-it now, or keep it (e.g. still watching the PR)?" If the human doesn't answer
-either way, default to keeping it — removal is the harder-to-reverse choice,
-and a clean ship should have nothing uncommitted left to lose anyway so
-there's no cost to leaving the decision open. `ExitWorktree({action: "keep"})`
-or, only on explicit confirmation, `ExitWorktree({action: "remove"})` (adding
-`discard_changes: true` only if the tool itself reports uncommitted changes
-and the human confirms discarding them — never set it preemptively). Skip
-this whole paragraph silently for a task that didn't run in a worktree.
+back to Class 0, not stay phase-gated against a finished task).
 
 Tell the human where the briefing is. For a `guided` task,
 also point at `pr-description.md` (§4a) — pushing and opening the PR is their

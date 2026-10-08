@@ -35,9 +35,7 @@ both.
 ## Inter-task contracts
 
 <!-- What task N may assume task N-1 left true — an in-repo, sequential
-     handoff between this milestone's own member tasks. Not the same thing
-     as a cross-repo contract (Extension B's ws/contracts/<name>/) — those
-     are between repos, these are between tasks in one repo. -->
+     handoff between this milestone's own member tasks. -->
 
 ## Known gaps for future member tasks
 

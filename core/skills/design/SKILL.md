@@ -115,12 +115,6 @@ class escalation and future rules will consume, don't leave it vague),
 `/ship`-distilled path — if you can't name a real alternative that was
 actually weighed, the category probably wasn't decided yet, just asserted).
 
-**Repo topology's decision determines whether this becomes a multi-repo
-project** (Extension B territory) — if the human's answer here is "more
-than one repository," say so plainly and note that `/workspace` (not this
-skill) is what turns that decision into a real workspace; `/design` itself
-still finishes this single design session normally.
-
 ## 2. Capability planning
 
 The stack is itself a design decision by this point (repo-topology,

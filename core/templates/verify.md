@@ -5,72 +5,44 @@ gate (a capability that's `unavailable`/`not-applicable`) must appear here
 explicitly; a silently missing section is exactly the "silently skipped
 gate" — the worst object this system can produce.
 
-Multi-repo (Extension B): §"Floor results" repeats once per repo this task
-*edited* — full floor, unmodified per-repo, per the edited-vs-affected
-rule. §"Contract conformance" is new, and covers every
-repo this task's diff put in *contract* blast radius without editing it
-directly (core/scripts/contract-touch) — those repos never run their own
-floor for this task, only contract-check, so a consumer's pre-existing
-unrelated failures can never block a producer task forever (the "stranger's
-mess" anti-pattern). A single-repo task has exactly one
-"Floor results" table and an empty "Contract conformance" section — this
-is the same zero-behavioral-change guarantee as everywhere else in
-Extension B, expressed at the template level.
-
-§"UI render" and §"UI conformance" are both unrelated to Extension B —
-each applies to a single-repo task exactly as it does a multi-repo one,
-gated purely by whether the task's own diff touched a declared UI path
-(core/scripts/ui-touch), never by repo topology, and both share that one
-ui-touch result rather than each re-deriving it. Omit either whole section
-on any task (single- or multi-repo) where nothing was touched.
+§"UI render" and §"UI conformance" are gated purely by whether the task's
+own diff touched a declared UI path (core/scripts/ui-touch), and both share
+that one ui-touch result rather than each re-deriving it. Omit either whole
+section on any task where nothing was touched.
 -->
 
 # Verify: `<task-id>`
 
 Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
 
-## Floor results — `<repo-name, omit label for single-repo>`
+## Floor results
 
 <!-- One line per capability, verbatim from `floor --out`'s JSON: PASS/FAIL
      with the adapter's one-line success message, or DEGRADED with the
      capabilities.json reason. Fail-fast means capabilities after the first
-     failure are marked "not reached," not silently absent. Repeat this
-     whole section, once per repo, for a multi-repo task that edited more
-     than one — never merge two repos' results into one table. -->
+     failure are marked "not reached," not silently absent. -->
 
 | Capability | Result | Detail |
 |---|---|---|
 | typecheck | | |
 
-## Contract conformance
-
-<!-- Multi-repo only, omitted entirely for single-repo. One line per
-     contract core/scripts/contract-touch reported touched: the contract
-     name, its spec_change classification (additive/breaking/unchanged),
-     registry_stale flag, and — for every repo in that contract's
-     consumers_in_blast_radius that this task did *not* edit directly —
-     that repo's contract-check result (PASS/FAIL/DEGRADED, same
-     discipline as a floor capability). "None" only if contract-touch
-     reported zero touched contracts. -->
-
 ## UI render
 
 <!-- Omitted entirely if core/scripts/ui-touch found no UI path touched
-     (this project's own .spine/ui-paths.conf) in any repo — this is not a
+     (this project's own .spine/ui-paths.conf) — this is not a
      degraded gate, it's a gate that correctly never applied. When it did
      apply: the ui-render result — PASS/FAIL with the adapter's own
      diagnostics on fail (which route rendered blank/wrong, per
      core/ADAPTER-CONTRACT.md §3.3's pass criterion), `SKIPPED (Class 1,
      ui_render_class1_optin not set)` if this class wasn't eligible, or
      DEGRADED with capabilities.json's recorded reason if the capability
-     isn't implemented. Same discipline as "Contract conformance" above —
-     never folded into the floor table even though it's a floor-shaped
+     isn't implemented. Never folded into the floor table even though it's a floor-shaped
      pass/fail. -->
 
 ## UI conformance
 
-<!-- Omitted entirely if core/scripts/ui-touch found no UI path touched in
-     any repo — same "correctly never applied" rule "UI render" above
+<!-- Omitted entirely if core/scripts/ui-touch found no UI path touched —
+     same "correctly never applied" rule "UI render" above
      uses; this section gates on the same ui-touch result, never a second
      check. When it did apply: the ui-conformance result — PASS/FAIL
      with the adapter's own diagnostics on fail (which screen was missing
@@ -107,12 +79,6 @@ Class: `<1|2>` · Floor run: `<ISO timestamp>` · Result: `<PASS | FAIL>`
 
 predicted=`<n>` actual=`<n>` precision=`<p>` recall=`<r>` f1=`<f>`
 
-<!-- Multi-repo: one predicted/actual/precision/recall/f1 line per edited
-     repo — conformance itself is unchanged (core/scripts/conformance still
-     takes one --project), /verify just calls it once per repo with that
-     repo's own predicted-touch subset (the repo-qualified prefix stripped)
-     and its own git diff. -->
-
 ## Adversary verdicts
 
 <!-- One subsection per adversary that ran or was reused (falsifier always;
@@ -144,12 +110,6 @@ predicted=`<n>` actual=`<n>` precision=`<p>` recall=`<r>` f1=`<f>`
 ### Falsifier
 
 Attacked: <the `attacked` list, verbatim>
-
-<!-- Multi-repo: falsifier's delegation additionally received the touched
-     contracts + their consumer lists (core/agents/falsifier.md's
-     "Cross-repo mandate") — its `attacked` list should show that hunt
-     alongside (a)/(b)/(c) and the three questions; if it doesn't, that's
-     itself worth a line here, not silent. -->
 
 Verdicts kept: `<n>` · dropped: `<n>`
 

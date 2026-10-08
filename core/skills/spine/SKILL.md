@@ -8,11 +8,10 @@ argument-hint: []
 You are running `/spine`, the front desk. Its whole job is that an engineer
 never has to remember how spine works: it tells them where they are and what
 to type next. **It is strictly read-only — it never edits a file, advances a
-phase, resolves a flag, runs a gate, or recommends a decision. It reports.**
+phase, runs a gate, or recommends a decision. It reports.**
 No arguments.
 
-Project root: the workspace root if `workspace.json` exists here, otherwise
-this project. Scripts live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
+Project root: this project. Scripts live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
 `${CLAUDE_SKILL_DIR}` is a placeholder you expand to this skill's own
 directory; hand the resulting path — including the `../../` — to the shell
 verbatim. Do **not** lexically collapse `skills/spine/../..` to `.claude/`:
@@ -32,8 +31,8 @@ code), and stop. Nothing below applies.
 ## 2. Check install health first — always
 
 Before reporting anything else, run the cheap health check — the same one
-`core/skills/task/SKILL.md`'s step 0 runs, for the same reason: a core skew or
-a missing enforcement layer matters *most* when there's active work, not
+`core/skills/task/SKILL.md`'s step 0 runs, for the same reason: a missing
+enforcement layer matters *most* when there's active work, not
 least.
 
 ```
@@ -47,22 +46,20 @@ and reported a problem," and "could not run at all":
 - **Not installed** (exit 2 / "capabilities.json not found" / "no
   `.claude/hook-guard`") — this project isn't set up (or its enforcement layer
   is missing). Explain in a sentence or two that spine installs by symlink
-  from a core checkout, and give the exact command: a second engineer on an
-  already-installed project runs `<spine>/core/scripts/setup --project
+  from a core checkout, and give the exact command: an already-installed
+  project runs `<spine>/core/scripts/setup --project
   <project root>`; a brand-new project needs `/bootstrap` or `/adopt` from a
   session in the spine repo. Then **stop** — there's no task state to report.
-- **Core skew** ("CORE VERSION SKEW", warn or strict) **or hook-guard
-  differs/stale** — the install works but this machine's core is out of sync.
-  **Relay the exact message and the fix command it printed, verbatim** (`git
-  pull` in the spine checkout, then `setup`); don't soften a strict skew into a
-  warning. This is a warning, not a stop — surface it, then **continue** to the
-  report below, because the engineer still needs to know their task status
-  (and needs the skew warning precisely because they may be about to ship).
-- **Clean** (exit 0, no skew, guard present) — say nothing about it. A healthy
+- **Hook-guard differs/stale** — the install works but this machine's
+  enforcement layer is out of sync. **Relay the exact message and the fix
+  command it printed, verbatim.** This is a warning, not a stop — surface it,
+  then **continue** to the report below, because the engineer still needs to
+  know their task status.
+- **Clean** (exit 0, guard present) — say nothing about it. A healthy
   install needs no announcement. Continue.
 - **Could not run at all** (the call was blocked/denied/errored before the
   script's own logic) — say so plainly ("couldn't run the install check, so I
-  can't confirm this machine's core is in sync") rather than reporting a clean
+  can't confirm the install is healthy") rather than reporting a clean
   bill. Low-stakes and read-only, so continue to the report below — just don't
   claim health you couldn't verify.
 
@@ -75,7 +72,7 @@ a revision) after `/design` already consumed an earlier version of it —
 and nothing notices, because "did the handoff change" was previously
 something only a human remembering to check would catch. This check
 closes that mechanically, the same way the install-health check above
-catches core skew instead of hoping someone notices:
+catches a missing enforcement layer instead of hoping someone notices:
 
 1. If `docs/product-spec.md` doesn't exist, skip this section silently —
    nothing to check.
@@ -110,9 +107,7 @@ run at all, say so plainly and skip this check rather than guessing.
 ## 4. Wayfinder map in progress (read-only, additive)
 
 If `.spine/current-wayfinder` exists, report it before anything else
-below — independent of whether a task is also active, the same way the
-workspace member-repo milestone check (§5.1) is additive to the
-workspace-root callout rather than replacing it:
+below — independent of whether a task is also active:
 
 ```
 ${CLAUDE_SKILL_DIR}/../../scripts/wayfinder-frontier --map <map-id> --project <project root>
@@ -199,40 +194,6 @@ mid-milestone, read-only, exactly like every other check in this skill:
 5. This is a report, not a gate (§5 applies here too) — it never opens the
    task itself, only names the command that would.
 
-#### Member-repo milestone check (workspace only)
-
-If `workspace.json` exists at the project root **and** no `.spine/current-task`
-exists at the workspace root (i.e., the workspace itself is idle), also scan
-each member repo for mid-milestone state. This is additive — the workspace's
-own milestone callout (if any) still appears first; member-repo callouts follow
-below it.
-
-For each entry in `workspace.json`'s `repos` array, take its `path` field and:
-
-1. Glob `<path>/work/M*/milestone.md`. If none exist (or `.spine/` is absent),
-   skip this repo silently.
-2. Apply the same milestone-progress logic as steps 2–4 above, but **against
-   the member repo's own task files** (`<path>/work/<task-id>/state`, etc.).
-3. Find the lowest-numbered incomplete milestone and report it clearly
-   attributed to the member repo. Use this format:
-
-   > In member repo `<repo-name>` (M*n*, *x* of *total* tasks done): next task
-   > is TBD — open it here with `/task <description> --milestone M*n*`
-
-   or, if the next task is a real-but-open task id:
-
-   > In member repo `<repo-name>` (M*n*, *x* of *total* tasks done): next task
-   > is `<task-id>` (*phase*) — switch to that repo and run `/task` to resume.
-
-   `<repo-name>` is the last path segment of `path` (e.g. `waitlist` from
-   `../g1-svc-api/modules/waitlist`).
-
-4. If every milestone in the member repo is complete, skip it silently.
-
-This check is read-only and purely additive. Errors accessing a member repo
-(path not found, no `.spine/`, no `work/`) are silently skipped — never
-surfaced as errors to the engineer.
-
 After the milestone callout (or immediately, if there is none), give the
 short, plain menu — one sentence each, the starting move first. List
 only commands that exist in this install (they're symlinked under
@@ -264,10 +225,7 @@ deviations, not an error):
 - `work/<task-id>/state` — the phase (`research` / `plan` / `implement` /
   `verify` / `ship`).
 - `work/<task-id>/class` — `0` / `1` / `2`.
-- `work/<task-id>/owner` — who opened it.
 - `work/<task-id>/milestone` — the milestone id, if this task belongs to one.
-- `work/<task-id>/flags.json` — count entries, and how many are
-  `"acknowledged": false`.
 - `work/<task-id>/deviations.md` — count records whose status is `open`.
 
 Report, in plain words: the task id and title, its class, the current phase,
@@ -275,9 +233,6 @@ and then **the one thing to do next** — because "what do I type now" is the
 question this command exists to answer. Derive the next action from the phase
 and the blockers, mirroring `core/skills/task/SKILL.md`'s own transitions:
 
-- **Any unacknowledged flag** — this blocks the next phase advance right now.
-  Lead with it: quote what changed and say it must be acknowledged before the
-  task can move on. This outranks the phase-based next action.
 - **Any `open` halt-tier deviation** — the task is waiting on a human decision;
   point them at `work/<task-id>/deviations.md`.
 - Otherwise, by phase: `research`/`plan` — spine is grounding or drafting; if a
@@ -288,10 +243,6 @@ and the blockers, mirroring `core/skills/task/SKILL.md`'s own transitions:
   exists and its `Result:` line reads `PASS`, the next action is to run `/ship
   <task-id>`; if `FAIL`, the task needs fixes and a re-run of `/verify`. `ship` —
   the next action is to run `/ship <task-id>`.
-
-If a `workspace.json` is present, note that this is a workspace-root task and
-name the member repos it touches (from the plan's `## Ship order` or `##
-Predicted touch`) so they know its scope isn't a single repo.
 
 Resuming is `/task`'s job, not yours — if they want to continue the work, the
 next action you name (or `/task` with no argument, which offers to resume) is

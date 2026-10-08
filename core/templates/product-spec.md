@@ -127,8 +127,7 @@ Last updated: `<yyyy-mm-dd>`
 
 **Auth model:**
 
-**Repo topology:** <!-- single repo, or multiple repos coordinated via
-     /workspace (core/skills/workspace/SKILL.md) — say which, and why,
+**Repo topology:** <!-- single repo, or several — say which, and why,
      if you already know. -->
 
 ## UI/visual handoff

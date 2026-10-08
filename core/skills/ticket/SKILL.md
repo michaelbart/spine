@@ -18,8 +18,7 @@ use it directly. If omitted, read `.spine/current-task` (one line, the
 active task ID) from the project root. If neither yields an ID, ask the
 engineer which task to generate a ticket description for before proceeding.
 
-Project root: the workspace root if `workspace.json` exists here,
-otherwise this project. Templates at
+Project root: this project. Templates at
 `${CLAUDE_SKILL_DIR}/../../templates/<name>`. `${CLAUDE_SKILL_DIR}` is a
 placeholder you expand to this skill's own directory; hand the resulting
 path — including the `../../` — to the shell verbatim. Do **not** lexically

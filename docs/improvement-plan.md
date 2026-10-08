@@ -528,10 +528,11 @@ rounds of hook-bypass bugs were found.
 
 **Decisions to confirm while doing it (none block starting):**
 
-- [ ] **`claims-check` / worktree isolation.** Without teammates, claims only
-  guard two tasks in one checkout (worktree isolation, "Extension D",
-  experimental). Check the census: if worktree isolation is unused, remove it
-  and `claims-check` entirely; if used, keep a local-only overlap check.
+- [x] **`claims-check` / worktree isolation.** Decided 2026-10-08: removed
+  both. Census: no non-agent worktree was ever created in turnpilot or tgml,
+  all 74 `flags.json` files are `[]`, and `registry-sync` itself reported that
+  it committed nothing at task open. The `worktree-prep` capability stays
+  because adversaries run in harness-provided worktrees that need deps.
 - [ ] **`work/` sharing.** With no other engineer, task state has no reader
   but the owner. Default: gitignore all of `work/` (as `1524cd8` began),
   keeping distilled `docs/decisions/` committed. Confirm before changing
@@ -542,18 +543,18 @@ rounds of hook-bypass bugs were found.
 
 **Steps (each its own commit):**
 
-1. [ ] Tag the current `main` as `pre-team-removal`.
-2. [ ] Delete the skill, scripts, templates and rules with no hook coupling
+1. [x] Tag `pre-team-removal` (on the `improvement-plan` branch at `09c23c7`, the last commit before G).
+2. [x] Delete the skill, scripts, templates and rules with no hook coupling
    (`/workspace`, `propagate`, `registry-sync`, `contract-touch`,
    `contracts.md`, templates) and their selftest cases.
-3. [ ] Simplify the hooks: replace `_workspace-route` with the small
+3. [ ] (next, own commit) Simplify the hooks: replace `_workspace-route` with the small
    single-repo helper. **Own commit**, because these are the security layer.
    The fuzz suite for the kept functions must pass; each retained behavior
    keeps a negative control.
-4. [ ] Strip workspace / claims / pin branches from the skills and scripts
+4. [x] Strip workspace / claims / pin branches from the skills and scripts
    listed above.
-5. [ ] Remove pin and skew code from `setup` / `update`.
-6. [ ] Docs sweep (also satisfies part of F2 / F5).
+5. [x] Remove pin and skew code from `setup` / `update`.
+6. [~] Docs sweep: README and `tradeoffs.md` team/cross-repo sections done in G1; the rest is F.
 
 **Acceptance:** `grep -rn` for `workspace_route`, `workspace.json`,
 `claims-check`, `registry-sync`, `propagate`, `contract-touch`, `core-pin`
@@ -561,6 +562,21 @@ finds nothing outside `docs/history/`; `core-selftest` is green and its case
 count and runtime are reported before/after; a single-repo golden replay
 (one Class 1, one Class 2 task on a fixture project) produces the same
 artifacts as before; line counts removed are recorded in the commit message.
+
+---
+
+**G1 result (2026-10-08, commit on `improvement-plan`):** 47 files, +285/-3,324
+lines. `task/SKILL.md` 918 -> ~700, `ship` 782 -> 625, `verify` 653 -> 534,
+`spine` 307 -> 258, `autopilot` 258 -> 216, `ADAPTER-CONTRACT.md` 1073 -> 1006
+(`contract-check` removed; section 3.2 is now an unfilled number, left rather
+than renumbering). `core-selftest`: 179 cases, green. Judgment calls to keep in
+mind: `/verify` step 1b (a pure cross-repo contracts gate) is gone, so the
+UI steps run 1, 1c, 1d, 1e; `/task` got a small "Step 0 install health"
+(`setup --check`: hook-guard + profile validity) back after an agent removed
+all of Step 0; `/update` now shows `git log ORIG_HEAD..HEAD` in the spine
+checkout instead of comparing against a pin; the `/task` "second task while one
+is active" prompt now offers resume-or-park until E2 (abandon) exists.
+The hooks still carry workspace-mode code and tests (step 3).
 
 ---
 

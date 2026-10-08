@@ -1170,335 +1170,6 @@ fuzz_run_bounded "workspace_route: WSR_OWNER_ROOT always empty-or-absolute (800 
 fuzz_run_bounded "_wsr_glob_eq: NFC/NFD-symmetric (20 real accented/CJK/emoji names)" 60 _wsr_fuzz_globeq_body
 
 # ---------------------------------------------------------------------------
-# contract-touch: additive/breaking classification, blast radius, registry
-# staleness
-# ---------------------------------------------------------------------------
-
-CONTRACT_TOUCH="$SCRIPT_DIR/contract-touch"
-
-new_contract_touch_fixture() {
-  # new_contract_touch_fixture <producer-file-matches-glob:yes|no> ->
-  # "<workspace-root>|<producer-repo>". "no" seeds the producer repo with a
-  # committed file that does NOT match producer_paths, while workspace.json
-  # still records producer_paths_match_count:1 — a registry that's already
-  # stale before this task's own diff, isolating registry-staleness
-  # detection from spec/producer-touch detection (which a fresh, matching
-  # fixture would otherwise conflate: removing the one matching file to
-  # drive the count to zero also shows up as a producer-touched change).
-  local matches="$1" ws producer producer_file
-  ws="$(mktemp -d "$tmp_root/ctws.XXXXXX")"
-  producer="$(mktemp -d "$tmp_root/ctproducer.XXXXXX")"
-
-  git init -q "$producer"
-  git -C "$producer" config user.email "core-selftest@example.com"
-  git -C "$producer" config user.name "core-selftest"
-  mkdir -p "$producer/src/routes"
-  if [[ "$matches" == "yes" ]]; then
-    producer_file="$producer/src/routes/items.ts"
-  else
-    producer_file="$producer/src/routes/other.ts"
-  fi
-  echo "export const items = {}" >"$producer_file"
-  git -C "$producer" add -A
-  git -C "$producer" commit -q -m seed
-
-  git init -q "$ws"
-  git -C "$ws" config user.email "core-selftest@example.com"
-  git -C "$ws" config user.name "core-selftest"
-  mkdir -p "$ws/contracts/items-api"
-  cat >"$ws/contracts/items-api/spec.md" <<'SPECEOF'
-# items-api
-
-- GET /items returns a list of items
-- POST /items creates an item
-SPECEOF
-  cat >"$ws/workspace.json" <<WSEOF
-{
-  "repos": [
-    {"name": "producer", "path": "$producer", "role": "producer"}
-  ],
-  "contracts": [
-    {
-      "name": "items-api",
-      "producer": "producer",
-      "producer_paths": ["src/routes/items.*"],
-      "producer_paths_match_count": 1,
-      "consumers": ["consumer-app"],
-      "spec_path": "contracts/items-api/spec.md",
-      "registered": "2026-08-01"
-    }
-  ]
-}
-WSEOF
-  git -C "$ws" add -A
-  git -C "$ws" commit -q -m seed
-  printf '%s|%s' "$ws" "$producer"
-}
-
-ct_run() {
-  # ct_run <workspace-root> -> "<exit>|<out-json-path>"
-  local ws="$1" out code=0
-  out="$tmp_root/ct-$$-$RANDOM.json"
-  ( cd "$ws" && "$CONTRACT_TOUCH" --out "$out" >/dev/null 2>&1 ) || code=$?
-  printf '%s|%s' "$code" "$out"
-}
-
-ct_field() { jq -r --arg n "$2" '.touched_contracts[] | select(.name==$n) | .[$3]' "$1" --arg n "items-api" 2>/dev/null; }
-
-# Case A: spec.md changed with only additions (pure append) -> additive,
-# spec_touched, touched, consumer enters blast radius.
-ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
-echo "- DELETE /items removes an item" >>"$ws/contracts/items-api/spec.md"
-r="$(ct_run "$ws")"; ct_out="${r#*|}"
-spec_change="$(jq -r '.touched_contracts[0].spec_change' "$ct_out" 2>/dev/null)"
-blast="$(jq -r '.consumers_in_blast_radius | join(",")' "$ct_out" 2>/dev/null)"
-if [[ "$spec_change" == "additive" && "$blast" == "consumer-app" ]]; then
-  pass "contract-touch: pure-addition spec change classified additive, consumer enters blast radius"
-else
-  fail "contract-touch: pure-addition spec change -> expected additive/consumer-app, got spec_change=$spec_change blast=$blast ($ct_out)"
-fi
-
-# Case B: spec.md changed with a removed/modified line -> breaking.
-ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
-sed -i.bak 's/GET \/items returns a list of items/GET \/items returns a paginated list of items/' "$ws/contracts/items-api/spec.md"
-rm -f "$ws/contracts/items-api/spec.md.bak"
-r="$(ct_run "$ws")"; ct_out="${r#*|}"
-spec_change="$(jq -r '.touched_contracts[0].spec_change' "$ct_out" 2>/dev/null)"
-if [[ "$spec_change" == "breaking" ]]; then
-  pass "contract-touch: modified spec line classified breaking"
-else
-  fail "contract-touch: modified spec line -> expected breaking, got spec_change=$spec_change ($ct_out)"
-fi
-
-# Case C: producer's own producer_paths file changed, spec untouched ->
-# touched via producer_touched alone, spec_change stays "unchanged".
-ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"; producer="${ctf#*|}"
-echo "export const items = { v2: true }" >>"$producer/src/routes/items.ts"
-r="$(ct_run "$ws")"; ct_out="${r#*|}"
-spec_touched="$(jq -r '.touched_contracts[0].spec_touched' "$ct_out" 2>/dev/null)"
-producer_touched="$(jq -r '.touched_contracts[0].producer_touched' "$ct_out" 2>/dev/null)"
-spec_change="$(jq -r '.touched_contracts[0].spec_change' "$ct_out" 2>/dev/null)"
-if [[ "$spec_touched" == "false" && "$producer_touched" == "true" && "$spec_change" == "unchanged" ]]; then
-  pass "contract-touch: producer-path-only change detected, spec_change stays unchanged"
-else
-  fail "contract-touch: producer-only change -> expected spec_touched=false producer_touched=true spec_change=unchanged, got spec_touched=$spec_touched producer_touched=$producer_touched spec_change=$spec_change ($ct_out)"
-fi
-
-# Case D: registry already stale (producer_paths_match_count:1 registered,
-# but the committed producer file doesn't match producer_paths at all) with
-# NO other change anywhere -> registry_stale alone drives touched=true.
-ctf="$(new_contract_touch_fixture no)"; ws="${ctf%%|*}"
-r="$(ct_run "$ws")"; ct_out="${r#*|}"
-# `if . == null then ... else . end`, not `// "missing"` — jq's `//`
-# treats a present `false` as falsy too (the same gotcha round 2 already
-# hit for smoke_in_floor), which would otherwise silently rewrite the
-# very `false` values this case exists to check into the string "missing".
-registry_stale="$(jq -r '.touched_contracts[0].registry_stale | if . == null then "missing" else . end' "$ct_out" 2>/dev/null)"
-spec_touched="$(jq -r '.touched_contracts[0].spec_touched | if . == null then "missing" else . end' "$ct_out" 2>/dev/null)"
-producer_touched="$(jq -r '.touched_contracts[0].producer_touched | if . == null then "missing" else . end' "$ct_out" 2>/dev/null)"
-if [[ "$registry_stale" == "true" && "$spec_touched" == "false" && "$producer_touched" == "false" ]]; then
-  pass "contract-touch: a stale registry alone (no other change) still marks the contract touched"
-else
-  fail "contract-touch: stale registry -> expected registry_stale=true with spec/producer_touched both false, got registry_stale=$registry_stale spec_touched=$spec_touched producer_touched=$producer_touched ($ct_out)"
-fi
-
-# Case E: control — nothing touched, registry current -> empty
-# touched_contracts and empty blast radius.
-ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
-r="$(ct_run "$ws")"; ct_out="${r#*|}"
-touched_count="$(jq -r '.touched_contracts | length' "$ct_out" 2>/dev/null)"
-blast_count="$(jq -r '.consumers_in_blast_radius | length' "$ct_out" 2>/dev/null)"
-if [[ "$touched_count" == "0" && "$blast_count" == "0" ]]; then
-  pass "contract-touch: control — nothing touched, registry current -> empty touched_contracts and blast radius"
-else
-  fail "contract-touch: control -> expected 0/0, got touched_count=$touched_count blast_count=$blast_count ($ct_out)"
-fi
-
-# Case F: no workspace.json at $project -> exit 2, informational-only
-# script fails closed on its own precondition rather than silently no-op.
-ct_nows="$(mktemp -d "$tmp_root/ctnows.XXXXXX")"
-ct_nows_code=0
-( cd "$ct_nows" && "$CONTRACT_TOUCH" >/dev/null 2>&1 ) || ct_nows_code=$?
-if [[ "$ct_nows_code" == "2" ]]; then
-  pass "contract-touch: no workspace.json -> exit 2"
-else
-  fail "contract-touch: no workspace.json -> expected exit 2, got $ct_nows_code"
-fi
-
-# Case G: malformed (non-JSON) workspace.json -> exit 2.
-ct_badjson="$(mktemp -d "$tmp_root/ctbadjson.XXXXXX")"
-echo "not json" >"$ct_badjson/workspace.json"
-ct_badjson_code=0
-( cd "$ct_badjson" && "$CONTRACT_TOUCH" >/dev/null 2>&1 ) || ct_badjson_code=$?
-if [[ "$ct_badjson_code" == "2" ]]; then
-  pass "contract-touch: malformed workspace.json -> exit 2"
-else
-  fail "contract-touch: malformed workspace.json -> expected exit 2, got $ct_badjson_code"
-fi
-
-# Negative control: temporarily disable the breaking-vs-additive awk
-# heuristic (force it to always report additive) and confirm case B above
-# actually fails without it.
-ct_negctrl_backup="$(mktemp "$tmp_root/ct-negctrl.XXXXXX")"
-cp "$CONTRACT_TOUCH" "$ct_negctrl_backup"
-sed -i.bak "s/if awk '\/\^@@\/{p=1; next} p \&\& \/\^-\/{f=1} END{exit !f}' <<<\"\$diff_out\"; then/if false; then/" "$CONTRACT_TOUCH"
-rm -f "$CONTRACT_TOUCH.bak"
-ctf="$(new_contract_touch_fixture yes)"; ws="${ctf%%|*}"
-sed -i.bak 's/GET \/items returns a list of items/GET \/items returns a paginated list of items/' "$ws/contracts/items-api/spec.md"
-rm -f "$ws/contracts/items-api/spec.md.bak"
-negctrl_result="$(ct_run "$ws")"
-negctrl_spec_change="$(jq -r '.touched_contracts[0].spec_change' "${negctrl_result#*|}" 2>/dev/null)"
-cp "$ct_negctrl_backup" "$CONTRACT_TOUCH"
-if [[ "$negctrl_spec_change" != "breaking" ]]; then
-  pass "contract-touch: negative control confirms the breaking-classification case above is meaningful (fails without the real check)"
-else
-  fail "contract-touch: negative control did NOT fail as expected — the breaking-classification case may be vacuous"
-fi
-
-# ---------------------------------------------------------------------------
-# claims-check: the write/write vs write/read vs read/read asymmetric
-# collision matrix, done-task exclusion, and --diff DECLARED/UNDECLARED
-# tagging
-# ---------------------------------------------------------------------------
-# Round-5's scripts-coverage backlog closure: these run on every real
-# task's ship-time re-grounding sequence, so a silent regression here
-# would matter on every real ship.
-
-CLAIMS_CHECK="$SCRIPT_DIR/claims-check"
-
-cc_task() {
-  # cc_task <proj> <task-id> <state> <owner> <claims-json-body>
-  local proj="$1" tid="$2" state="$3" owner="$4" body="$5"
-  mkdir -p "$proj/work/$tid"
-  printf '%s' "$state" >"$proj/work/$tid/state"
-  printf '%s' "$owner" >"$proj/work/$tid/owner"
-  printf '%s' "$body" >"$proj/work/$tid/claims.json"
-}
-
-cc_run() {
-  # cc_run <proj> <self-id> [extra-args...] -> "<exit>|<output>"
-  local proj="$1" self="$2"; shift 2
-  local out code=0
-  out="$("$CLAIMS_CHECK" "$self" --project "$proj" --no-pull "$@" 2>&1)" || code=$?
-  printf '%s|%s' "$code" "$out"
-}
-
-# Case A: write/write — both tasks predict touching the same path -> BLOCK.
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-cc_task "$proj" ME open alice '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-cc_task "$proj" OTHER open bob '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-r="$(cc_run "$proj" ME)"
-if [[ "${r%%|*}" == "1" && "${r#*|}" == *"write/write with OTHER"* ]]; then
-  pass "claims-check: write/write collision blocks"
-else
-  fail "claims-check: write/write collision -> expected exit=1 'write/write with OTHER', got $r"
-fi
-
-# Case B: write/read — self predicts writing a path the other task's
-# research grounds on -> BLOCK (either direction is a real collision, not
-# just the one this task initiates).
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-cc_task "$proj" ME open alice '{"predicted_touch":["src/b.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-cc_task "$proj" OTHER open bob '{"predicted_touch":[],"grounding_files":["src/b.ts"],"grounding_decisions":[],"contracts":[]}'
-r="$(cc_run "$proj" ME)"
-if [[ "${r%%|*}" == "1" && "${r#*|}" == *"write/read with OTHER"* ]]; then
-  pass "claims-check: write/read collision blocks (self writes what other reads)"
-else
-  fail "claims-check: write/read collision -> expected exit=1 'write/read with OTHER', got $r"
-fi
-
-# Case C: read/read — both merely ground on the same file, neither writes
-# it -> WARN only, never blocks. This is the specific asymmetry the
-# script's own header calls "the whole reason this is usable in a real
-# codebase" — blocking on shared reads would make it unusable.
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-cc_task "$proj" ME open alice '{"predicted_touch":[],"grounding_files":["src/c.ts"],"grounding_decisions":[],"contracts":[]}'
-cc_task "$proj" OTHER open bob '{"predicted_touch":[],"grounding_files":["src/c.ts"],"grounding_decisions":[],"contracts":[]}'
-r="$(cc_run "$proj" ME)"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"read/read with OTHER"* && "${r#*|}" == *"clear"* ]]; then
-  pass "claims-check: read/read overlap warns but does not block"
-else
-  fail "claims-check: read/read overlap -> expected exit=0 with a read/read warning and still 'clear', got $r"
-fi
-
-# Case D: a task in "done" state is excluded from the comparison entirely
-# — a real collision against closed work must not block.
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-cc_task "$proj" ME open alice '{"predicted_touch":["src/d.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-cc_task "$proj" OTHER done bob '{"predicted_touch":["src/d.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-r="$(cc_run "$proj" ME)"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"clear"* ]]; then
-  pass "claims-check: a done task's claims are excluded from the collision check"
-else
-  fail "claims-check: done-task exclusion -> expected exit=0 'clear' (OTHER is done), got $r"
-fi
-
-# Case E: no overlap anywhere -> clear, exit 0.
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-cc_task "$proj" ME open alice '{"predicted_touch":["src/e1.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-cc_task "$proj" OTHER open bob '{"predicted_touch":["src/e2.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-r="$(cc_run "$proj" ME)"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"clear"* ]]; then
-  pass "claims-check: control — no overlap at all -> clear"
-else
-  fail "claims-check: control -> expected exit=0 'clear', got $r"
-fi
-
-# Case F: missing self claims.json -> exit 2 (can't evaluate).
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-mkdir -p "$proj/work/ME"
-r="$(cc_run "$proj" ME)"
-if [[ "${r%%|*}" == "2" ]]; then
-  pass "claims-check: missing self claims.json -> exit 2"
-else
-  fail "claims-check: missing self claims.json -> expected exit 2, got $r"
-fi
-
-# Case G: --diff mode. self's real (uncommitted) diff touches a path never
-# in its own declared predicted_touch — the "narrow-claims defeat" the
-# --diff mode exists to catch — colliding with another open task's own
-# predicted_touch -> BLOCK, tagged [UNDECLARED]. A second path IS in the
-# declared set and also collides -> tagged [DECLARED].
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-git init -q "$proj"
-git -C "$proj" config user.email "core-selftest@example.com"
-git -C "$proj" config user.name "core-selftest"
-mkdir -p "$proj/src"
-echo "seed" >"$proj/src/declared.ts"
-echo "seed" >"$proj/src/undeclared.ts"
-git -C "$proj" add -A
-git -C "$proj" commit -q -m seed
-cc_task "$proj" ME open alice '{"predicted_touch":["src/declared.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-cc_task "$proj" OTHER open bob '{"predicted_touch":["src/declared.ts","src/undeclared.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-echo "changed" >>"$proj/src/declared.ts"
-echo "changed" >>"$proj/src/undeclared.ts"
-r="$(cc_run "$proj" ME --diff HEAD)"
-if [[ "${r%%|*}" == "1" && "${r#*|}" == *"[UNDECLARED"* && "${r#*|}" == *"[DECLARED]"* ]]; then
-  pass "claims-check --diff: tags a real-diff collision outside declared claims UNDECLARED, and one inside declared claims DECLARED"
-else
-  fail "claims-check --diff: expected exit=1 with both [UNDECLARED and [DECLARED] present, got $r"
-fi
-
-# Negative control: temporarily disable the write/write blocking append
-# (the specific asymmetry Case A/C above exist to guard — the script's own
-# header calls it "the whole reason this is usable in a real codebase")
-# and confirm Case A actually fails without it.
-cc_negctrl_backup="$(mktemp "$tmp_root/cc-negctrl.XXXXXX")"
-cp "$CLAIMS_CHECK" "$cc_negctrl_backup"
-sed -i.bak "s/blocking+=(\"write\/write with/warnings+=(\"write\/write with/" "$CLAIMS_CHECK"
-rm -f "$CLAIMS_CHECK.bak"
-proj="$(mktemp -d "$tmp_root/ccproj.XXXXXX")"
-cc_task "$proj" ME open alice '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-cc_task "$proj" OTHER open bob '{"predicted_touch":["src/a.ts"],"grounding_files":[],"grounding_decisions":[],"contracts":[]}'
-negctrl_result="$(cc_run "$proj" ME)"
-cp "$cc_negctrl_backup" "$CLAIMS_CHECK"
-if [[ "${negctrl_result%%|*}" != "1" ]]; then
-  pass "claims-check: negative control confirms the write/write blocking case above is meaningful (fails without the real check)"
-else
-  fail "claims-check: negative control did NOT fail as expected — the write/write blocking case may be vacuous"
-fi
-
-# ---------------------------------------------------------------------------
 # check-stale: grounding-file drift, quarantine banner, own-task-folder
 # exemption, and grounding-decisions status/content drift (including the
 # specific disclosed fix: a decision already superseded at citation time is
@@ -1689,199 +1360,6 @@ if [[ "$negctrl_code" != "0" ]]; then
   pass "check-stale: negative control confirms the already-superseded-at-citation case above is meaningful (fails under the original literal-'superseded' comparison)"
 else
   fail "check-stale: negative control did NOT fail as expected — the already-superseded case may be vacuous"
-fi
-
-# ---------------------------------------------------------------------------
-# registry-sync: commit-scope discipline (work/<task-id>/ only, never the
-# rest of the tree) and the push / pull-rebase-retry sequence against a
-# real local remote
-# ---------------------------------------------------------------------------
-
-REGISTRY_SYNC="$SCRIPT_DIR/registry-sync"
-
-new_registry_sync_fixture() {
-  # -> "<proj>" — git-initialized project, one commit, work/T1/ present.
-  local proj
-  proj="$(mktemp -d "$tmp_root/rsproj.XXXXXX")"
-  git init -q "$proj"
-  git -C "$proj" config user.email "core-selftest@example.com"
-  git -C "$proj" config user.name "core-selftest"
-  mkdir -p "$proj/work/T1" "$proj/src"
-  echo "seed" >"$proj/src/app.js"
-  git -C "$proj" add -A
-  git -C "$proj" commit -q -m seed
-  printf '%s' "$proj"
-}
-
-rs_run() {
-  # rs_run <proj> <task-id> -> "<exit>|<output>"
-  local proj="$1" tid="$2" out code=0
-  out="$("$REGISTRY_SYNC" "$tid" --project "$proj" 2>&1)" || code=$?
-  printf '%s|%s' "$code" "$out"
-}
-
-# Case A: no changes under work/T1/ -> nothing to commit, exit 0.
-rs_proj="$(new_registry_sync_fixture)"
-r="$(rs_run "$rs_proj" T1)"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"nothing to commit"* ]]; then
-  pass "registry-sync: no changes -> nothing to commit"
-else
-  fail "registry-sync: no changes -> expected exit=0 'nothing to commit', got $r"
-fi
-
-# Case B: a real change under work/T1/ -> committed, no remote configured
-# -> exit 0 "committed locally only".
-rs_proj="$(new_registry_sync_fixture)"
-echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
-r="$(rs_run "$rs_proj" T1)"
-committed_file="$(git -C "$rs_proj" show --name-only --pretty=format: HEAD 2>/dev/null | awk 'NF')"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"committed T1"* && "${r#*|}" == *"locally only"* && "$committed_file" == "work/T1/claims.json" ]]; then
-  pass "registry-sync: a real change is committed, no remote -> 'locally only'"
-else
-  fail "registry-sync: real change, no remote -> expected exit=0 'committed T1'/'locally only' with work/T1/claims.json in the commit, got $r (committed: $committed_file)"
-fi
-
-# Case C: scope discipline — an unrelated dirty file elsewhere in the same
-# working tree must stay uncommitted/unstaged after registry-sync runs.
-# This is the specific property the script's own header calls out: during
-# implement, this is the only thing that keeps a registry sync from
-# accidentally committing an engineer's in-progress, unreviewed code.
-rs_proj="$(new_registry_sync_fixture)"
-echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
-echo "unrelated in-progress edit" >>"$rs_proj/src/app.js"
-r="$(rs_run "$rs_proj" T1)"
-app_js_status="$(git -C "$rs_proj" status --porcelain -- src/app.js)"
-if [[ "${r%%|*}" == "0" && -n "$app_js_status" && "$app_js_status" == " M src/app.js" ]]; then
-  pass "registry-sync: scope discipline — an unrelated dirty file elsewhere in the tree stays uncommitted"
-else
-  fail "registry-sync: scope discipline -> expected src/app.js still uncommitted (' M src/app.js'), got status='$app_js_status' ($r)"
-fi
-
-# Case D: task-id folder doesn't exist -> exit 2.
-rs_proj="$(new_registry_sync_fixture)"
-r="$(rs_run "$rs_proj" NOSUCHTASK)"
-if [[ "${r%%|*}" == "2" ]]; then
-  pass "registry-sync: missing task folder -> exit 2"
-else
-  fail "registry-sync: missing task folder -> expected exit 2, got $r"
-fi
-
-# Case E: project isn't a git repo -> exit 2.
-rs_nongit="$(mktemp -d "$tmp_root/rsnongit.XXXXXX")"
-mkdir -p "$rs_nongit/work/T1"
-r="$(rs_run "$rs_nongit" T1)"
-if [[ "${r%%|*}" == "2" ]]; then
-  pass "registry-sync: project is not a git repo -> exit 2"
-else
-  fail "registry-sync: not a git repo -> expected exit 2, got $r"
-fi
-
-# Case F: a real local remote (bare repo), nothing else has changed it ->
-# push succeeds cleanly, exit 0 "pushed".
-rs_bare="$(mktemp -d "$tmp_root/rsbare.XXXXXX")"
-git init -q --bare "$rs_bare"
-rs_proj="$(new_registry_sync_fixture)"
-rs_branch="$(git -C "$rs_proj" rev-parse --abbrev-ref HEAD)"
-git -C "$rs_proj" remote add origin "$rs_bare"
-git -C "$rs_proj" push -q -u origin "$rs_branch"
-echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
-r="$(rs_run "$rs_proj" T1)"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"pushed T1 to origin/$rs_branch"* ]]; then
-  pass "registry-sync: a real local remote, no conflict -> pushed"
-else
-  fail "registry-sync: real remote, no conflict -> expected exit=0 'pushed T1 to origin/$rs_branch', got $r"
-fi
-
-# Case F2: a local branch tracking a differently-named remote branch (main
-# tracking origin/master) pushes to the tracked branch and never creates a
-# same-named one on the remote — the regression that created a stray
-# origin/main. Then a remote with no tracking branch commits locally only.
-rs_bare2="$(mktemp -d "$tmp_root/rsbare2.XXXXXX")"
-git init -q --bare "$rs_bare2"
-rs_proj2="$(new_registry_sync_fixture)"
-git -C "$rs_proj2" remote add origin "$rs_bare2"
-git -C "$rs_proj2" branch -M main
-git -C "$rs_proj2" push -q -u origin main:master
-echo '{"owner":"alice"}' >"$rs_proj2/work/T1/claims.json"
-r="$(rs_run "$rs_proj2" T1)"
-remote_heads="$(git -C "$rs_bare2" for-each-ref --format='%(refname:short)' refs/heads | sort | tr '\n' ' ')"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"pushed T1 to origin/master"* && "$remote_heads" == "master " ]]; then
-  pass "registry-sync: local main tracking origin/master pushes to master and creates no stray origin/main"
-else
-  fail "registry-sync: tracked-branch push -> expected 'pushed T1 to origin/master' and only 'master' on the remote, got $r (remote branches: $remote_heads)"
-fi
-
-rs_bare3="$(mktemp -d "$tmp_root/rsbare3.XXXXXX")"
-git init -q --bare "$rs_bare3"
-rs_proj3="$(new_registry_sync_fixture)"
-git -C "$rs_proj3" remote add origin "$rs_bare3"
-git -C "$rs_proj3" config "branch.$(git -C "$rs_proj3" rev-parse --abbrev-ref HEAD).remote" origin
-echo '{"owner":"alice"}' >"$rs_proj3/work/T1/claims.json"
-r="$(rs_run "$rs_proj3" T1)"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"no tracking branch"* && -z "$(git -C "$rs_bare3" for-each-ref refs/heads)" ]]; then
-  pass "registry-sync: a remote with no tracking branch commits locally and pushes nothing"
-else
-  fail "registry-sync: no tracking branch -> expected exit 0 'no tracking branch' and an empty remote, got $r"
-fi
-
-# Case G: the shared mainline moved (a second engineer pushed an unrelated
-# commit to origin) before this sync's own push — the initial push is
-# rejected, registry-sync pulls --rebase and retries once, and (since the
-# two commits touch different files, no real conflict) the retry succeeds.
-rs_bare2="$(mktemp -d "$tmp_root/rsbare2.XXXXXX")"
-git init -q --bare "$rs_bare2"
-rs_proj="$(new_registry_sync_fixture)"
-rs_branch="$(git -C "$rs_proj" rev-parse --abbrev-ref HEAD)"
-git -C "$rs_proj" remote add origin "$rs_bare2"
-git -C "$rs_proj" push -q -u origin "$rs_branch"
-# A second, independent clone pushes an unrelated commit to the same
-# origin/branch first, simulating a colleague's registry-sync landing
-# concurrently.
-rs_clone2="$(mktemp -d "$tmp_root/rsclone2.XXXXXX")"
-git clone -q "$rs_bare2" "$rs_clone2"
-git -C "$rs_clone2" config user.email "core-selftest@example.com"
-git -C "$rs_clone2" config user.name "core-selftest"
-mkdir -p "$rs_clone2/work/T2"
-echo '{"owner":"bob"}' >"$rs_clone2/work/T2/claims.json"
-git -C "$rs_clone2" add -A
-git -C "$rs_clone2" commit -q -m "spine: registry sync — T2"
-git -C "$rs_clone2" push -q origin "$rs_branch"
-# Now $rs_proj is behind origin. Its own work/T1/ change should still sync
-# cleanly via the pull-rebase-retry path.
-echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
-r="$(rs_run "$rs_proj" T1)"
-if [[ "${r%%|*}" == "0" && "${r#*|}" == *"rejected"* && "${r#*|}" == *"pushed T1 to origin/$rs_branch after rebase"* ]]; then
-  pass "registry-sync: shared mainline moved concurrently -> pull-rebase retry succeeds (no real conflict)"
-else
-  fail "registry-sync: concurrent push, no real conflict -> expected a rejected-then-pushed-after-rebase sequence, got $r"
-fi
-# Confirm both engineers' work actually landed on origin after the retry.
-origin_files="$(git -C "$rs_proj" ls-tree -r --name-only origin/"$rs_branch" 2>/dev/null | sort)"
-if [[ "$origin_files" == *"work/T1/claims.json"* && "$origin_files" == *"work/T2/claims.json"* ]]; then
-  pass "registry-sync: after the rebase retry, both this task's and the concurrent task's registry entries are present on origin"
-else
-  fail "registry-sync: expected both work/T1/claims.json and work/T2/claims.json on origin after rebase, got: $origin_files"
-fi
-
-# Negative control: temporarily disable the commit scope (stage the whole
-# tree, -A, instead of only work/<task-id>/) and confirm Case C above
-# actually fails without the real scope discipline — the property the
-# script's own header calls the load-bearing reason this script exists in
-# this exact shape.
-rs_negctrl_backup="$(mktemp "$tmp_root/rs-negctrl.XXXXXX")"
-cp "$REGISTRY_SYNC" "$rs_negctrl_backup"
-sed -i.bak 's/git -C "\$project" add -- "work\/\$task_id\/"/git -C "$project" add -A/' "$REGISTRY_SYNC"
-rm -f "$REGISTRY_SYNC.bak"
-rs_proj="$(new_registry_sync_fixture)"
-echo '{"owner":"alice"}' >"$rs_proj/work/T1/claims.json"
-echo "unrelated in-progress edit" >>"$rs_proj/src/app.js"
-negctrl_result="$(rs_run "$rs_proj" T1)"
-negctrl_app_js_status="$(git -C "$rs_proj" status --porcelain -- src/app.js)"
-cp "$rs_negctrl_backup" "$REGISTRY_SYNC"
-if [[ -z "$negctrl_app_js_status" ]]; then
-  pass "registry-sync: negative control confirms the scope-discipline case above is meaningful (the unrelated file gets swept in without the real -- work/\$task_id/ scoping)"
-else
-  fail "registry-sync: negative control did NOT reproduce the expected over-broad-commit failure — the scope-discipline case may be vacuous (status: '$negctrl_app_js_status')"
 fi
 
 # ---------------------------------------------------------------------------
@@ -2574,106 +2052,9 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# propagate: supersession propagation — flags every OTHER open task that
-# grounds on what changed, severity from the target's own phase, self- and
-# done-task exclusion
-# ---------------------------------------------------------------------------
-
-PROPAGATE="$SCRIPT_DIR/propagate"
-
-new_propagate_fixture() {
-  local proj
-  proj="$(mktemp -d "$tmp_root/propproj.XXXXXX")"
-  git init -q "$proj"
-  git -C "$proj" config user.email "core-selftest@example.com"
-  git -C "$proj" config user.name "core-selftest"
-  mkdir -p "$proj/work/SRC"
-  echo done >"$proj/work/SRC/state"
-  git -C "$proj" add -A
-  git -C "$proj" commit -q -m seed
-  printf '%s' "$proj"
-}
-
-prop_task() {
-  # prop_task <proj> <task-id> <state> <claims-json-body>
-  mkdir -p "$1/work/$2"
-  printf '%s' "$3" >"$1/work/$2/state"
-  printf '%s' "$4" >"$1/work/$2/claims.json"
-}
-
-proj="$(new_propagate_fixture)"
-prop_task "$proj" OTHER research '{"grounding_files":["src/a.ts"],"grounding_decisions":[],"contracts":[]}'
-out="$(printf 'src/a.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
-flags_count="$(jq 'length' "$proj/work/OTHER/flags.json" 2>/dev/null)"
-severity="$(jq -r '.[0].severity' "$proj/work/OTHER/flags.json" 2>/dev/null)"
-if [[ "$flags_count" == "1" && "$severity" == "advisory" && "$out" == *"flagged OTHER"* ]]; then
-  pass "propagate: a changed file OTHER grounds on -> flags OTHER, severity=advisory (OTHER is in research/plan)"
-else
-  fail "propagate: expected 1 advisory flag for OTHER, got count=$flags_count severity=$severity out=$out"
-fi
-
-proj="$(new_propagate_fixture)"
-prop_task "$proj" OTHER implement '{"grounding_files":["src/b.ts"],"grounding_decisions":[],"contracts":[]}'
-out="$(printf 'src/b.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
-severity="$(jq -r '.[0].severity' "$proj/work/OTHER/flags.json" 2>/dev/null)"
-if [[ "$severity" == "disruptive" ]]; then
-  pass "propagate: OTHER past research/plan -> severity=disruptive"
-else
-  fail "propagate: expected severity=disruptive, got $severity"
-fi
-
-proj="$(new_propagate_fixture)"
-prop_task "$proj" OTHER plan '{"grounding_files":[],"grounding_decisions":["D-3"],"contracts":[]}'
-out="$(printf '' | "$PROPAGATE" SRC --project "$proj" --decisions D-3 2>&1)"
-flags_count="$(jq 'length' "$proj/work/OTHER/flags.json" 2>/dev/null)"
-what="$(jq -r '.[0].what_changed' "$proj/work/OTHER/flags.json" 2>/dev/null)"
-if [[ "$flags_count" == "1" && "$what" == *"decision 'D-3'"* ]]; then
-  pass "propagate: a changed decision OTHER cites -> flags OTHER"
-else
-  fail "propagate: expected 1 flag citing decision D-3, got count=$flags_count what='$what'"
-fi
-
-proj="$(new_propagate_fixture)"
-prop_task "$proj" OTHER plan '{"grounding_files":["src/unrelated.ts"],"grounding_decisions":[],"contracts":[]}'
-out="$(printf 'src/z.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
-if [[ "$out" == *"nothing flagged"* ]]; then
-  pass "propagate: control — no match -> nothing flagged"
-else
-  fail "propagate: control -> expected 'nothing flagged', got: $out"
-fi
-
-proj="$(new_propagate_fixture)"
-prop_task "$proj" OTHER done '{"grounding_files":["src/c.ts"],"grounding_decisions":[],"contracts":[]}'
-out="$(printf 'src/c.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
-if [[ "$out" == *"nothing flagged"* ]]; then
-  pass "propagate: a done task is excluded from propagation targets"
-else
-  fail "propagate: done-task exclusion -> expected 'nothing flagged', got: $out"
-fi
-
-proj="$(new_propagate_fixture)"
-prop_task "$proj" SRC research '{"grounding_files":["src/self.ts"],"grounding_decisions":[],"contracts":[]}'
-out="$(printf 'src/self.ts\n' | "$PROPAGATE" SRC --project "$proj" 2>&1)"
-src_flag_count="0"
-[[ -f "$proj/work/SRC/flags.json" ]] && src_flag_count="$(jq 'length' "$proj/work/SRC/flags.json" 2>/dev/null)"
-if [[ "$src_flag_count" == "0" && "$out" == *"nothing flagged"* ]]; then
-  pass "propagate: the source task never flags itself"
-else
-  fail "propagate: source self-exclusion -> expected no flags for SRC, got count=$src_flag_count out=$out"
-fi
-
-prop_code=0
-printf '' | "$PROPAGATE" SRC >/dev/null 2>&1 || prop_code=$?
-if [[ "$prop_code" == "2" ]]; then
-  pass "propagate: missing --project -> exit 2"
-else
-  fail "propagate: missing --project -> expected exit 2, got $prop_code"
-fi
-
-# ---------------------------------------------------------------------------
 # setup: portable-install, per-machine step — real symlinks into this
-# checkout, pin init/comparison across warn/strict, settings.local.json
-# merge discipline
+# checkout, --check (hook-guard + profile), settings.local.json merge
+# discipline
 # ---------------------------------------------------------------------------
 # Uses this actual spine checkout as --spine (a real, valid, read-only
 # source — setup never writes anywhere under $resolved_spine, only reads
@@ -2697,51 +2078,48 @@ new_setup_fixture() {
 su_proj="$(new_setup_fixture)"
 su_code=0
 su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
-if [[ "$su_code" == "0" && "$su_out" == *"no pin recorded"* ]]; then
-  pass "setup --check: no pin yet -> exit 0, 'no pin recorded'"
+if [[ "$su_code" == "0" && "$su_out" == *"has no .claude/hook-guard yet"* && "$su_out" != *"VERSION SKEW"* ]]; then
+  pass "setup --check: a project with no hook-guard -> exit 0 with a plain warning, no skew message"
 else
-  fail "setup --check: no pin -> expected exit=0 'no pin recorded', got exit=$su_code: $su_out"
+  fail "setup --check: no hook-guard -> expected exit 0 + hook-guard warning, got exit=$su_code: $su_out"
 fi
 
 su_proj="$(new_setup_fixture)"
-jq -n --arg sha "$REAL_SPINE_SHA" '{sha:$sha, mode:"warn"}' >"$su_proj/.spine/core-pin.json"
+mkdir -p "$su_proj/.claude"
+cp "$REAL_SPINE/core/templates/hook-guard" "$su_proj/.claude/hook-guard"
 su_code=0
 su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
-if [[ "$su_code" == "0" && "$su_out" == *"core pin ok"* ]]; then
-  pass "setup --check: a pin matching this machine's spine sha -> ok"
+if [[ "$su_code" == "0" && "$su_out" != *"hook-guard"* ]]; then
+  pass "setup --check: a current hook-guard -> silent"
 else
-  fail "setup --check: matching pin -> expected exit=0 'core pin ok', got exit=$su_code: $su_out"
+  fail "setup --check: current hook-guard -> expected silence, got exit=$su_code: $su_out"
+fi
+echo "# edited" >>"$su_proj/.claude/hook-guard"
+su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || true
+if [[ "$su_out" == *"differs from this machine's spine"* ]]; then
+  pass "setup --check: a hand-edited hook-guard is reported as stale"
+else
+  fail "setup --check: edited hook-guard not reported: $su_out"
 fi
 
 su_proj="$(new_setup_fixture)"
-jq -n '{sha:"0000000000000000000000000000000000000000", mode:"warn"}' >"$su_proj/.spine/core-pin.json"
+echo '{"profile":"standard","not_a_real_field":true}' >"$su_proj/.spine/profile.json"
 su_code=0
-su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
-if [[ "$su_code" == "0" && "$su_out" == *"CORE VERSION SKEW (warn)"* ]]; then
-  pass "setup --check: pin mismatch under warn mode -> exit 0, loud warning, not blocking"
+"$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check >/dev/null 2>&1 || su_code=$?
+if [[ "$su_code" == "1" ]]; then
+  pass "setup --check: an invalid .spine/profile.json -> exit 1"
 else
-  fail "setup --check: warn-mode mismatch -> expected exit=0 with a (warn) SKEW message, got exit=$su_code: $su_out"
-fi
-
-su_proj="$(new_setup_fixture)"
-jq -n '{sha:"0000000000000000000000000000000000000000", mode:"strict"}' >"$su_proj/.spine/core-pin.json"
-su_code=0
-su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" --check 2>&1)" || su_code=$?
-if [[ "$su_code" == "1" && "$su_out" == *"CORE VERSION SKEW (strict)"* ]]; then
-  pass "setup --check: pin mismatch under strict mode -> exit 1, blocking"
-else
-  fail "setup --check: strict-mode mismatch -> expected exit=1 with a (strict) SKEW message, got exit=$su_code: $su_out"
+  fail "setup --check: invalid profile -> expected exit 1, got $su_code"
 fi
 
 su_proj="$(new_setup_fixture)"
 su_code=0
 su_out="$("$SETUP" --project "$su_proj" --spine "$REAL_SPINE" 2>&1)" || su_code=$?
 skill_link_target="$(readlink "$su_proj/.claude/skills/task" 2>/dev/null)"
-pinned_sha="$(jq -r '.sha' "$su_proj/.spine/core-pin.json" 2>/dev/null)"
-if [[ "$su_code" == "0" && "$skill_link_target" == "$REAL_SPINE/core/skills/task" && "$pinned_sha" == "$REAL_SPINE_SHA" ]]; then
-  pass "setup: a full run creates real symlinks into this spine checkout and initializes the pin at the current sha"
+if [[ "$su_code" == "0" && "$skill_link_target" == "$REAL_SPINE/core/skills/task" && ! -e "$su_proj/.spine/core-pin.json" ]]; then
+  pass "setup: a full run creates real symlinks into this spine checkout and writes no version pin"
 else
-  fail "setup: full run -> expected a task skill symlink and a pin at $REAL_SPINE_SHA, got exit=$su_code link=$skill_link_target pin=$pinned_sha"
+  fail "setup: full run -> expected a task skill symlink and no core-pin.json, got exit=$su_code link=$skill_link_target pin=$(ls "$su_proj/.spine/core-pin.json" 2>&1)"
 fi
 
 su_proj="$(mktemp -d "$tmp_root/setupproj.XXXXXX")"
@@ -3115,7 +2493,7 @@ fi
 
 
 # ---------------------------------------------------------------------------
-# map-age, and setup's work/.gitignore migration
+# map-age
 # ---------------------------------------------------------------------------
 MAP_AGE="$SCRIPT_DIR/map-age"
 ma_proj="$(mktemp -d "$tmp_root/maproj.XXXXXX")"
@@ -3132,16 +2510,6 @@ for n in 1 2 3; do git -C "$ma_proj" commit -q --allow-empty -m "c$n"; done
 [[ "$("$MAP_AGE" --project "$ma_proj" --max 2)" == "stale 3" ]] && pass "map-age: 3 commits behind with --max 2 -> stale 3" || fail "map-age: expected 'stale 3'"
 sed -i.bak 's/^sha:.*/sha: (pending)/' "$ma_proj/docs/map.md"
 [[ "$("$MAP_AGE" --project "$ma_proj")" == "stale unknown" ]] && pass "map-age: unreadable stamp -> stale unknown" || fail "map-age: unreadable stamp should be 'stale unknown'"
-
-su_proj="$(new_setup_fixture)"
-mkdir -p "$su_proj/work"
-printf '*/state\n*/class\n*/claims.json\n*/artifacts/\n' >"$su_proj/work/.gitignore"
-"$SETUP" --project "$su_proj" --spine "$REAL_SPINE" >/dev/null 2>&1 || true
-if [[ "$(cat "$su_proj/work/.gitignore")" == "*/artifacts/" ]]; then
-  pass "setup: drops the old task-state patterns from work/.gitignore, keeps artifacts"
-else
-  fail "setup: work/.gitignore migration wrong: $(cat "$su_proj/work/.gitignore")"
-fi
 
 # ---------------------------------------------------------------------------
 # repo-lint: dangling .claude symlinks, README command table, doc citations

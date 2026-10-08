@@ -37,47 +37,30 @@
 # allow patterns — both already project-relative, confirmed by direct
 # inspection in Phase A, untouched by this script.
 #
-# Version pin: $project/
-# .spine/core-pin.json — {"sha": "<spine HEAD this project is calibrated
-# against>", "mode": "warn|strict"} — IS committed, ordinary project
-# state, bumped only by a maintainer who has actually re-run conformance
-# against the new core (README's "Staying installed" section documents
-# the workflow). This script initializes it on a project's first setup
-# run and, on every run thereafter, only ever *compares* against it,
-# never silently rewrites it — the whole point of a pin is that only a
-# deliberate act moves it.
-#
 # Usage:
-#   setup --project <path> [--spine <path>] [--pin-mode warn|strict] [--check]
+#   setup --project <path> [--spine <path>] [--check]
 #
-# --check: read-only. No symlink/.gitignore/.claude writes, no pin
-#   initialization. Just resolves spine's location and compares it
-#   against the pin. This is the "cheap session-start check" the build
-#   prompt asks for — wired into core/skills/task/SKILL.md's new step 0
-#   and core/skills/spine/SKILL.md, not a new hook (the deliverable
-#   manifest forbids one; see docs/tradeoffs.md's Phase B note for why a
-#   SessionStart-shaped hook was rejected in favor of this).
+# --check: read-only. No symlink/.gitignore/.claude writes. Reports whether
+#   .claude/hook-guard is current and whether .spine/profile.json is valid.
+#   This is the cheap session-start check wired into core/skills/task/SKILL.md
+#   step 0 and core/skills/spine/SKILL.md, not a hook.
 #
-# Exit codes: 0 ok (or pin mismatch under warn — printed loudly, not
-# blocking). 1 pin mismatch under strict mode — repair (if not --check)
-# still happened, but the caller should treat this as a halt. 2 usage or
-# hard failure (spine checkout not found, project not installed yet).
+# Exit codes: 0 ok. 1 an invalid .spine/profile.json (a broken gate config).
+# 2 usage or hard failure (spine checkout not found, project not installed yet).
 set -uo pipefail
 
 usage() {
-  echo "usage: setup --project <path> [--spine <path>] [--pin-mode warn|strict] [--check]" >&2
+  echo "usage: setup --project <path> [--spine <path>] [--check]" >&2
   exit 2
 }
 
 project=""
 spine_override=""
-pin_mode_override=""
 check_only=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --project) project="$2"; shift 2 ;;
     --spine) spine_override="$2"; shift 2 ;;
-    --pin-mode) pin_mode_override="$2"; shift 2 ;;
     --check) check_only=1; shift ;;
     *) usage ;;
   esac
@@ -97,123 +80,18 @@ resolved_spine="${spine_override:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
   echo "setup: $resolved_spine does not look like a spine checkout (no core/skills)" >&2
   exit 2
 }
-[[ -d "$resolved_spine/.git" ]] || {
-  echo "setup: $resolved_spine has no .git — cannot resolve a HEAD sha to pin against" >&2
-  exit 2
-}
-spine_sha="$(git -C "$resolved_spine" rev-parse HEAD)"
-
 # When spine installs itself as a project, the symlinks are committed as
 # relative paths (portable across machines), so the install-time steps that
 # create absolute symlinks and gitignore them must be skipped. Only
-# settings.local.json (machine-specific allow pattern) and the pin file are
+# settings.local.json (machine-specific allow pattern) is
 # written — everything else is already in the committed repo state.
 is_self_install=0
 [[ "$project" == "$resolved_spine" ]] && is_self_install=1
 
-pin_file="$project/.spine/core-pin.json"
-
-report_pin() {
-  # Sets PIN_STATUS to ok|mismatch-warn|mismatch-strict|unpinned, and on a
-  # mismatch also PIN_DIRECTION to behind|ahead|diverged — merge-base
-  # direction between this machine's resolved spine HEAD and the project's
-  # pinned sha. Both skew directions are common ("this machine ran ahead
-  # of the pin" and "the pin was already bumped, this machine hasn't
-  # pulled yet") and need opposite advice — the single always-"have a
-  # maintainer bump the pin" message this used to print was actively wrong
-  # for the second direction (git log <pinned>..<local> is an empty range
-  # when local is an ancestor of pinned, and the fix there is "git pull",
-  # not "bump a pin that's already correct").
-  if [[ ! -f "$pin_file" ]]; then
-    PIN_STATUS="unpinned"
-    return 0
-  fi
-  local pinned_sha pinned_mode
-  pinned_sha="$(jq -r '.sha // empty' "$pin_file" 2>/dev/null)"
-  pinned_mode="$(jq -r '.mode // "warn"' "$pin_file" 2>/dev/null)"
-  if [[ -z "$pinned_sha" ]]; then
-    PIN_STATUS="unpinned"
-    return 0
-  fi
-  if [[ "$pinned_sha" == "$spine_sha" ]]; then
-    PIN_STATUS="ok"
-    return 0
-  fi
-  if [[ "$pinned_mode" == "strict" ]]; then
-    PIN_STATUS="mismatch-strict"
-  else
-    PIN_STATUS="mismatch-warn"
-  fi
-  PINNED_SHA="$pinned_sha"
-
-  if git -C "$resolved_spine" merge-base --is-ancestor "$spine_sha" "$pinned_sha" 2>/dev/null; then
-    PIN_DIRECTION="behind"
-  elif git -C "$resolved_spine" merge-base --is-ancestor "$pinned_sha" "$spine_sha" 2>/dev/null; then
-    PIN_DIRECTION="ahead"
-  else
-    PIN_DIRECTION="diverged"
-  fi
-}
-
-print_pin_result() {
-  case "$PIN_STATUS" in
-    ok)
-      echo "setup: core pin ok — $project is calibrated against $spine_sha" ;;
-    unpinned)
-      echo "setup: no pin recorded at $pin_file yet" ;;
-    mismatch-warn)
-      case "$PIN_DIRECTION" in
-        behind)
-          echo "setup: CORE VERSION SKEW (warn) — $project's pin was bumped to" \
-               "$PINNED_SHA; this machine's spine still resolves to $spine_sha" \
-               "(an older commit). Hooks/gates on this machine may enforce" \
-               "differently than what this project now expects. Run 'git -C" \
-               "$resolved_spine pull' to catch up." ;;
-        ahead)
-          echo "setup: CORE VERSION SKEW (warn) — $project is pinned to $PINNED_SHA," \
-               "this machine's spine resolves to $spine_sha (newer). Hooks/gates on" \
-               "this machine may enforce differently than what this project was last" \
-               "calibrated against. Run 'git -C $resolved_spine log $PINNED_SHA..$spine_sha'" \
-               "to see what changed, then have a maintainer bump the pin once the" \
-               "new core has been tested (README: Staying installed)." ;;
-        *)
-          echo "setup: CORE VERSION SKEW (warn) — $project is pinned to $PINNED_SHA," \
-               "this machine's spine resolves to $spine_sha, and the two don't share" \
-               "a common ancestor in this checkout (diverged, or this machine's" \
-               "spine remote doesn't have $PINNED_SHA yet — try 'git -C" \
-               "$resolved_spine fetch'). Resolve by hand before trusting either." ;;
-      esac ;;
-    mismatch-strict)
-      case "$PIN_DIRECTION" in
-        behind)
-          echo "setup: CORE VERSION SKEW (strict) — $project's pin was bumped to" \
-               "$PINNED_SHA; this machine's spine still resolves to $spine_sha" \
-               "(an older commit). Blocking per this project's strict pin mode." \
-               "Run 'git -C $resolved_spine pull' to catch up, then re-run setup." >&2 ;;
-        ahead)
-          echo "setup: CORE VERSION SKEW (strict) — $project is pinned to $PINNED_SHA," \
-               "this machine's spine resolves to $spine_sha (newer). Blocking per" \
-               "this project's strict pin mode. Pull this machine's spine checkout" \
-               "back to $PINNED_SHA, or have a maintainer bump the pin after testing" \
-               "the newer core, before continuing." >&2 ;;
-        *)
-          echo "setup: CORE VERSION SKEW (strict) — $project is pinned to $PINNED_SHA," \
-               "this machine's spine resolves to $spine_sha, and the two don't share a" \
-               "common ancestor in this checkout. Blocking per this project's strict" \
-               "pin mode — resolve by hand (fetch/rebase) before continuing." >&2 ;;
-      esac ;;
-  esac
-}
-
 check_hook_guard_staleness() {
-  # hook-guard maintenance (Phase D self-red-team — "who updates it and
-  # how does it interact with the pin"): the guard is committed project
-  # content, not generated/gitignored like .claude/hooks itself, so a pin
-  # match alone does NOT prove the guard is current — someone could have
-  # hand-edited it, or it could predate Extension C's own addition of it
-  # entirely. Check its actual bytes against this machine's resolved
-  # spine template regardless of pin status, so drift in this one
-  # committed file can't hide behind an otherwise-matching pin.
+  # The guard is committed project content, not generated/gitignored like
+  # .claude/hooks itself, so it can be hand-edited or predate a spine update.
+  # Check its actual bytes against this machine's resolved spine template.
   local guard="$project/.claude/hook-guard"
   local template="$resolved_spine/core/templates/hook-guard"
   [[ -f "$template" ]] || return 0
@@ -230,14 +108,12 @@ check_hook_guard_staleness() {
 }
 
 if [[ "$check_only" -eq 1 ]]; then
-  report_pin
-  print_pin_result
   check_hook_guard_staleness
   # Team strictness profile (Phase 5): a broken/illegal profile is a broken
   # gate config, caught here loudly rather than silently enforced.
   profile_bad=0
   "$resolved_spine/core/scripts/profile-check" --project "$project" || profile_bad=1
-  { [[ "$PIN_STATUS" == "mismatch-strict" ]] || [[ "$profile_bad" -eq 1 ]]; } && exit 1
+  [[ "$profile_bad" -eq 1 ]] && exit 1
   exit 0
 fi
 
@@ -323,22 +199,6 @@ if [[ -f "$committed_settings" ]]; then
   ' "$committed_settings" >"$tmp" && mv "$tmp" "$committed_settings"
 fi
 
-# worktree.baseRef (Extension D, experimental — docs/worktree-support-plan.md):
-# EnterWorktree's default ("fresh") branches a new worktree from
-# origin/<default-branch>, not local HEAD. A same-machine second task
-# started via /task's worktree flow needs to see whatever the first task's
-# registry-sync has already committed locally, even if that push to origin
-# hasn't landed yet (or there's no remote at all — registry-sync treats "no
-# remote configured" as a normal no-op) — "fresh" would silently start that
-# worktree from a stale or empty snapshot in either case. Merge, never
-# replace, so a project's own symlinkDirectories/sparsePaths/bgIsolation/
-# location choices survive re-running this script.
-if [[ -f "$committed_settings" ]]; then
-  tmp="$(mktemp)"
-  jq '.worktree = (.worktree // {}) + {baseRef: "head"}' \
-    "$committed_settings" >"$tmp" && mv "$tmp" "$committed_settings"
-fi
-
 # Untrack any of these paths a pre-Extension-C install committed as real
 # symlinks (working-tree files are left exactly as sync_symlink just made
 # them — this only removes them from the git index). Skipped for self-install:
@@ -362,14 +222,6 @@ if [[ "$is_self_install" -eq 0 ]] && { [[ -d "$project/.git" ]] || git -C "$proj
   done
 fi
 
-# Older installs hid per-task state/owner/claims/approval from git, which
-# blinds registry-sync and claims-check to every other engineer's tasks. Only raw artifacts stay ignored; drop the rest.
-wgi="$project/work/.gitignore"
-if [[ "$is_self_install" -eq 0 && -f "$wgi" ]] && grep -qE '^\*/(state|class|owner|autonomy|flags\.json|claims\.json|approval\.json|ticket|milestone)$' "$wgi"; then
-  grep -vE '^\*/(state|class|owner|autonomy|flags\.json|claims\.json|approval\.json|ticket|milestone)$' "$wgi" >"$wgi.tmp" && mv "$wgi.tmp" "$wgi"
-  echo "setup: work/.gitignore no longer hides task state, owner or claims — commit it, and the task files now showing as new, so teammates can see them"
-fi
-
 # .claude/settings.local.json: merge, never overwrite an engineer's own
 # pre-existing local entries (§2.1's known cost — this file is genuinely
 # machine-local, this is the one thing this script legitimately owns a
@@ -383,20 +235,5 @@ jq --arg p "$allow_pattern" '
   if (.permissions.allow | index($p)) then . else .permissions.allow += [$p] end
 ' "$settings_local" >"$tmp" && mv "$tmp" "$settings_local"
 
-# Pin: initialize on first run only, never silently rewrite an existing one.
-mkdir -p "$project/.spine"
-if [[ ! -f "$pin_file" ]]; then
-  jq -n --arg sha "$spine_sha" --arg mode "${pin_mode_override:-warn}" \
-    '{sha:$sha, mode:$mode}' >"$pin_file"
-  echo "setup: initialized $pin_file at $spine_sha (mode: ${pin_mode_override:-warn})"
-elif [[ -n "$pin_mode_override" ]]; then
-  tmp="$(mktemp)"
-  jq --arg mode "$pin_mode_override" '.mode = $mode' "$pin_file" >"$tmp" && mv "$tmp" "$pin_file"
-  echo "setup: pin mode set to $pin_mode_override (sha left unchanged — only a maintainer bumps that)"
-fi
-
-report_pin
-print_pin_result
 echo "setup: ok — $project's hooks/skills/agents/rules resolve to $resolved_spine"
-[[ "$PIN_STATUS" == "mismatch-strict" ]] && exit 1
 exit 0

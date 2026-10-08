@@ -25,7 +25,7 @@
 # This script only ever narrows *effort* (dispatch budget), never *input* —
 # the caller still hands the adversary the complete current diff on every
 # outcome except REUSED. Computing "which files make up the blast radius"
-# (diff ∪ callers.md ∪ dep-diff.md ∪ touched-contract specs) stays the
+# (diff ∪ callers.md ∪ dep-diff.md) stays the
 # orchestrating skill's job, since it already needs that list for the
 # delegation message; this script only turns a already-known file list plus
 # on-disk state into the REUSED/FOCUSED/FULL decision.

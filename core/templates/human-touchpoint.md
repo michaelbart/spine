@@ -194,9 +194,7 @@ that specific one *is*, not what the family is.
 | halt-tier | a change I promised to ask you about first |
 | protected path | a file or folder you marked as needing extra care |
 | check-stale | the check that notices my notes about the code are out of date |
-| claims-check | the check that notices two tasks are about to edit the same things |
 | content-sources-check | the check that every piece of on-screen text has a known source |
-| registry-sync | saving the task's records to the shared history |
 | path-escalate | the guard that blocks edits to protected paths |
 | dep-gate | the guard that asks before any package is added or changed |
 | phase-gate | the guard that blocks code edits before the plan is approved |

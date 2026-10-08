@@ -32,10 +32,9 @@ that already looked complete. Its one-line output branches four ways:
 
 - **`TBD <milestone-id> <description>`** — propose it and stop: "Continue
   with `<milestone-id>`'s next task: `<description>`?" — before doing
-  anything else, Step 0 included. This is a real touchpoint, not a
-  courtesy notice: nothing has been created yet (no task folder, no
-  git-identity resolution), so it's the cheapest possible point
-  to catch a wrong guess, one keystroke against retyping the whole
+  anything else. This is a real touchpoint, not a
+  courtesy notice: nothing has been created yet (no task folder), so it's
+  the cheapest possible point to catch a wrong guess, one keystroke against retyping the whole
   description by hand. On confirmation, proceed exactly as if the human
   had typed `<that description> --milestone <that-milestone-id>`. On
   rejection or a correction, use what the human says instead (a different
@@ -64,46 +63,8 @@ that already looked complete. Its one-line output branches four ways:
   fall through to asking for a description; don't treat a script that
   couldn't execute as "nothing queued."
 
-**Step 0 — core version check (Extension C §2.1, the "cheap session-start
-check").** No SessionStart-shaped hook exists to carry this — the
-manifest forbids a new one — so it lives here, the one recurring entry
-point every real task passes through:
-
-```
-$(readlink -f "${CLAUDE_SKILL_DIR}")/../../scripts/setup --check --project <project root>
-```
-
-(`readlink -f` resolves the symlink so this works whether the skill is
-loaded from a direct checkout or a `.claude/skills/` symlink — `realpath`
-is an acceptable fallback if `readlink -f` is unavailable.)
-
-`ok`/`unpinned`: continue. `mismatch-warn`: show the warning, continue —
-this machine's core may enforce differently than what this project was
-calibrated against, but it's not a halt. `mismatch-strict`: stop here,
-show the message, do not classify or touch any task state until the
-engineer has pulled this machine's spine checkout to the pinned sha or a
-maintainer has bumped the pin (`core/skills/update/SKILL.md` has the full
-upgrade workflow). If `setup` itself could not run at all,
-this is the tooling-gap discipline below's "could not run" case —
-note it and proceed, don't treat an unreachable check as a passing one.
-
-**Multi-repo (Extension B)**: if `workspace.json` exists at the project
-root, this session's own project root *is* the workspace root, and this
-one `/task` invocation is the single task folder, single plan, single
-human approval for however many member repos the change touches — never
-a separate `/task` per repo. Every step below runs
-exactly once, at the workspace root; the only things that change shape are
-the `## Predicted touch` list (repo-qualified) and the plan-time escalation
-check in §3 — both called out inline below. **A project with no
-workspace.json runs every step below exactly as it always has** — this is
-the zero-behavioral-change guarantee at the skill level.
-
-**If `--milestone <id>` is given:** locate `work/<id>/milestone.md` as
-follows — **if `workspace.json` exists at the project root**, probe in
-order: (1) `work/<id>/milestone.md` at the workspace root; (2)
-`<member-repo-path>/work/<id>/milestone.md` for each repo in
-`workspace.json`'s `repos` array, in listed order; use the first path that
-exists. **If none exists, the milestone is new — before creating it, stop
+**If `--milestone <id>` is given:** look for `work/<id>/milestone.md`.
+**If it does not exist, the milestone is new — before creating it, stop
 and confirm with the human rather than silently creating an unplanned
 milestone.** This is the point `/roadmap`'s own sequencing and gap-absorption
 (`core/skills/roadmap/SKILL.md` §1a/§3) would normally already have run —
@@ -146,25 +107,20 @@ Ask once per leftover issue, with `AskUserQuestion`, in this form (per `core/tem
 <!-- touchpoint:end -->
 
 Only then create
-`work/<id>/milestone.md` at the workspace root, seeded from
+`work/<id>/milestone.md`, seeded from
 `core/templates/milestone.md` plus whatever gap entries were carried
 forward (bump `next-gap-id` past the highest carried id). **If
 `work/<id>/milestone.md` already exists, none of this applies** — either
 `/roadmap` already ran and did it, or an earlier task in this same milestone
-already did. **If `workspace.json` is absent**, read/create
-`work/<id>/milestone.md` at the project root as always (the new-milestone
-stop above applies here too). All reads and bookkeeping writes below
-(TBD-replacement, gap edits) happen at the resolved path, never silently
-re-rooted to the workspace root.
+already did.
 
-Read the resolved `milestone.md` (design-stage extension,
+Read `work/<id>/milestone.md` (design-stage extension,
 `core/templates/milestone.md`) before classifying — its `## Member tasks`
-list, `## Inter-task contracts` (what a prior member task in this milestone
-left true, which this task may assume without re-verifying), and `##
-Capability targets` all become planning context for every phase below. Once
+list and `## Capability targets` both become planning context for every
+phase below. Once
 this task's ID is generated (step 1), replace this milestone's first
-still-`TBD` member-task line with the real task ID (`Edit` on the resolved
-`milestone.md` path — this is bookkeeping, not a phase artifact). **Do
+still-`TBD` member-task line with the real task ID (`Edit` on
+`milestone.md` — this is bookkeeping, not a phase artifact). **Do
 this before writing `work/<task-id>/state` in step 1, not after** —
 `phase-gate` only restricts `Edit`/`Write` to a task's own
 `work/<task-id>/` once that task has a `state` file reading `research` or
@@ -193,119 +149,32 @@ State lives in four places, and every phase transition below updates them
   mid-stream escalation, the circuit breaker, a verify `FAIL`) pull the human
   in. Checks (floor, adversaries) never scale down with autonomy; only stops do.
 
-**The registry (Extension C §2.2/§2.3), sibling files alongside the three
-above — never crammed into `state` itself**, which every hook and skill
-above already reads as a bare one-line phase name:
+**Resuming:** if `.spine/current-task` already exists, offer to resume that
+task where it left off rather than starting a new one — do not silently
+abandon it. Read the existing task's `state` and `class`, and re-derive
+nothing from memory; a fresh session has none, so read
+`work/<task-id>/{research,plan,deviations}.md` before proceeding. If a new
+description was typed while a task is already active, don't swallow it into
+the resume offer: ask plainly whether to resume `<existing-task-id>` (phase
+`<state>`) or leave it parked and start `<new description>` (a parked task's
+folder stays on disk and `/task` can resume it later), and follow the human's
+answer; never silently pick one.
 
-- `work/<task-id>/owner` — one line, the git identity
-  (`git config user.name <user.email>`) that created this task. Written
-  once, at classify, never edited.
-- `work/<task-id>/claims.json` — this task's declared surfaces
-  (`core/templates/claims.json`). Empty skeleton at classify, populated
-  for real at plan approval (§3).
-- `work/<task-id>/flags.json` — array, `[]` at classify. Written by
-  `core/scripts/propagate` (Extension C §2.5) when another task's ship
-  changes something this task grounds on.
-
-**Flag-blocked advance — the real enforcement point, not a suggestion.**
-Before writing `state` forward at *any* of the three phase transitions
-below (research→plan, plan→implement, implement→verify), read
-`work/<task-id>/flags.json` first. If any entry has `"acknowledged":
-false`, refuse to advance: tell the human exactly what changed, when, by
-whom, and which grounding entry it hit (the flag's own fields — quote
-them, don't paraphrase), in this form (per `core/templates/human-touchpoint.md`), and stop:
-
-<!-- touchpoint:start short -->
-> **What happened:** <who> changed <what> at <when>, and the plan relied on it (flag fields quoted).
-> **What it means for you:** I paused before the next step because the plan may no longer match reality. Nothing has been changed.
-> **To continue:** look at that change; if it doesn't matter, mark the flag acknowledged in `work/<task-id>/flags.json` and tell me to continue.
-<!-- touchpoint:end --> The human resolves it the same way any
-halt-tier deviation resolves — by acting on the information, then editing
-that flag entry (`"acknowledged": true`, `"acknowledged_at"`,
-`"acknowledged_by"` set) — never by silently clearing it or advancing
-around it. This is the mechanism `core/scripts/propagate`'s flags exist to
-be *for*; a flag nothing ever reads back would be exactly the "manufactures
-confidence" failure shape a hook that doesn't fire produces — `/task` is
-what performs every phase transition, so `/task` is what
-owns this check, the same way `phase-gate` owns write-restriction during
-research/plan.
-
-**Registry sync — every write to any file in this list, and every phase
-transition, is followed by:**
+**Step 0 — install health check.** Before classifying anything, run the
+cheap check that this project's enforcement layer is intact:
 
 ```
-${CLAUDE_SKILL_DIR}/../../scripts/registry-sync <task-id> --project <project root> --message "<short reason>"
+$(readlink -f "${CLAUDE_SKILL_DIR}")/../../scripts/setup --check --project <project root>
 ```
 
-This is what makes "the registry is shared state" (Extension C §2.2) real
-rather than aspirational — a task folder that only exists on its creator's
-own machine is invisible to `claims-check` and `propagate` running
-anywhere else. `registry-sync` stages only `work/<task-id>/`, never the
-rest of the working tree (mid-implement code edits sitting elsewhere stay
-untouched and uncommitted, exactly as `phase-gate`'s own restriction
-already implies they should during research/plan). A "no remote
-configured" or "nothing changed" result is a normal, silent success, not a
-tooling gap — only a real push failure after `registry-sync`'s own
-rebase-retry is.
-
-**Resuming, or a second task in a worktree (Extension D — experimental):**
-if `.spine/current-task` already exists,
-first check whether this invocation actually names *new* work — a real
-description was typed (`$ARGUMENTS` non-empty) or `.spine/current-intake`
-exists — as opposed to a bare `/task` with nothing new to say, which always
-means resume. **Bare `/task`, nothing new:** read the existing task's `state`
-and `class` and offer to resume it where it left off rather than starting a
-new one — do not silently abandon it. Re-derive nothing from memory; a fresh
-session has none, so read `work/<task-id>/{research,plan,deviations}.md`
-before proceeding. **A new description (or intake handoff) was given while a
-task is already active here:** don't silently swallow it into a resume offer
-of the *other* task — that discards what the human just typed. Instead, first
-check whether this working directory is itself already a spine-created
-worktree (cheapest signal: the cwd path contains `/.claude/worktrees/` —
-`EnterWorktree`'s own convention); if so, skip straight to the bare-`/task`
-resume behavior above regardless — a worktree task never offers to spin up a
-worktree of its own, that's how nesting is avoided. Otherwise, ask plainly:
-`"<existing-task-id>` is active here (phase `<state>`). Start `<new
-description>` in a separate worktree instead of interrupting it, or
-resume/switch to `<existing-task-id>` here instead?"` Three real answers,
-never silently pick one:
-
-- **Resume/switch to `<existing-task-id>`** — fall through to the bare-`/task`
-  resume behavior above, ignoring the new description (the human chose the
-  existing task instead).
-- **New worktree** —
-  ```
-  EnterWorktree({ name: <a kebab-slug derived from the new description> })
-  ```
-  which switches this session's own working directory. Immediately, before
-  anything else runs in the new location:
-  ```
-  ${CLAUDE_SKILL_DIR}/../../scripts/setup --project <the new worktree's path>
-  ```
-  (`${CLAUDE_SKILL_DIR}` still resolves correctly here — it names this skill
-  file's own directory, unaffected by the session's cwd changing; pass the
-  new path explicitly via `--project` rather than relying on cwd.) `setup` is
-  idempotent and already handles being re-run — this call is what regenerates
-  the worktree's own `.claude/skills|agents|rules|hooks` symlinks and
-  `.claude/settings.local.json`, none of which `git worktree add` brings along
-  on its own since they're gitignored/machine-local in the original checkout.
-  Treat a `setup` failure here as a genuine stop, not a tooling-gap-and-continue
-  — running any further spine logic in a worktree with broken hook wiring
-  would silently defeat `phase-gate`/`path-escalate`/`dep-gate` for this task's
-  entire lifetime, not just degrade one check. Once `setup` succeeds, restart
-  this skill's own procedure from the top, from the new working directory, with
-  the same description — a `.spine/current-task` doesn't exist yet there, so
-  this time nothing routes back into this Extension D branch.
-- **Something else the human types** — follow it; don't re-guess.
-
-At `/ship`'s close-out, a task that ran in a spine-created worktree offers to
-clean it up — see `core/skills/ship/SKILL.md` §6. Known limitation, disclosed
-in `docs/tradeoffs.md`: `EnterWorktree` puts each worktree on its own new
-branch, so this task's `registry-sync` pushes to that branch, not the shared
-default branch — a colleague's `claims-check` won't see this task's
-`work/<task-id>/` folder until that branch merges. Harmless for the same
-engineer's own next `/task` (both worktrees share one local `.git`); it only
-matters for cross-engineer visibility, which this experiment isn't targeting.
+(`readlink -f` resolves the symlink so this works whether the skill is
+loaded from a direct checkout or a `.claude/skills/` symlink — `realpath`
+is an acceptable fallback.) No output: continue. A message about a missing or
+stale `.claude/hook-guard`: show it and continue, but say plainly that edits
+are not being gated until `setup` is re-run. Exit 1 (an invalid
+`.spine/profile.json`): stop, show the message, and do not touch any task state
+until it is fixed. If `setup` could not run at all, note it as a tooling gap
+and proceed; an unreachable check is not a passing one.
 
 Scripts referenced below live at `${CLAUDE_SKILL_DIR}/../../scripts/<name>`.
 Templates live at `${CLAUDE_SKILL_DIR}/../../templates/<name>`.
@@ -350,9 +219,8 @@ forced to `guided` regardless of what the handoff says — the ceiling);
 
 **Ticket branch (Extension F, experimental — `/intake`-originated, Class 1/2
 only), done here rather than in `/intake` itself:** this point comes after the
-Resuming/Extension D check above already resolved where this task actually
-runs (either this directory had no other active task, or the human just
-arrived in a fresh worktree) — the one place a branch switch can't collide
+Resuming check above already resolved that no other task is active in
+this directory — the one place a branch switch can't collide
 with another task's uncommitted work sitting in the same tree. If `ticket` is
 non-null, first check whether the current branch already resolves to this
 same key: check whether `git rev-parse --abbrev-ref HEAD` already contains
@@ -384,24 +252,21 @@ means that validation was skipped or the file was hand-edited since.
 
 - A local branch already named `<branch>` exists (`git rev-parse --verify
   --quiet refs/heads/<branch>`) — check it out, don't recreate it (a resumed
-  ticket, or a colleague's branch pulled locally).
+  ticket).
 - Otherwise a remote-tracking one exists (`git rev-parse --verify --quiet
   refs/remotes/<remote>/<branch>`, `<remote>` read the same way as below) —
   `git checkout -b <branch> <remote>/<branch>`.
 - Otherwise, create it fresh from current HEAD: `git checkout -b <branch>`.
   Then, if the branch you were just on has a configured remote
   (`git config branch.<previous-branch>.remote`), immediately `git push -u
-  <remote> <branch>` — this is what makes `registry-sync`'s later pushes work
-  at all (it resolves the push target from `branch.<branch>.remote`, which
-  only exists once something sets it) and what gives `open-pr`'s "uses the
+  <remote> <branch>` — this is what gives `open-pr`'s "uses the
   current branch when `SPINE_PR_HEAD` is unset" (`core/ADAPTER-CONTRACT.md`
   §3.5) a real head branch to open a PR from, instead of silently assuming
   the human already branched by hand. No remote configured on the previous
-  branch: skip the push, stay local — same "solo/single-machine project"
-  no-op `registry-sync` itself already treats as normal, not a gap. A push
-  failure here (network, permissions) is non-fatal — note it and continue on
-  the local branch; the next `registry-sync`/`/ship` push retries it
-  naturally once the human resolves it by hand.
+  branch: skip the push, stay local (a normal solo/single-machine project, not
+  a gap). A push failure here (network, permissions) is non-fatal — note it
+  and continue on the local branch; `/ship`'s push retries it naturally once
+  the human resolves it by hand.
 
 One more thing rides along in the setup step below: for a direct
 `/task` with no handoff, write the autonomy the human just chose in the step
@@ -503,31 +368,6 @@ If the refresh fails or times out, carry on: the researcher reads the code
 directly, exactly as it did before, and nothing is reported to the human.
 `/ship` commits the refreshed map on its own. Only after that: `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> research`.
 
-**Registry init (Extension C §2.2), same step, before the first
-`registry-sync`:** resolve owner identity —
-`git config user.name` and `git config user.email`. **If either is empty,
-stop before creating the task folder** and tell the human in this form (per `core/templates/human-touchpoint.md`):
-
-<!-- touchpoint:start short -->
-> **What happened:** I can't find your git name and email, and I don't make one up.
-> **What it means for you:** I haven't created anything yet; the task's records are signed with that identity.
-> **To continue:** run `git config --global user.name '<you>'` and `git config --global user.email '<you@example.com>'`, then tell me to go on.
-<!-- touchpoint:end --> (A fresh machine genuinely has neither set;
-never fall back to `$USER`, hostname, or any other guess.) Otherwise write
-`work/<task-id>/owner` = `<name> <email>`, one line. Write
-`work/<task-id>/claims.json` from `core/templates/claims.json` with
-`task_id` filled in and every array empty (populated for real at plan
-approval, §3). Write `work/<task-id>/flags.json` = `[]`. Then:
-
-```
-${CLAUDE_SKILL_DIR}/../../scripts/registry-sync <task-id> --project <project root> --message "task: open <task-id>"
-```
-
-This is the literal "committed and pushed to it at task creation" the
-registry requires — a task invisible to a colleague's `claims-check`
-until `/ship` would defeat the entire mechanism, so this happens now, not
-deferred to the end of the phase.
-
 ## 2. Research
 
 Delegate to the `researcher` agent (Agent tool, `subagent_type: researcher`)
@@ -559,10 +399,7 @@ The researcher's entire reply is the complete `research.md` content
 
 ## 3. Plan
 
-**Flag check first** (per this skill's own header note on flag-blocked
-advance): read `work/<task-id>/flags.json`; any unacknowledged entry halts
-here, before anything else in this step. Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> plan`,
-then `registry-sync <task-id>`. First run
+Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> plan`. Then run
 `${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md`
 — if it reports stale, the grounding drifted since it was written; regenerate
 research (back to step 2) before planning on it — **unless every drifted item
@@ -594,27 +431,11 @@ worked) per the writing mandate at
 language, bottom line first, nothing pushed below a section's first
 line. The `## Predicted touch` section (inside its own `<!-- MACHINE:
 predicted-touch -->` fence) is machine-parsed verbatim by
-`core/scripts/conformance`, don't reformat it (multi-repo: every entry
-repo-qualified, `<repo-name>:<path>`, per the template's own comment).
+`core/scripts/conformance`, don't reformat it.
 **200-line hard cap, comments included** — `wc -l < plan.md` it before
 presenting; if it doesn't fit, the task splits into two, it does not get
-compressed into unreadability. Multi-repo, additionally: write `## Ship order` the
-moment `## Predicted touch` names more than one repo. Write `## Contract
-change` if research or your own reading of `## Predicted touch` suggests
-this plan touches a declared contract's producer paths or spec — this is a
-judgment call at plan time, since `core/scripts/contract-touch` itself
-needs a real diff and can't run yet; `/verify` (step 5 below) runs it for
-real against the actual diff regardless and fails the task if a `breaking`
-classification and this line disagree, so a wrong guess here is caught,
-never silently trusted. See `core/templates/plan.md`'s own comments and
-`core/rules/contracts.md` for what each value means. If
-this task belongs to a milestone (`work/<task-id>/milestone` set), the
-plan's `## The gist` must be consistent with that milestone's `##
-Inter-task contracts` — what a prior member task already left true is a
-real constraint on this plan, not optional context; if the plan needs to
-violate one, that's a deviation against the milestone itself and belongs
-in the gist's own rejected-alternative reasoning, said explicitly, not
-silently contradicted. Also check that milestone's `## Known gaps for
+compressed into unreadability. If
+this task belongs to a milestone (`work/<task-id>/milestone` set), check that milestone's `## Known gaps for
 future member tasks`: if this plan's approach actually closes one of its
 `gap-<n>` entries, add the `## Resolves known gaps` section per
 `core/templates/plan.md` naming it — this is what lets `/ship` §3c remove
@@ -649,18 +470,8 @@ milestone` was already set to a *different* id than this section names,
 that's a conflict — surface it to the human, never silently pick one or
 fabricate the file.
 
-Check every `## Predicted touch` entry against `.spine/protected-paths.conf`
-— single-repo, that's always this project's own file. **Multi-repo: check
-each entry against its *own* repo's `.spine/protected-paths.conf`**
-(strip the `<repo-name>:` prefix, resolve the repo's absolute path via
-`workspace.json`, read that repo's own conf) — checking every entry across
-every repo in one pass is what makes this "escalate if *any* repo's
-protected path is hit" loop the mechanical form of "class escalation
-composes as max across repos": there is no separate max
-computation to write, it falls out of checking every entry regardless of
-which repo it belongs to. If any match and `work/<task-id>/class` is not
-already `2`, auto-escalate: rewrite the class file to `2` (one file, at the
-workspace root for a multi-repo task — one class for the whole task), **and
+Check every `## Predicted touch` entry against `.spine/protected-paths.conf`. If any match and `work/<task-id>/class` is not
+already `2`, auto-escalate: rewrite the class file to `2`, **and
 rewrite `work/<task-id>/autonomy` = `guided`** (the ceiling — a Class 2 task
 is never `auto`/`checkpointed`; escalation pulls the human back in), log it
 (`${CLAUDE_SKILL_DIR}/../../scripts/spine-event class-escalated from=<old> to=2
@@ -668,15 +479,6 @@ when=plan`), and
 say so plainly when you present the plan — this is plan-triggered
 escalation; it does not need a separate confirmation prompt beyond the
 plan approval you're about to ask for anyway.
-
-**Populate `work/<task-id>/claims.json` for real** (Extension C §2.2/§2.3),
-now that a plan exists: `predicted_touch` from `## Predicted touch`
-verbatim, `grounding_files`/`grounding_decisions` from `research.md`'s own
-header, `contracts` from `## Contract change`'s named contract if present,
-`updated_at` set to the current timestamp. `registry-sync <task-id>` — this is the version of claims.json a
-colleague's `claims-check` (Phase C) sees; a claims.json still at its
-empty classify-time skeleton would make every intersection check
-vacuously pass, silently defeating the whole mechanism.
 
 **UI-touching plans: run `content-sources-check` before presenting the plan.**
 
@@ -703,29 +505,11 @@ past content nobody defined. Ask it with `AskUserQuestion`, in this form (per `c
 > **Safe to ignore:** every entry that already has a source.
 <!-- touchpoint:end -->
 
-**Run `claims-check` before presenting the plan** (Extension C §2.3 — "invoked
-by the plan-approval step of `/task`"):
-
-```
-${CLAUDE_SKILL_DIR}/../../scripts/claims-check <task-id> --project <project root>
-```
-
-Print any warnings (read/read or shared grounding — informational, never
-blocking). If it blocks (exit 1): **do not present the plan for approval
-yet** — show the human the specific conflicting task(s), owner(s), and
-surface(s), and the three resolution paths verbatim from its own output
-(wait / renegotiate scope / override). Renegotiate means revising `##
-Predicted touch` and re-running this check, same as any other plan
-revision. Override means proceeding anyway, loudly: append a note to
-*this* task's `deviations.md` (tier `record-and-proceed`, since choosing
-to override is itself the resolution) naming the conflicting task. If
-clear (exit 0, warnings or not), proceed straight to presenting the plan.
-
 **If `work/<task-id>/autonomy` is `auto`, there is no plan-approval stop.**
 Write the plan exactly as above — it is still written, and `/ship` attaches it
 to the PR for review, trading pre-implementation plan review for PR-time review
 (the disclosed `auto` tradeoff — see `docs/tradeoffs.md`). Record `approval.json` with `"autonomy": "auto"` set,
-`registry-sync`, and proceed straight to §4. This can only happen at Class 1
+and proceed straight to §4. This can only happen at Class 1
 (the ceiling); if §3's protected-path check just auto-escalated this task to
 Class 2, `work/<task-id>/autonomy` was set to `guided` above, so this branch no
 longer applies and you fall through to the stop below. For `checkpointed` and
@@ -749,18 +533,16 @@ iteration. Present it with `AskUserQuestion`, in this form (per `core/templates/
 **Record the approval** — `work/<task-id>/approval.json`:
 `{"approver": "<git identity>", "at": "<iso8601>"}`. The approver is whoever's
 session this is, resolved from `git config user.name`/`user.email` in *this*
-session, same as `owner`. Log it with
-`${CLAUDE_SKILL_DIR}/../../scripts/spine-event plan-approved autonomy=<mode>`, then `registry-sync <task-id>`. This holds at every
+session. Log it with
+`${CLAUDE_SKILL_DIR}/../../scripts/spine-event plan-approved autonomy=<mode>`. This holds at every
 class: the person who owns the task approves its plan. Class 2 adds more
 checking (guided at every step, protected-path escalation, the adversaries),
-not a second approver. Mandatory cross-review would recreate the
-review-bottleneck theater spine exists to escape, and a name from `git config`
-can't prove who reviewed anything.
+not a second approver.
 
 ## 4. Implement
 
-**Flag check first**, same rule as step 3. On approval: run
-`${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> implement`, then `registry-sync <task-id>`. This is what unblocks
+On approval: run
+`${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> implement`. This is what unblocks
 `phase-gate` — it only restricts writes during `research`/`plan`.
 
 Work the plan's steps directly (you have full tool access again; `phase-gate`
@@ -829,8 +611,7 @@ for a `deviations.md` record, and `... spine-event deviation kind=setup` for a
 **Circuit breaker:** count every deviations.md record regardless of tier.
 On the third for this task, the plan is invalidated — `git stash push -u -m
 "spine: circuit breaker, work/<task-id>"` to preserve what you'd built
-without losing it, run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> research`, `registry-sync
-<task-id>`, and tell the human plainly: three wrong guesses means the
+without losing it, run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> research`, and tell the human plainly: three wrong guesses means the
 research was wrong once, not that each guess should be patched forward.
 Fresh research is required before re-planning.
 
@@ -840,10 +621,10 @@ reaffirms it as-is, dated, and the deviations.md resolution records which.
 
 ## 5. Verify and ship
 
-**Flag check first**, same rule as step 3. Implementation acceptance
+Implementation acceptance
 checks (from the plan) should already pass before you move on — check them
 yourself first; don't hand a known-broken diff to `/verify`. Then: run
-`${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> verify`, then `registry-sync <task-id>`.
+`${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> verify`.
 
 **This phase's shape depends on `work/<task-id>/autonomy`** (absent =
 `guided`). The independence that `/verify` protects comes from the falsifier
@@ -859,7 +640,7 @@ stop and wait — this session does not proceed to ship on an unverified diff, t
 same waiting posture step 3 uses at plan approval. When resumed,
 **read `work/<task-id>/verify.md` directly** (its `Result:` line reads `PASS` or
 `FAIL` verbatim). If `FAIL`: fix it (back to implementation, same task) and ask
-the human to re-run `/verify`. If `PASS`: run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> ship`, `registry-sync`,
+the human to re-run `/verify`. If `PASS`: run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> ship`,
 then ask the human to run `/ship <task-id>` and wait the same way. Say
 it in this form (per `core/templates/human-touchpoint.md`):
 

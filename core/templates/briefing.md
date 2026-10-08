@@ -31,9 +31,8 @@ the one-page budget gets:**
 - Overrides/bypasses: never folded into a single line that could bury one,
   never omitted when real, never summarized into "some overrides occurred."
 
-Multi-repo (Extension B) and milestone sections below are each explicitly
-optional — omit the whole section (not an empty one) when this task is
-single-repo, touches no declared contract, or isn't part of a milestone.
+The milestone section below is explicitly optional — omit the whole
+section (not an empty one) when this task isn't part of a milestone.
 -->
 
 # Shipped: `<task-id>` — <title in plain words>
@@ -69,20 +68,10 @@ never hidden.>
 - Plan accuracy: <conformance in words: "diff landed where the plan said"
   or "drifted: <where> — see verify.md">
 
-<!-- Omit the whole "Contracts" section for a single-repo task, or a
-     multi-repo task whose contract-touch run found nothing touched. -->
-
-**Contracts:** <Per touched contract: name, spec_change classification,
-which consumer repos entered blast radius, any [UNDECLARED] coupling the
-falsifier's cross-repo mandate found. A touched contract with zero findings
-is still worth its one line — a clean bill is not the same as an omitted
-section.>
-
 <!-- Omit "Overrides & bypasses" entirely when none occurred this task —
      never leave it present-but-empty. -->
 
-**Overrides & bypasses:** <Any `--bypass`, claims-check `--diff`
-[UNDECLARED] override — each
+**Overrides & bypasses:** <Any `--bypass` override — each
 its own line, the recorded reason included, loud. Never folded into a
 single summarizing line.>
 

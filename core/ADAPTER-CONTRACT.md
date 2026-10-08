@@ -8,26 +8,13 @@ a language, framework, or tool — this document, like the core, is stack-blind.
 
 A capability is an executable at `.spine/adapters/<name>` in the installed
 project. The core never calls a tool directly; it calls a capability name.
-Twenty capabilities exist:
+Nineteen capabilities exist:
 
 `typecheck`, `lint`, `test`, `test-changed`, `secret-scan`, `dep-diff`,
 `clone-scan`, `callers`, `mutate`, `smoke-seed`, `smoke-run`, `smoke-golden`
-(§3.8), `migrate-rehearse` (§3.7), `contract-check` (Extension B — §3.2),
+(§3.8), `migrate-rehearse` (§3.7),
 `ui-render` (§3.3), `ui-conformance` (§3.9), `ui-capture` (§3.10), `ticket-fetch` (intake —
 §3.4), `open-pr` (ship — §3.5), `worktree-prep` (falsifier — §3.6).
-
-`contract-check` only ever exists in a repo that is a workspace member and
-party (producer or consumer) to at least one declared contract
-(`workspace.json`'s `contracts[]`, `core/skills/workspace/SKILL.md`) — a
-plain single-repo project marks it `not-applicable` with reason "not a
-workspace member," the same disclosed-degradation shape every other
-inapplicable capability already uses. Unlike the other thirteen (`ui-render`
-shares this trait too, see below), `contract-check` is never invoked by
-`core/scripts/floor`'s own dispatch loop (floor's fixed capability
-sequence is unchanged by Extension B, preserving single-repo behavior
-exactly) — `core/skills/verify/SKILL.md`'s aggregation step invokes it
-directly, once per touched contract, only for repos
-`core/scripts/contract-touch` puts in a task's blast radius. See §3.2.
 
 `ui-render` only ever exists in a project whose runtime shape renders a UI
 a person looks at — a browser-rendered web app, or a native mobile/desktop
@@ -35,7 +22,7 @@ app driven through a simulator or emulator (`core/skills/bootstrap/
 SKILL.md` / `core/skills/adopt/SKILL.md`'s Layer 3 calibration question) —
 a project with no such surface (a CLI, a library, a pure API with no
 rendered surface) marks it `not-applicable` with reason "no UI surface to
-render in this project's runtime shape." Like `contract-check`, `ui-render` is never invoked by
+render in this project's runtime shape." `ui-render` is never invoked by
 `floor`'s dispatch loop — `core/skills/verify/SKILL.md`'s own orchestration
 invokes it directly, and only when `core/scripts/ui-touch` reports the
 task's diff actually touched a UI-file-shape path (`.spine/ui-paths.conf`).
@@ -64,7 +51,7 @@ gated by `ui-touch` and its own class opt-in, and hands its output to the
 tracker (`/intake`, `core/skills/intake/SKILL.md`) — a project with no tracker,
 or one where tickets are always pasted by hand, marks it `not-applicable` with
 reason "no ticket source" and `/intake` falls back to a manual paste. Like
-`contract-check` and `ui-render`, it is never invoked by `floor`'s dispatch loop
+`ui-render`, it is never invoked by `floor`'s dispatch loop
 — only `/intake` calls it, once, to fetch the ticket it was handed. Unlike every
 other capability it is a *data source*, not a pass/fail gate: exit 0 means the
 ticket was fetched (JSON on stdout), non-zero means it couldn't be (→ manual
@@ -269,38 +256,6 @@ actually was) on stdout/stderr, and a human sees an honest, actionable
 gate instead of a clean PASS that quietly covered less than it looked
 like.
 
-### 3.2 `contract-check` (Extension B) — which contract, not an output path
-
-`contract-check` needs an input §3's table has no row for: **which
-declared contract to check conformance against** — a repo can be party to
-more than one. Two environment variables, following the same precedent
-`SPINE_BASE_REF` already sets (an environment variable, not a second
-positional argument — §3's "no capability takes more than one positional
-argument" rule is unchanged):
-
-| Variable | Carries |
-|---|---|
-| `SPINE_CONTRACT_NAME` | The contract's `name` from `workspace.json`'s registry. |
-| `SPINE_CONTRACT_SPEC_PATH` | Absolute path to the spec file the caller already resolved (`<workspace-root>/<spec_path>`) — the adapter, run with CWD at its own repo root, has no way to find the workspace root on its own and is not expected to; the caller (`core/skills/verify/SKILL.md`'s aggregation, which already knows the workspace root) resolves it. |
-
-No stdin, no positional argument, exit code alone governs pass/fail (§2) —
-`contract-check` sits in §3's "operates on nothing" row in spirit, plus
-these two required env vars. The check itself is stack-specific and
-symmetric: a producer's `contract-check` verifies its real implementation
-still matches the spec at `SPINE_CONTRACT_SPEC_PATH`; a consumer's verifies
-its own usage still matches it (a generated client is current, a query
-shape matches a schema, whatever that stack's truth is) — same capability
-name, same env-var contract, opposite direction of proof, exactly as
-`typecheck`/`lint` are the same capability name across every stack despite
-checking entirely different things.
-
-**Self-test**: `--self-test pass`/`--self-test fail` build their own
-throwaway spec fixture inside scratch space, same as every other
-capability (§4) — they do not read `SPINE_CONTRACT_SPEC_PATH` at all, since
-self-test's entire point is proving the adapter's own logic without
-touching anything real. An adapter that requires the real env vars to be
-set even in self-test mode has misunderstood the convention.
-
 ### 3.3 `ui-render` — a real render, not a mocked one
 
 Every other capability that touches UI code (`test`, `test-changed`) runs
@@ -412,7 +367,7 @@ tracker.
 `/ship` calls `open-pr` for a task whose autonomy is `auto` or `checkpointed`
 (`core/skills/task/SKILL.md`) to push the current branch and open a **draft** PR,
 so the human's one remaining touchpoint is reviewing/merging it. Inputs by
-environment variable (the §3.2 precedent — no positional, since there is no
+environment variable (the `SPINE_BASE_REF` precedent — no positional, since there is no
 output-artifact path and more than one input):
 
 | Variable | Carries |
@@ -489,8 +444,8 @@ after).
 ### 3.7 `migrate-rehearse` — eligible only on a migration-touching Class 2 task
 
 `migrate-rehearse` sits in §3's "operates on nothing" row like `test` and
-`mutate`, and — unlike `contract-check`/`ui-render`/`ui-conformance`/
-`ticket-fetch`/`open-pr`/`worktree-prep` (§3.2–§3.6, §3.9) — it *is* invoked directly by
+`mutate`, and — unlike `ui-render`/`ui-conformance`/
+`ticket-fetch`/`open-pr`/`worktree-prep` (§3.3–§3.6, §3.9) — it *is* invoked directly by
 `floor`'s own dispatch loop, not by a skill's separate orchestration. But
 it is not always-on the way `test` is: `floor` runs it only when **both**
 hold —
@@ -656,7 +611,7 @@ a project whose `ui-render` is `implemented` *and* whose handoff bundle has
 screenshots (`docs/ui/screenshots/`); otherwise `not-applicable` with reason
 "no UI render capability or no reference screenshots in this project." Sits
 in §3's "operates on nothing" row, plus one environment variable, following
-the `SPINE_BASE_REF` / `SPINE_CONTRACT_NAME` precedent (§3.2), not a
+the `SPINE_BASE_REF` precedent, not a
 positional argument:
 
 | Variable | Carries |
@@ -920,16 +875,6 @@ of re-parsing
 `verify.md`'s free prose, which uses different wording for the same
 outcome from one task to the next.
 
-**Cross-repo verdicts (Extension B)**: a falsifier run against a multi-repo
-task's diff (`core/agents/falsifier.md`'s "Cross-repo mandate") cites
-undeclared coupling using the existing `file_line` kind, no new evidence
-kind needed — only `evidence.file` is repo-qualified (`"<repo-name>:
-<path>"`, the same convention `## Predicted touch` already uses for
-multi-repo plans) so the finding is unambiguous across repos.
-`verdict-filter` does not parse or validate that qualification; it only
-checks non-emptiness, exactly as it already does for a single-repo
-`file_line`.
-
 ### 5.1 Shared adversary discipline (falsifier, security)
 
 The behavioral discipline below governs both adversary agents identically
@@ -1012,18 +957,6 @@ can distinguish a traced Class 0 commit from genuinely off-spine work.
 derivation, same composing rule; the spine task id and the ticket key travel
 together. When no ticket is derivable (genuinely off-ticket), the trailer is
 omitted and the commit counts as off-spine as before.
-
-**Multi-repo tasks (Extension B)** use the *same* task ID — generated once,
-at the workspace root, per `core/skills/task/SKILL.md` — as the
-`Spine-Task:` trailer on every repo's own commit for that task. A task
-touching two repos produces two commits (one per repo, in the declared
-ship order, `core/skills/ship/SKILL.md`'s staged-ship §), both carrying an
-identical `Spine-Task: <task-id>` trailer. This is spine's existing
-linkage primitive doing the cross-repo join — a trailer grep
-run against any one member repo's own `git log`
-still works unmodified, since it only ever inspects that repo's own
-commits for the trailer's presence; it does not need to know a commit's
-trailer also appears in a sibling repo.
 
 ## 7. Team strictness profiles (`.spine/profile.json`, Phase 5)
 

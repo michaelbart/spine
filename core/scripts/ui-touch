@@ -9,12 +9,12 @@
 # `.spine/ui-content-paths.conf` (same format) adds content-carrying files
 # — fixtures, seed data, copy — to the same test.
 #
-# Never blocks by itself (informational, like contract-touch) —
+# Never blocks by itself (informational) —
 # `core/skills/verify/SKILL.md`'s own step decides what to do with the
 # result. This script only produces a fact a script can check.
 #
 # Portability: no associative arrays, no `mapfile` — same bash 3.2
-# constraint contract-touch and check-stale already document.
+# constraint check-stale already documents.
 #
 # Usage: ui-touch [--project <path>] [--base <ref>] [--out <json-path>]
 set -uo pipefail
@@ -48,7 +48,7 @@ if [[ ! -f "$conf" && ! -f "$content_conf" ]]; then
   exit 0
 fi
 
-# Same diff convention contract-touch uses: tracked diff + untracked (a
+# Same diff convention floor uses: tracked diff + untracked (a
 # task's newly-created view file is the common case, and plain
 # `git diff --name-only` alone misses it).
 changed="$(cd "$project" && { git diff --name-only "$base" -- . 2>/dev/null; git ls-files --others --exclude-standard -- . 2>/dev/null; } | sort -u)"

@@ -54,9 +54,8 @@ sources, each read the same way every time:
    never omitted when true. This is what stops the list from silently
    reading as complete over a finding it structurally cannot represent.
 3. Every path in the real diff (`git diff --name-only <base>..HEAD`) that
-   matches a glob in `.spine/protected-paths.conf` (single-repo: this
-   project's own file; multi-repo: each repo's own file, diff scoped to
-   that repo) — same match semantics `path-escalate` and the plan-time
+   matches a glob in `.spine/protected-paths.conf` (this
+   project's own file) — same match semantics `path-escalate` and the plan-time
    protected-path check already use, just run against the actual diff
    instead of the predicted one.
 4. Every entry in `work/<task-id>/artifacts/conformance.json`'s `actual`
@@ -66,11 +65,7 @@ sources, each read the same way every time:
    (`work/**`, `.spine/current-task`) from `actual` before this file is
    even written, and states its exclusion rule in the JSON's own
    `excluded_rules` field — so this union needs no display-layer filtering
-   of its own; it reads clean data. A `[DECLARED]`/`[UNDECLARED]` result
-   from a ship-time `claims-check --diff` collision is not a fifth source:
-   `/ship` §0 already turns any `[UNDECLARED]` hit into a halt-tier
-   `deviations.md` record before this step runs, so it surfaces through
-   union (1) like any other deviation. **Guard, found for real against an
+   of its own; it reads clean data. **Guard, found for real against an
    old-template plan during this template's own demonstration**: if any
    `predicted` entry itself contains a backtick, `conformance`'s match
    against it silently failed for every entry (the pre-existing
@@ -90,8 +85,7 @@ zero), the section renders the fixed line in its own slot below — never an
 empty bullet list, never a fabricated pointer, and never silently omitted
 either (an empty union is itself information: the plan's predictions held).
 
-Multi-repo (Extension B) and the Contracts/Milestone-adjacent sections
-below are explicitly optional — omit the whole section (not an empty one)
+The Milestone section below is explicitly optional — omit the whole section (not an empty one)
 per each section's own rule. No script reads this file back in (same as
 briefing.md); the **bold-label**
 convention is kept anyway, for the same reason briefing.md keeps it: cheap
@@ -145,8 +139,7 @@ actually true, how it was resolved. "Nothing — the plan held." if none.>
      it present-but-empty. FLOOR RULE: never folded into a single
      summarizing line, never omitted when real. -->
 
-**Overrides & bypasses:** <Any `--bypass`, claims-check `--diff`
-`[UNDECLARED]` override — each
+**Overrides & bypasses:** <Any `--bypass` override — each
 its own line, the recorded reason included. Source: notes.md, same as
 briefing.md's own "Overrides & bypasses" section reads.>
 
@@ -168,16 +161,6 @@ carry. Also this task's own known-gap resolution result (/ship §3c):
 which `gap-<n>` entries (if any) this task's own plan cited and closed out
 of `milestone.md`, "none cited" otherwise. Source: same fields
 briefing.md's own "Milestone" section reads.>
-
-<!-- Multi-repo only (Extension B) — omit entirely on a single-repo task. -->
-
-**Contracts:** <Contracts touched, their `spec_change` classification,
-blast-radius consumer repos, and this PR's own position in `## Ship
-order` ("2 of 3 — API ships after schema, before frontend"). Source:
-plan.md's `## Ship order` + work/<task-id>/artifacts/contract-touch.json.
-One shared description per task (not one per repo) — the plan and
-verification this describes are task-scoped, not repo-scoped; each
-member repo's own PR links here rather than carrying a divergent copy.>
 
 Record: `work/<task-id>/` — plan, verify.md, deviations.md, briefing,
 notes.md.

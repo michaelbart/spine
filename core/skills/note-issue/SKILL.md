@@ -13,8 +13,7 @@ project, or a stray observation mid-session, has neither). This is the
 low-ceremony entry point on purpose: no task folder, no classification, no
 plan, no phases — the entire job is "write it down before it's forgotten."
 
-Project root: the workspace root if `workspace.json` exists here,
-otherwise this project. Scripts at
+Project root: this project. Scripts at
 `${CLAUDE_SKILL_DIR}/../../scripts/<name>`. `${CLAUDE_SKILL_DIR}` is a
 placeholder you expand to this skill's own directory; hand the resulting
 path — including the `../../` — to the shell verbatim. Do **not**
