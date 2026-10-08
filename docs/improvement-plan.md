@@ -310,12 +310,12 @@ write). So a package change can pass the gate that exists to ask about it.
 This is the opposite problem to friction; it adds asks, so do it with C2 and
 measure.
 
-- [ ] Match each pattern against every command segment (split on `&&`, `||`,
+- [x] Match each pattern against every command segment (split on `&&`, `||`,
   `;`, `|`, newlines) with leading `VAR=value` assignments stripped.
-- [ ] Selftest with a negative control for each shape above.
-- [ ] Tell the owner which projects' pattern files are `^`-anchored without
+- [x] Selftest for each shape above (compound, env-prefixed, piped, multi-line; plain commands and a quoted string do not ask). The pre-fix gate is the negative control: it let `CI=1 pnpm add x` through unasked.
+- [ ] (Still open: needs the owner.) Tell the owner which projects' pattern files are `^`-anchored without
   covering `--filter`/`-F`/`-w` forms (turnpilot's does not).
-- [ ] Separate observation: a `turnpilot` transcript shows `dep-gate` printing
+- [x] (Done: an unreadable pattern now asks with rule `invalid-patterns`; blank/comment lines in the file are ignored so a blank line cannot match everything.) Separate observation: a `turnpilot` transcript shows `dep-gate` printing
   `grep: parentheses not balanced`, i.e. some pattern file there once held an
   invalid regex, which silently disables the check. Make `dep-gate` fail loudly
   (ask, with a message) when a pattern file does not compile.
@@ -490,6 +490,18 @@ measure.
 - [ ] After B6 gives adversary yield: pilot routing falsifier/security to a
   different model than the implementer and compare yield. Keep only if yield
   rises enough to justify the cost.
+
+### E10. Floor layers that have never run (found by the baseline)
+
+`callers`, `clone-scan` and `mutate` are DEGRADED (unavailable) in every
+recorded task in both turnpilot (67/67) and tgml (67/67). The README promises
+"the floor fails on new duplication in changed code"; for these projects that
+layer has never executed.
+
+- [ ] Decide per capability: implement an adapter in the projects that use
+  spine, or stop listing it as a default guarantee. At minimum make `/spine`
+  or the briefing say "N floor layers have never run in this project".
+- [ ] `spine-stats floor` already prints the list; wire it into B7's summary.
 
 ### E9. Explicitly deferred (reviewed, not doing now)
 

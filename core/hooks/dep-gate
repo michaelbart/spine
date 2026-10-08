@@ -102,16 +102,30 @@ case "$tool_name" in
       esac
     done < <(bash_write_targets "$command")
 
-    pattern_files=("$project/.spine/install-command-patterns.conf")
-    any_exist=0
-    for pf in "${pattern_files[@]}"; do
-      [[ -f "$pf" ]] || continue
-      any_exist=1
-      if grep -qEf "$pf" <<<"$command"; then
-        ask install-command "What happened: I'm about to run '$command', which looks like it installs or changes a package. What it means for you: any package change is always your call — it affects security and how much the project has to maintain. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
-      fi
-    done
-    [[ "$any_exist" -eq 1 ]] || exit 0
+    # Install patterns are usually anchored to the START of a command ("^pnpm add"),
+    # so test each command segment on its own: "cd apps/api && pnpm add x" and
+    # "CI=1 pnpm add x" are installs too. Segments split on && || ; | and newlines
+    # (naively, ignoring quotes — over-splitting can only add an ask); leading
+    # VAR=value assignments are dropped. Blank and comment lines in the pattern
+    # file are ignored: a blank line would otherwise match every command.
+    pf="$project/.spine/install-command-patterns.conf"
+    [[ -f "$pf" ]] || exit 0
+    patterns="$(grep -vE '^[[:space:]]*(#|$)' "$pf" 2>/dev/null)"
+    [[ -n "$patterns" ]] || exit 0
+    while IFS= read -r seg; do
+      seg="${seg#"${seg%%[![:space:]]*}"}"
+      while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+(.*)$ ]]; do seg="${BASH_REMATCH[1]}"; done
+      [[ -n "$seg" ]] || continue
+      grep -qE -e "$patterns" <<<"$seg" 2>/dev/null
+      case $? in
+        0)
+          ask install-command "What happened: I'm about to run '$command', which looks like it installs or changes a package. What it means for you: any package change is always your call — it affects security and how much the project has to maintain. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
+          ;;
+        2)
+          ask invalid-patterns "What happened: I'm about to run '$command', but the list of install commands I watch for (.spine/install-command-patterns.conf) has an entry I can't read, so I can't tell whether this installs a package. What it means for you: nothing has run yet, and any package change is always your call. To continue: allow the command, or deny it and fix the entry in that file."
+          ;;
+      esac
+    done < <(printf '%s\n' "$command" | awk '{ gsub(/&&|\|\||[;|]/, "\n"); print }')
     exit 0
     ;;
   *) exit 0 ;;

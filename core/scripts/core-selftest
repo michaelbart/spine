@@ -2414,6 +2414,37 @@ else
   fail "dep-gate: install-command event wrong: out=$ev_out line=$ev_line"
 fi
 
+# dep-gate install patterns: matched per command segment (compound / env-prefixed
+# installs used to slip past a start-anchored pattern), blank lines ignored,
+# an unreadable pattern surfaces instead of silently disabling the check.
+dg_run() { # <command> -> dep-gate stdout
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(jq -Rn --arg c "$1" '$c')" \
+    | CLAUDE_PROJECT_DIR="$ev_proj" "$SCRIPT_DIR/../hooks/dep-gate" 2>/dev/null
+}
+dg_asks() { jq -e '.hookSpecificOutput.permissionDecision=="ask"' >/dev/null 2>&1; }
+dg_ok=1
+for dg_cmd in 'cd apps/api && pnpm add left-pad' 'CI=1 pnpm add left-pad' 'echo hi; pnpm install' 'make build | pnpm add x' $'echo a\npnpm add b'; do
+  dg_asks <<<"$(dg_run "$dg_cmd")" || { dg_ok=0; fail "dep-gate: install not caught in: $dg_cmd"; }
+done
+for dg_cmd in 'pnpm test' 'echo "pnpm add x"' 'cd apps/api && pnpm test' 'git status'; do
+  dg_asks <<<"$(dg_run "$dg_cmd")" && { dg_ok=0; fail "dep-gate: asked on a non-install: $dg_cmd"; }
+done
+[[ "$dg_ok" == 1 ]] && pass "dep-gate: installs are caught in compound, env-prefixed, piped and multi-line commands; plain commands are not"
+printf '# comment\n\n^pnpm (add|install)\n\n' >"$ev_proj/.spine/install-command-patterns.conf"
+if ! dg_asks <<<"$(dg_run 'pnpm test')" && dg_asks <<<"$(dg_run 'pnpm install')"; then
+  pass "dep-gate: blank and comment lines in the pattern file are ignored (a blank line must not match everything)"
+else
+  fail "dep-gate: blank/comment lines in the pattern file changed what matches"
+fi
+printf '^pnpm (add\n' >"$ev_proj/.spine/install-command-patterns.conf"
+dg_out="$(dg_run 'pnpm test')"
+if dg_asks <<<"$dg_out" && tail -1 "$ev_proj/.spine/events.jsonl" | jq -e '.rule=="invalid-patterns"' >/dev/null 2>&1; then
+  pass "dep-gate: an unreadable install pattern asks (rule=invalid-patterns) instead of silently disabling the check"
+else
+  fail "dep-gate: invalid pattern not surfaced: out=$dg_out"
+fi
+echo '^pnpm (add|install)' >"$ev_proj/.spine/install-command-patterns.conf"
+
 # phase-gate: a pre-plan write outside the task folder.
 ev2="$(mktemp -d "$tmp_root/evproj2.XXXXXX")"
 mkdir -p "$ev2/.spine" "$ev2/work/EV2" "$ev2/src"
