@@ -239,7 +239,7 @@ show the matching commits so a human can judge each one.
 
 ### B7. Surfacing
 
-- [ ] `/spine` idle report shows a 5-line summary from `spine-stats summary`
+- [x] `/spine` idle report shows a short summary from `spine-stats --brief` (new §4c; the never-ran floor checks line is left to the existing §4b)
   (no new command). Silent if the analyzer or jq is missing.
 
 ### B8. Counterfactual (contingency: owner chose comparison-first)
@@ -332,11 +332,11 @@ measure.
 
 ### D1. Budget
 
-- [ ] `core/budget.json`: max lines per `SKILL.md`, max user-facing commands,
-  max scripts, max selftest runtime. `core-selftest` fails when exceeded.
-  Initial values = current values (freeze); tighten after D4.
-- [ ] Rule: raising a cap requires the commit message to say what was removed
-  or why that is impossible.
+- [x] `core/budget.json` (enforced by `repo-lint budget`): max lines per `SKILL.md`, max user-facing commands,
+  max scripts, max script+hook lines (selftest runtime is not capped: self-referential and noisy).
+  `core-selftest` fails when exceeded. Initial values = current values (freeze); tighten after D4.
+- [x] Rule: raising a cap requires the commit message to say what was removed
+  or why that is impossible (stated in `core/budget.json`'s `_about`; cannot be checked mechanically).
 
 ### D2. Command census and tiers (needs B4)
 
@@ -501,7 +501,7 @@ layer has never executed.
 - [ ] Decide per capability: implement an adapter in the projects that use
   spine, or stop listing it as a default guarantee. At minimum make `/spine`
   or the briefing say "N floor layers have never run in this project".
-- [ ] `spine-stats floor` already prints the list; wire it into B7's summary.
+- Note: `/spine` §4b already runs `gap-age`, which reports checks skipped across many verifies, so the visibility exists; what is missing is anyone acting on it (clone-scan was skipped in 67 of 70 checks). `spine-stats floor` prints the same list.
 
 ### E9. Explicitly deferred (reviewed, not doing now)
 

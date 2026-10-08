@@ -608,9 +608,11 @@ Show only the `>` lines, never the `<!-- touchpoint:... -->` marker lines:
 > **Worth knowing:** <what was left open on purpose and when it would matter, one line each; anything not proven; or "nothing">. Details: `work/<task-id>/briefing.md`.
 <!-- touchpoint:end -->
 
-First log it: `${CLAUDE_SKILL_DIR}/../../scripts/spine-event shipped` (it reads
-the task from `.spine/current-task`, so it must run before that file is
-removed below).
+First log it: `${CLAUDE_SKILL_DIR}/../../scripts/spine-event shipped $(${CLAUDE_SKILL_DIR}/../../scripts/spine-stats --rollup <task-id> 2>/dev/null)`
+(the rollup adds this task's token and active-time totals to the event so they
+survive Claude Code pruning old transcripts; it prints nothing if it cannot run.
+`spine-event` reads the task from `.spine/current-task`, so this must run before
+that file is removed below).
 
 Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> done` (the commit from §5 must have
 actually landed before this write). Remove `.spine/current-task`

@@ -11,6 +11,13 @@ It never gates anything and nothing consults it. Stdlib only; run with python3 -
 
 Usage:
   spine-stats [--project <path>] [--since YYYY-MM-DD] [--json] [section ...]
+  spine-stats [--project <path>] --brief
+      five short lines for /spine's idle report; prints nothing if there is nothing to say.
+  spine-stats [--project <path>] --rollup <task-id>
+      prints key=value pairs for one task (tokens_fresh tokens_cache tokens_out
+      tokens_msgs tokens_spine_fresh active_s) for /ship to put in the `shipped`
+      event, so the numbers survive transcript pruning. Prints nothing when there
+      is nothing to report.
   sections: tokens tasks friction adversaries floor census complexity  (default: all)
 
 Honest limits, repeated in the output where they apply:
@@ -153,6 +160,12 @@ def load_usage(project, since, known_tasks):
     files = glob.glob(os.path.join(tdir, "*.jsonl")) + glob.glob(os.path.join(tdir, "*", "subagents", "agent-*.jsonl"))
     seen = {}
     for f in files:
+        if since is not None:
+            try:
+                if os.path.getmtime(f) < since:
+                    continue
+            except OSError:
+                continue
         sub = os.sep + "subagents" + os.sep in f
         agent_type = ""
         if sub:
@@ -303,6 +316,46 @@ def sec_friction(ctx):
         "bypasses": sum(1 for e in ev if e["event"] == "bypass"),
         "class_escalations": sum(1 for e in ev if e["event"] == "class-escalated"),
     }
+
+
+def rollup(project, task_id):
+    tdir = os.path.join(project, "work", task_id)
+    if not os.path.isdir(tdir):
+        return 1
+    started = os.path.getmtime(os.path.join(tdir, "class")) if os.path.exists(os.path.join(tdir, "class")) else os.path.getmtime(tdir)
+    usage, _ = load_usage(project, started - 3600, {task_id})
+    mine = [r for r in usage if r["task"] == task_id]
+    if not mine:
+        return 0
+    ts = sorted(r["t"] for r in mine)
+    spine = [r for r in mine if r["skill"] or r["agent"] in SPINE_AGENTS]
+    print("tokens_fresh=%d tokens_cache=%d tokens_out=%d tokens_msgs=%d tokens_spine_fresh=%d active_s=%d" % (
+        sum(r["fresh"] for r in mine), sum(r["cache"] for r in mine), sum(r["out"] for r in mine), len(mine),
+        sum(r["fresh"] for r in spine), sum(b - a for a, b in zip(ts, ts[1:]) if b - a < ACTIVE_GAP)))
+    return 0
+
+
+def brief(ctx):
+    tk, fr, ad = sec_tasks(ctx), sec_friction(ctx), ctx["adv_agents"]
+    lines = []
+    if tk["count"]:
+        c2 = f"{tk['class2_share']:.0%} Class 2" if tk["class2_share"] is not None else "?"
+        lines.append(f"{tk['count']} tasks, {c2}")
+    if fr["interventions"]:
+        top = next((r for r in fr["by_rule"] if r["rule"] != "(no reason logged)"), None)
+        why = f"; most often {top['rule']}" if top else " (no reasons logged yet)"
+        per = f" ({fr['per_shipped_task']:.0f} per shipped task)" if fr["per_shipped_task"] else ""
+        lines.append(f"hook stops: {fr['interventions']}{per}{why}")
+    ys = [f"{a} {v['yield_fixed_over_raised']:.0%}" for a, v in sorted(ad.items()) if v["yield_fixed_over_raised"] is not None and a != "ui-fidelity"]
+    if ys:
+        lines.append("share of adversary findings that got fixed: " + ", ".join(ys))
+    if ctx["usage"]:
+        t = sec_tokens(ctx)
+        if t.get("share_fresh_tagged") is not None:
+            lines.append(f"spine accounts for {t['share_fresh_tagged']:.0%} of input tokens, {t['share_out_tagged']:.0%} of output (recent transcripts)")
+    for ln in lines:
+        print(ln)
+    return 0
 
 
 def sec_adversaries(ctx):
@@ -485,7 +538,7 @@ def render(name, d, ctx):
 
 
 def main(argv):
-    project, since, as_json, want = os.getcwd(), None, False, []
+    project, since, as_json, want, roll, brief_mode = os.getcwd(), None, False, [], None, False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -493,6 +546,10 @@ def main(argv):
             project = argv[i + 1]; i += 2
         elif a == "--since":
             since = parse_ts(argv[i + 1] + "T00:00:00Z"); i += 2
+        elif a == "--rollup":
+            roll = argv[i + 1]; i += 2
+        elif a == "--brief":
+            brief_mode = True; i += 1
         elif a == "--json":
             as_json = True; i += 1
         elif a in ("-h", "--help"):
@@ -506,12 +563,16 @@ def main(argv):
     if not os.path.isdir(os.path.join(project, ".spine")):
         print(f"spine-stats: {project} has no .spine/ — not a spine project", file=sys.stderr)
         return 2
+    if roll:
+        return rollup(project, roll)
     events = load_events(project, since)
     tasks = load_tasks(project, events)
-    usage, tdir = load_usage(project, since, set(tasks)) if any(w in want for w in ("tokens", "census")) else ([], None)
+    usage, tdir = load_usage(project, since, set(tasks)) if (brief_mode or any(w in want for w in ("tokens", "census"))) else ([], None)
     adv_agents, adv_by_task = collect_adversaries(project, tasks)
     ctx = {"project": project, "events": events, "tasks": tasks, "usage": usage, "tdir": tdir,
            "adv_agents": adv_agents, "adv_by_task": adv_by_task}
+    if brief_mode:
+        return brief(ctx)
     fn = {"tokens": sec_tokens, "tasks": sec_tasks, "friction": sec_friction, "adversaries": sec_adversaries,
           "floor": sec_floor, "census": sec_census, "complexity": sec_complexity}
     results = {w: fn[w](ctx) for w in want}

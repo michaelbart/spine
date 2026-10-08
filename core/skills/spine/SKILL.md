@@ -156,6 +156,19 @@ Any output: say it in one plain line per check ("`clone-scan` has been
 skipped in 67 of 70 checks — build it, or mark it not-applicable so it stops
 counting as a gap"). No output: say nothing.
 
+## 4c. How spine is doing (read-only, idle only)
+
+When no task is active, show a few lines of recent numbers so friction and cost
+are visible instead of anecdotal:
+
+```
+${CLAUDE_SKILL_DIR}/../../scripts/spine-stats --brief --since "$(date -v-30d +%F 2>/dev/null || date -d '30 days ago' +%F)" --project <project root>
+```
+
+Print its lines as-is under one plain heading, "Last 30 days". No output, or the
+script (or python3) is missing: say nothing. `docs/baseline-2026-10.md` explains
+what each number does and does not tell you.
+
 ## 5. Now report: idle, or a task in progress
 
 If `.spine/current-task` does **not** exist -> idle, show the menu (§5.1). If

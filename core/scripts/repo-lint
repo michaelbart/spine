@@ -6,11 +6,13 @@
 #                    core/ left four committed links dangling for weeks)
 #   readme-commands  every user-invocable skill is listed in the README command
 #                    table, and every command in that table has a skill
+#   budget           core/budget.json caps (skill lines, command count, script
+#                    count, script+hook lines) are not exceeded
 #   doc-refs         every core/..., docs/... path cited in a markdown file,
 #                    hook or script exists (dead citations were an audit finding
 #                    in five of six rounds). Wrapped lines are joined first.
 #
-# Usage: repo-lint [--root <spine-root>] [symlinks|readme-commands|doc-refs ...]
+# Usage: repo-lint [--root <spine-root>] [symlinks|readme-commands|budget|doc-refs ...]
 #        (no check names = run all)
 # Exit 0 clean, 1 if any check reports a problem. Read-only.
 set -uo pipefail
@@ -19,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$SCRIPT_DIR/../.." && pwd)"
 if [[ "${1:-}" == "--root" ]]; then root="$(cd "${2:?--root needs a path}" && pwd)"; shift 2; fi
 checks=("$@")
-[[ ${#checks[@]} -gt 0 ]] || checks=(symlinks readme-commands doc-refs)
+[[ ${#checks[@]} -gt 0 ]] || checks=(symlinks readme-commands budget doc-refs)
 
 problems=0
 problem() { echo "FAIL: $*"; problems=$((problems + 1)); }
@@ -57,6 +59,28 @@ check_readme_commands() {
   done <<<"$documented"
 }
 
+check_budget() {
+  local b="$root/core/budget.json" f name lines cap n=0 total=0 cap_cmds cap_scripts cap_lines
+  [[ -f "$b" ]] || return 0
+  command -v jq >/dev/null 2>&1 || { echo "repo-lint: budget check skipped (jq not installed)"; return 0; }
+  for f in "$root"/core/skills/*/SKILL.md; do
+    [[ -f "$f" ]] || continue
+    name="$(basename "$(dirname "$f")")"
+    lines="$(wc -l <"$f" | tr -d ' ')"
+    cap="$(jq -r --arg n "$name" '.skill_lines[$n] // .skill_lines.default // empty' "$b")"
+    [[ -z "$cap" || "$lines" -le "$cap" ]] || problem "budget: core/skills/$name/SKILL.md is $lines lines, cap is $cap (core/budget.json)"
+  done
+  n="$(user_invocable_skills | wc -l | tr -d ' ')"
+  cap_cmds="$(jq -r '.user_commands // empty' "$b")"
+  [[ -z "$cap_cmds" || "$n" -le "$cap_cmds" ]] || problem "budget: $n user-invocable commands, cap is $cap_cmds"
+  n="$(find "$root/core/scripts" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+  cap_scripts="$(jq -r '.scripts // empty' "$b")"
+  [[ -z "$cap_scripts" || "$n" -le "$cap_scripts" ]] || problem "budget: $n scripts in core/scripts, cap is $cap_scripts"
+  total="$(cat "$root"/core/scripts/* "$root"/core/hooks/* 2>/dev/null | wc -l | tr -d ' ')"
+  cap_lines="$(jq -r '.script_and_hook_lines // empty' "$b")"
+  [[ -z "$cap_lines" || "$total" -le "$cap_lines" ]] || problem "budget: scripts + hooks are $total lines, cap is $cap_lines"
+}
+
 check_doc_refs() {
   local f joined ref
   # docs/... paths in core files and the README almost always name the
@@ -86,6 +110,7 @@ for c in "${checks[@]}"; do
   case "$c" in
     symlinks) check_symlinks ;;
     readme-commands) check_readme_commands ;;
+    budget) check_budget ;;
     doc-refs) check_doc_refs ;;
     *) echo "repo-lint: unknown check '$c'" >&2; exit 2 ;;
   esac

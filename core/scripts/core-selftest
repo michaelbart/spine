@@ -2579,6 +2579,25 @@ else
   fail "repo-lint: readme-commands output wrong: $rl_out"
 fi
 
+# budget: every cap fails when exceeded and passes when satisfied.
+printf 'l1\nl2\nl3\nl4\nl5\n' >>"$rl_root/core/skills/foo/SKILL.md"
+: >"$rl_root/core/scripts/s1"; : >"$rl_root/core/scripts/s2"
+printf '{"skill_lines":{"default":3},"user_commands":1,"scripts":1,"script_and_hook_lines":0}' >"$rl_root/core/budget.json"
+rl_out="$("$REPO_LINT" --root "$rl_root" budget 2>&1)" || true
+if grep -q "core/skills/foo/SKILL.md is" <<<"$rl_out" && grep -q "user-invocable commands, cap is 1" <<<"$rl_out" \
+   && grep -q "scripts in core/scripts, cap is 1" <<<"$rl_out"; then
+  pass "repo-lint: budget reports a skill over its line cap, too many commands and too many scripts"
+else
+  fail "repo-lint: budget did not report all three caps: $rl_out"
+fi
+printf '{"skill_lines":{"default":3,"foo":50,"bar":50},"user_commands":5,"scripts":50,"script_and_hook_lines":100000}' >"$rl_root/core/budget.json"
+if "$REPO_LINT" --root "$rl_root" budget >/dev/null 2>&1; then
+  pass "repo-lint: budget passes when every cap is satisfied, and a per-skill override beats the default"
+else
+  fail "repo-lint: budget should pass within caps: $("$REPO_LINT" --root "$rl_root" budget 2>&1)"
+fi
+rm -f "$rl_root/core/budget.json" "$rl_root/core/scripts/s1" "$rl_root/core/scripts/s2"
+
 printf 'See core/scripts/real and core/scripts/\nwrapped-target for details; docs/charter.md is a project doc.\nAlso core/scripts/missing-one and docs/tradeoffs.md.\n' >"$rl_root/docs/note.md"
 : >"$rl_root/core/scripts/real"; : >"$rl_root/core/scripts/wrapped-target"
 git -C "$rl_root" add -A >/dev/null 2>&1
@@ -2653,6 +2672,26 @@ if command -v python3 >/dev/null 2>&1; then
     pass "spine-stats: hook events are counted, and ones with no logged reason are called out"
   else
     fail "spine-stats: friction wrong: $(q '.results.friction')"
+  fi
+  ss_roll="$(HOME="$ss_home" "$SPINE_STATS" --project "$ss_proj" --rollup "$ss_task" 2>/dev/null)" || true
+  touch -t 202009010000 "$ss_proj/work/$ss_task/class"
+  ss_roll="$(HOME="$ss_home" "$SPINE_STATS" --project "$ss_proj" --rollup "$ss_task" 2>/dev/null)" || true
+  if [[ "$ss_roll" == "tokens_fresh=750 tokens_cache=1000 tokens_out=180 tokens_msgs=4 tokens_spine_fresh=550 active_s=300" ]]; then
+    pass "spine-stats --rollup: prints the task's token and active-time totals as key=value pairs for the shipped event"
+  else
+    fail "spine-stats --rollup: unexpected output: $ss_roll"
+  fi
+  ss_code=0; ss_none="$(HOME="$ss_home" "$SPINE_STATS" --project "$ss_proj" --rollup no-such-task 2>&1)" || ss_code=$?
+  if [[ -z "$ss_none" && "$ss_code" != "0" ]]; then
+    pass "spine-stats --rollup: an unknown task prints nothing"
+  else
+    fail "spine-stats --rollup: unknown task should print nothing (code=$ss_code out=$ss_none)"
+  fi
+  ss_brief="$(HOME="$ss_home" "$SPINE_STATS" --project "$ss_proj" --brief 2>&1)" || true
+  if grep -q "^1 tasks, 100% Class 2$" <<<"$ss_brief" && grep -q "^hook stops: 2" <<<"$ss_brief" && grep -q "falsifier 50%" <<<"$ss_brief" && [[ "$(wc -l <<<"$ss_brief" | tr -d ' ')" -le 5 ]]; then
+    pass "spine-stats --brief: at most five plain lines (tasks, hook stops, adversary yield, token share)"
+  else
+    fail "spine-stats --brief: unexpected output: $ss_brief"
   fi
   ss_text="$(HOME="$ss_home" "$SPINE_STATS" --project "$ss_proj" 2>&1)" || true
   if ! grep -q "SECRET_PROMPT_TEXT" <<<"$ss_text$ss_json"; then

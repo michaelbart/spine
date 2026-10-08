@@ -57,7 +57,7 @@ human). A Bash call can produce both, from different hooks, at the same `ts`.
 | `verify-result` | `result` (PASS/FAIL), `reason` | end of each `/verify` pass. The pass number is the count of earlier `verify-result` lines for the same task |
 | `adversary` | `agent` (falsifier/security/ui-fidelity), `verdicts` (kept this pass), `max_severity` | per adversary, per `/verify` pass |
 | `bypass` | `reason` | `/ship --bypass` |
-| `shipped` | (none yet; `tokens_*` planned, B4) | `/ship` commits |
+| `shipped` | `tokens_fresh`, `tokens_cache`, `tokens_out`, `tokens_msgs`, `tokens_spine_fresh`, `active_s` (all optional: written when `spine-stats --rollup` can read the task's transcripts) | `/ship` commits. Fresh = input + cache-creation tokens; spine_fresh = the part from skill-tagged turns and spine subagents; active_s = seconds, gaps over 30 minutes excluded |
 
 ## Derived, not logged
 
@@ -66,8 +66,9 @@ human). A Bash call can produce both, from different hooks, at the same `ts`.
   `core/ADAPTER-CONTRACT.md` §5).
 - **Verify round number:** order `verify-result` events per task.
 - **Phase durations:** differences between consecutive `phase` events.
-- **Tokens:** from the Claude transcript named by `session` (and its
-  `subagents/` files), not from this log.
+- **Tokens, when the `shipped` rollup is missing:** from the Claude transcript
+  named by `session` (and its `subagents/` files). Transcripts get pruned, which
+  is why `/ship` writes the rollup.
 
 ## Known gaps
 
