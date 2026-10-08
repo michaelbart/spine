@@ -151,6 +151,8 @@ settling a category) genuinely isn't enough, never by default.
 | `/task` | `[description] [--milestone <id>]` | The default way work gets done: classify → research → plan (you approve it) → implement → verify → ship. Run it bare to auto-continue the next queued task in the current milestone. |
 | `/verify` | `<task-id>` | Runs the floor and adversary review, writes `verify.md`. You type this yourself when `/task` asks. |
 | `/ship` | `<task-id> [--bypass <reason>]` | Six jobs in one command: re-grounds against what changed underfoot, gates, distills decisions, does milestone bookkeeping, writes the briefing and PR description, commits. You type this yourself when `/task` asks, or use `--bypass` for a genuine emergency (loud and recorded, never silent). |
+| `/ticket` | `[<task-id>]` | Optional. Generates a copy-paste ticket description (summary, acceptance criteria, QA notes, files changed) from a verified task's own artifacts. Output only; `/ship` doesn't depend on it. |
+| `/autopilot` | `[--milestone <id>]` | Experimental. Runs a whole planned milestone backlog with no human stops and one end-of-run report. See "Experimental" below. |
 
 `/task` walks through six steps, in plain terms:
 

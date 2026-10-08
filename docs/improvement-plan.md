@@ -14,7 +14,7 @@ task folders; turnpilot session transcripts) produced four conclusions:
 1. **Spine has no evidence it pays for itself.** The reporting layer was deleted
    (`1524cd8`, -3.2k lines). `docs/tradeoffs.md` says "no built-in
    instrumentation". The overhead estimate (2-4x) is a guess.
-2. **The accretion criticism is partly valid.** 22 skill dirs, 5.6k lines of
+2. **The accretion criticism is partly valid.** 20 skill dirs (19 commands; an earlier count of 22 included four dangling symlinks), 5.6k lines of
    skill prose (`task` 911, `ship` 782, `verify` 653), ~8k lines of scripts and
    hooks, a 3k-line selftest (68s), 117 commits in 8 weeks, six audit rounds in
    one day. Evidence of drift: four committed symlinks point at skills deleted
@@ -80,13 +80,13 @@ targets. F is last because pruning changes what the docs should say.
 
 Small, independent, no data needed.
 
-- [ ] **A1. Remove dangling skill symlinks.** `.claude/skills/{costs,task-report,tasks,visualize}`
+- [x] **A1. Remove dangling skill symlinks.** `.claude/skills/{costs,task-report,tasks,visualize}`
   are committed but their targets were deleted in `1524cd8`.
   Add a `core-selftest` case: every symlink under `.claude/skills`,
   `.claude/agents`, `.claude/rules` resolves, and `setup` never creates a
   dangling one. Negative control: re-add one, test fails.
-- [ ] **A2. Make the README command table complete and checked.** Add
-  `/ticket`. Add a selftest/lint (`readme-commands-check`) that every
+- [x] **A2. Make the README command table complete and checked.** Add
+  `/ticket` and `/autopilot` (both were missing). Add a selftest/lint (`readme-commands-check`) that every
   `core/skills/*/SKILL.md` with `disable-model-invocation: true` appears in the
   README table, and every README command has a skill. `security-checklist` is
   explicitly exempt (agent-preloaded background, not a command).
@@ -111,7 +111,7 @@ Small, independent, no data needed.
   (`tradeoffs.md` second-approver history, `task/SKILL.md:755` rationale,
   `spine/SKILL.md:134` "ledger" meaning the known-issues list: reword to avoid
   confusion).
-- [ ] **A6. `doc-refs-check` script.** Dead citations were a finding in audit
+- [x] **A6. `doc-refs` check (in `core/scripts/repo-lint`, with A1/A2's checks).** Dead citations were a finding in audit
   rounds 1, 3, 4, 5 and 6. Add a script that scans `*.md`, hooks and scripts for
   `core/...` paths, `§N` section references and `docs/...` links and verifies
   the target exists (join wrapped lines before matching, per round 4's lesson).

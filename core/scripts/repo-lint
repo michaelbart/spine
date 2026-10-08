@@ -1,0 +1,96 @@
+#!/bin/bash
+# repo-lint — consistency checks on the spine core checkout itself (never on an
+# installed project). Catches drift that review keeps missing:
+#
+#   symlinks         every symlink under .claude/ resolves (a skill deleted from
+#                    core/ left four committed links dangling for weeks)
+#   readme-commands  every user-invocable skill is listed in the README command
+#                    table, and every command in that table has a skill
+#   doc-refs         every core/..., docs/... path cited in a markdown file,
+#                    hook or script exists (dead citations were an audit finding
+#                    in five of six rounds). Wrapped lines are joined first.
+#
+# Usage: repo-lint [--root <spine-root>] [symlinks|readme-commands|doc-refs ...]
+#        (no check names = run all)
+# Exit 0 clean, 1 if any check reports a problem. Read-only.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+root="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if [[ "${1:-}" == "--root" ]]; then root="$(cd "${2:?--root needs a path}" && pwd)"; shift 2; fi
+checks=("$@")
+[[ ${#checks[@]} -gt 0 ]] || checks=(symlinks readme-commands doc-refs)
+
+problems=0
+problem() { echo "FAIL: $*"; problems=$((problems + 1)); }
+
+check_symlinks() {
+  local link
+  [[ -d "$root/.claude" ]] || return 0
+  while IFS= read -r link; do
+    [[ -e "$link" ]] || problem "dangling symlink: ${link#"$root"/} -> $(readlink "$link")"
+  done < <(find "$root/.claude" -type l 2>/dev/null)
+}
+
+# Skills a human types: frontmatter carries disable-model-invocation: true.
+user_invocable_skills() {
+  local f name
+  for f in "$root"/core/skills/*/SKILL.md; do
+    [[ -f "$f" ]] || continue
+    name="$(basename "$(dirname "$f")")"
+    if awk 'NR==1&&$0!="---"{exit 1} NR>1&&$0=="---"{exit 1} /^disable-model-invocation:[[:space:]]*true/{found=1; exit 0} END{exit found?0:1}' "$f"; then
+      echo "$name"
+    fi
+  done
+}
+
+check_readme_commands() {
+  local readme="$root/README.md" name documented
+  [[ -f "$readme" ]] || { problem "README.md missing"; return; }
+  documented="$(grep -oE '^\| `/[a-z][a-z-]*`' "$readme" | sed -E 's/^\| `\/(.*)`/\1/' | sort -u)"
+  while IFS= read -r name; do
+    grep -qx "$name" <<<"$documented" || problem "skill /$name is user-invocable but missing from the README command table"
+  done < <(user_invocable_skills)
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+    [[ -f "$root/core/skills/$name/SKILL.md" ]] || problem "README documents /$name but core/skills/$name/SKILL.md does not exist"
+  done <<<"$documented"
+}
+
+check_doc_refs() {
+  local f joined ref
+  # docs/... paths in core files and the README almost always name the
+  # *installed project's* docs (docs/charter.md, docs/decisions/...), which do
+  # not exist in this checkout. Only spine's own doc families are checked.
+  local own_docs='^docs/(tradeoffs|improvement-plan|event-schema|baseline|enforcement-map|proposal-|design/|history/)'
+  while IFS= read -r f; do
+    # Join a path wrapped across a line break ("core/scripts/" newline "floor"),
+    # which a per-line grep misses. Same-line spacing is left alone.
+    joined="$(perl -0pe 's{(core/[A-Za-z0-9_./-]*)-\n[ \t>#*-]*(?=[A-Za-z])}{$1-}g; s{/\n[ \t>#*-]*([A-Za-z0-9_.])}{/$1}g' "$f" | tr '\n' ' ')"
+    while IFS= read -r ref; do
+      ref="${ref%%[.,;:)\`\'\"]}"
+      ref="${ref%/}"
+      [[ -n "$ref" ]] || continue
+      if [[ "$ref" == docs/* ]] && ! grep -qE "$own_docs" <<<"$ref"; then continue; fi
+      [[ "$ref" == *'<'* || "$ref" == *'*'* || "$ref" == *'$'* || "$ref" == *'{'* ]] && continue
+      [[ -e "$root/$ref" || -L "$root/$ref" ]] || problem "${f#"$root"/}: cites $ref, which does not exist"
+    done < <(grep -oE '(core|docs)/[A-Za-z0-9_./-]+' <<<"$joined" | sed -E 's/[.-]+$//' | sort -u)
+  done < <(
+    cd "$root" && git ls-files '*.md' 'core/hooks/*' 'core/scripts/*' 2>/dev/null \
+      | grep -vE '^\.claude/|^docs/(audit-|history/|improvement-plan)|^core/scripts/(core-selftest|repo-lint)$' \
+      | sed "s|^|$root/|"
+  )
+}
+
+for c in "${checks[@]}"; do
+  case "$c" in
+    symlinks) check_symlinks ;;
+    readme-commands) check_readme_commands ;;
+    doc-refs) check_doc_refs ;;
+    *) echo "repo-lint: unknown check '$c'" >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$problems" -eq 0 ]]; then echo "repo-lint: ok (${checks[*]})"; exit 0; fi
+echo "repo-lint: $problems problem(s)"
+exit 1

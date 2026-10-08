@@ -3048,4 +3048,65 @@ else
   fail "setup: work/.gitignore migration wrong: $(cat "$su_proj/work/.gitignore")"
 fi
 
+# ---------------------------------------------------------------------------
+# repo-lint: dangling .claude symlinks, README command table, doc citations
+# ---------------------------------------------------------------------------
+REPO_LINT="$SCRIPT_DIR/repo-lint"
+if "$REPO_LINT" --root "$REAL_SPINE" >/dev/null 2>&1; then
+  pass "repo-lint: this checkout is clean"
+else
+  fail "repo-lint: this checkout has problems: $("$REPO_LINT" --root "$REAL_SPINE" 2>&1 | head -5 | tr '\n' ' ')"
+fi
+
+rl_root="$(mktemp -d "$tmp_root/repolint.XXXXXX")"
+git -C "$rl_root" init -q
+mkdir -p "$rl_root/.claude/skills" "$rl_root/core/skills/foo" "$rl_root/core/scripts" "$rl_root/docs"
+printf -- '---\nname: foo\ndisable-model-invocation: true\n---\nbody\n' >"$rl_root/core/skills/foo/SKILL.md"
+printf '| Command | Args | What |\n|---|---|---|\n| `/foo` | | does foo |\n' >"$rl_root/README.md"
+ln -s ../../core/skills/foo "$rl_root/.claude/skills/foo"
+if "$REPO_LINT" --root "$rl_root" symlinks readme-commands >/dev/null 2>&1; then
+  pass "repo-lint: consistent fixture passes symlinks + readme-commands"
+else
+  fail "repo-lint: consistent fixture should pass"
+fi
+
+ln -s ../../core/skills/gone "$rl_root/.claude/skills/gone"
+if "$REPO_LINT" --root "$rl_root" symlinks 2>&1 | grep -q "dangling symlink: .claude/skills/gone"; then
+  pass "repo-lint: dangling .claude symlink is reported"
+else
+  fail "repo-lint: dangling symlink not reported"
+fi
+rm "$rl_root/.claude/skills/gone"
+
+mkdir -p "$rl_root/core/skills/bar"
+printf -- '---\nname: bar\ndisable-model-invocation: true\n---\n' >"$rl_root/core/skills/bar/SKILL.md"
+if "$REPO_LINT" --root "$rl_root" readme-commands 2>&1 | grep -q "skill /bar is user-invocable but missing"; then
+  pass "repo-lint: user-invocable skill missing from README is reported"
+else
+  fail "repo-lint: undocumented skill not reported"
+fi
+mkdir -p "$rl_root/core/skills/helper"
+printf -- '---\nname: helper\n---\n' >"$rl_root/core/skills/helper/SKILL.md"
+printf '| `/bar` | | does bar |\n| `/ghost` | | no skill |\n' >>"$rl_root/README.md"
+rl_out="$("$REPO_LINT" --root "$rl_root" readme-commands 2>&1)"
+if grep -q "documents /ghost but" <<<"$rl_out" && ! grep -q "helper" <<<"$rl_out" && ! grep -q "/bar" <<<"$rl_out"; then
+  pass "repo-lint: README row with no skill is reported; non-command skills are not required"
+else
+  fail "repo-lint: readme-commands output wrong: $rl_out"
+fi
+
+printf 'See core/scripts/real and core/scripts/\nwrapped-target for details; docs/charter.md is a project doc.\nAlso core/scripts/missing-one and docs/tradeoffs.md.\n' >"$rl_root/docs/note.md"
+: >"$rl_root/core/scripts/real"; : >"$rl_root/core/scripts/wrapped-target"
+git -C "$rl_root" add -A >/dev/null 2>&1
+rl_out="$("$REPO_LINT" --root "$rl_root" doc-refs 2>&1)"
+if grep -q "cites core/scripts/missing-one" <<<"$rl_out" \
+   && grep -q "cites docs/tradeoffs.md" <<<"$rl_out" \
+   && ! grep -q "core/scripts/real,\|cites core/scripts/real\b" <<<"$rl_out" \
+   && ! grep -q "wrapped-target" <<<"$rl_out" \
+   && ! grep -q "docs/charter.md" <<<"$rl_out"; then
+  pass "repo-lint: doc-refs flags missing core/ and own-docs paths, joins wrapped paths, ignores project docs"
+else
+  fail "repo-lint: doc-refs output wrong: $rl_out"
+fi
+
 exit "$overall"
