@@ -3000,6 +3000,101 @@ else
   fail "path-escalate: expected exit 2 and a hook-block event (exit=$ev_code)"
 fi
 
+# --- event schema v1: version, session, reason fields on hook events ---
+if tail -1 "$ev_proj/.spine/events.jsonl" | jq -e '.v==1 and .rule=="protected-path" and .target=="src/auth/x.ts"' >/dev/null 2>&1; then
+  pass "hook-block event: carries v=1, rule=protected-path and the repo-relative target"
+else
+  fail "hook-block event: expected v=1/rule/target, got: $(tail -1 "$ev_proj/.spine/events.jsonl")"
+fi
+printf '{"session_id":"sess-abc","tool_name":"Write","tool_input":{"file_path":"%s/src/auth/y.ts"}}' "$ev_proj" \
+  | CLAUDE_PROJECT_DIR="$ev_proj" "$SCRIPT_DIR/../hooks/path-escalate" >/dev/null 2>&1 || true
+if tail -1 "$ev_proj/.spine/events.jsonl" | jq -e '.session=="sess-abc"' >/dev/null 2>&1; then
+  pass "hook-block event: session comes from the hook input's session_id"
+else
+  fail "hook-block event: expected session=sess-abc, got: $(tail -1 "$ev_proj/.spine/events.jsonl")"
+fi
+CLAUDE_CODE_SESSION_ID=env-sess "$SPINE_EVENT" --project "$ev_proj" probe a=b
+if tail -1 "$ev_proj/.spine/events.jsonl" | jq -e '.v==1 and .session=="env-sess" and .a=="b"' >/dev/null 2>&1; then
+  pass "spine-event: session falls back to CLAUDE_CODE_SESSION_ID"
+else
+  fail "spine-event: expected session=env-sess, got: $(tail -1 "$ev_proj/.spine/events.jsonl")"
+fi
+
+# An unplaceable Bash write: rule + why code + command words, never the command.
+printf '{"tool_name":"Bash","tool_input":{"command":"cd sub && echo SECRETVALUE9 > out-file-name.txt"}}' \
+  | CLAUDE_PROJECT_DIR="$ev_proj" "$SCRIPT_DIR/../hooks/path-escalate" >/dev/null 2>&1 || true
+ev_line="$(tail -1 "$ev_proj/.spine/events.jsonl")"
+if jq -e '.event=="hook-block" and .rule=="unresolved-bash-target" and .why=="relative-after-cd" and .cmds=="cd,echo" and (.cmd_sha|test("^[0-9a-f]{10}$"))' <<<"$ev_line" >/dev/null 2>&1; then
+  pass "path-escalate: an unplaceable Bash write logs rule, why code, command words and a hash"
+else
+  fail "path-escalate: unresolved Bash event wrong: $ev_line"
+fi
+if ! grep -q "SECRETVALUE9\|out-file-name" <<<"$ev_line"; then
+  pass "hook events never record the full command or its arguments"
+else
+  fail "hook event leaked command text: $ev_line"
+fi
+
+# dep-gate: an install command is an ask with rule=install-command; leading VAR=value skipped.
+echo '^pnpm (add|install)' >"$ev_proj/.spine/install-command-patterns.conf"
+ev_out="$(printf '{"tool_name":"Bash","tool_input":{"command":"pnpm add left-pad --registry=http://u:hunter2@host"}}' \
+  | CLAUDE_PROJECT_DIR="$ev_proj" "$SCRIPT_DIR/../hooks/dep-gate" 2>/dev/null)"
+ev_line="$(tail -1 "$ev_proj/.spine/events.jsonl")"
+if jq -e '.permissionDecision=="ask" or .hookSpecificOutput.permissionDecision=="ask"' <<<"$ev_out" >/dev/null 2>&1 \
+   && jq -e '.event=="hook-ask" and .hook=="dep-gate" and .rule=="install-command" and .cmds=="pnpm"' <<<"$ev_line" >/dev/null 2>&1 \
+   && ! grep -q "hunter2" <<<"$ev_line"; then
+  pass "dep-gate: an install command asks and logs rule=install-command without its arguments"
+else
+  fail "dep-gate: install-command event wrong: out=$ev_out line=$ev_line"
+fi
+
+# phase-gate: a pre-plan write outside the task folder.
+ev2="$(mktemp -d "$tmp_root/evproj2.XXXXXX")"
+mkdir -p "$ev2/.spine" "$ev2/work/EV2" "$ev2/src"
+echo EV2 >"$ev2/.spine/current-task"; echo plan >"$ev2/work/EV2/state"
+ev_code=0
+printf '{"tool_name":"Write","tool_input":{"file_path":"%s/src/a.ts"}}' "$ev2" \
+  | CLAUDE_PROJECT_DIR="$ev2" "$SCRIPT_DIR/../hooks/phase-gate" >/dev/null 2>&1 || ev_code=$?
+if [[ "$ev_code" == 2 ]] && tail -1 "$ev2/.spine/events.jsonl" | jq -e '.hook=="phase-gate" and .rule=="pre-plan-write" and .target=="src/a.ts"' >/dev/null 2>&1; then
+  pass "phase-gate: a pre-plan write blocks (exit 2) and logs rule=pre-plan-write with the target"
+else
+  fail "phase-gate: expected exit 2 + pre-plan-write event (exit=$ev_code): $(tail -1 "$ev2/.spine/events.jsonl" 2>/dev/null)"
+fi
+
+# set-state: writes the phase and logs a phase event naming the task it was given.
+SET_STATE="$SCRIPT_DIR/set-state"
+ss="$(mktemp -d "$tmp_root/setstate.XXXXXX")"
+mkdir -p "$ss/work/T1" "$ss/work/T2"
+echo OTHER >"$ss/.spine-placeholder"; mkdir -p "$ss/.spine"; echo T2 >"$ss/.spine/current-task"
+echo research >"$ss/work/T1/state"
+if "$SET_STATE" --project "$ss" T1 plan && [[ "$(cat "$ss/work/T1/state")" == "plan" ]] \
+   && tail -1 "$ss/.spine/events.jsonl" | jq -e '.event=="phase" and .task=="T1" and .from=="research" and .to=="plan"' >/dev/null 2>&1; then
+  pass "set-state: writes the phase and logs from/to against the named task (not current-task)"
+else
+  fail "set-state: wrong result: state=$(cat "$ss/work/T1/state") event=$(tail -1 "$ss/.spine/events.jsonl" 2>/dev/null)"
+fi
+"$SET_STATE" --project "$ss" T2 implement
+if tail -1 "$ss/.spine/events.jsonl" | jq -e '.from=="none" and .to=="implement"' >/dev/null 2>&1; then
+  pass "set-state: a task with no state file yet logs from=none"
+else
+  fail "set-state: expected from=none: $(tail -1 "$ss/.spine/events.jsonl")"
+fi
+ss_before="$(wc -l <"$ss/.spine/events.jsonl")"
+if ! "$SET_STATE" --project "$ss" T1 shipping 2>/dev/null && [[ "$(cat "$ss/work/T1/state")" == "plan" ]] \
+   && ! "$SET_STATE" --project "$ss" NOPE plan 2>/dev/null && [[ "$(wc -l <"$ss/.spine/events.jsonl")" == "$ss_before" ]]; then
+  pass "set-state: a bad phase or a missing task exits 1 and changes nothing"
+else
+  fail "set-state: bad input should exit 1 and leave state and events untouched"
+fi
+
+# spine_cmd_fields: command-position words across separators, assignments skipped.
+(
+  source "$SCRIPT_DIR/../hooks/_spine-event"
+  spine_cmd_fields 'A=1 B=2 cd apps/api && pnpm -r test 2>&1 | tail -5; ls /x'
+  [[ "$SPINE_CMDS" == "cd,pnpm,tail,ls" ]]
+) && pass "spine_cmd_fields: command-position words across &&, |, ; with assignments skipped" \
+  || fail "spine_cmd_fields: wrong command words"
+
 ga_proj="$(mktemp -d "$tmp_root/gaproj.XXXXXX")"
 mkdir -p "$ga_proj/.spine"
 echo '{"clone-scan":{"status":"unavailable","reason":"no code yet"},"lint":{"status":"implemented","reason":"x"}}' >"$ga_proj/.spine/capabilities.json"
@@ -3071,7 +3166,8 @@ else
 fi
 
 ln -s ../../core/skills/gone "$rl_root/.claude/skills/gone"
-if "$REPO_LINT" --root "$rl_root" symlinks 2>&1 | grep -q "dangling symlink: .claude/skills/gone"; then
+rl_out="$("$REPO_LINT" --root "$rl_root" symlinks 2>&1)" || true
+if grep -q "dangling symlink: .claude/skills/gone" <<<"$rl_out"; then
   pass "repo-lint: dangling .claude symlink is reported"
 else
   fail "repo-lint: dangling symlink not reported"
@@ -3080,7 +3176,8 @@ rm "$rl_root/.claude/skills/gone"
 
 mkdir -p "$rl_root/core/skills/bar"
 printf -- '---\nname: bar\ndisable-model-invocation: true\n---\n' >"$rl_root/core/skills/bar/SKILL.md"
-if "$REPO_LINT" --root "$rl_root" readme-commands 2>&1 | grep -q "skill /bar is user-invocable but missing"; then
+rl_out="$("$REPO_LINT" --root "$rl_root" readme-commands 2>&1)" || true
+if grep -q "skill /bar is user-invocable but missing" <<<"$rl_out"; then
   pass "repo-lint: user-invocable skill missing from README is reported"
 else
   fail "repo-lint: undocumented skill not reported"
@@ -3088,7 +3185,7 @@ fi
 mkdir -p "$rl_root/core/skills/helper"
 printf -- '---\nname: helper\n---\n' >"$rl_root/core/skills/helper/SKILL.md"
 printf '| `/bar` | | does bar |\n| `/ghost` | | no skill |\n' >>"$rl_root/README.md"
-rl_out="$("$REPO_LINT" --root "$rl_root" readme-commands 2>&1)"
+rl_out="$("$REPO_LINT" --root "$rl_root" readme-commands 2>&1)" || true
 if grep -q "documents /ghost but" <<<"$rl_out" && ! grep -q "helper" <<<"$rl_out" && ! grep -q "/bar" <<<"$rl_out"; then
   pass "repo-lint: README row with no skill is reported; non-command skills are not required"
 else
@@ -3098,7 +3195,7 @@ fi
 printf 'See core/scripts/real and core/scripts/\nwrapped-target for details; docs/charter.md is a project doc.\nAlso core/scripts/missing-one and docs/tradeoffs.md.\n' >"$rl_root/docs/note.md"
 : >"$rl_root/core/scripts/real"; : >"$rl_root/core/scripts/wrapped-target"
 git -C "$rl_root" add -A >/dev/null 2>&1
-rl_out="$("$REPO_LINT" --root "$rl_root" doc-refs 2>&1)"
+rl_out="$("$REPO_LINT" --root "$rl_root" doc-refs 2>&1)" || true
 if grep -q "cites core/scripts/missing-one" <<<"$rl_out" \
    && grep -q "cites docs/tradeoffs.md" <<<"$rl_out" \
    && ! grep -q "core/scripts/real,\|cites core/scripts/real\b" <<<"$rl_out" \

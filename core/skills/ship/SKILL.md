@@ -747,7 +747,7 @@ First log it: `${CLAUDE_SKILL_DIR}/../../scripts/spine-event shipped` (it reads
 the task from `.spine/current-task`, so it must run before that file is
 removed below).
 
-Write `work/<task-id>/state` = `done` (this is the transition out of
+Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> done` (this is the transition out of
 `shipping (n of n)` for a multi-repo task — every repo's commit from §5
 must have actually landed before this write, never write `done` while a
 repo in `## Ship order` is still pending). `registry-sync <task-id>` —

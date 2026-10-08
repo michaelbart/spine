@@ -1,0 +1,31 @@
+#!/bin/bash
+# set-state — move a task to a new phase: writes work/<task-id>/state and logs a
+# `phase` event (from/to) to .spine/events.jsonl, so every transition is
+# recorded the same way instead of by each skill remembering to.
+#
+# Usage: set-state [--project <path>] <task-id> <research|plan|implement|verify|ship|done>
+#
+# Exit 0 on success, silent. Exit 1 (with a message) on a bad phase or a task
+# folder that does not exist — unlike spine-event this is a state writer, so it
+# must not pretend to have worked. The event write itself still never fails it.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+project="$(pwd)"
+if [[ "${1:-}" == "--project" ]]; then project="${2:?--project needs a path}"; shift 2; fi
+task="${1:-}"; phase="${2:-}"
+[[ -n "$task" && -n "$phase" ]] || { echo "usage: set-state [--project <path>] <task-id> <phase>" >&2; exit 1; }
+case "$phase" in
+  research|plan|implement|verify|ship|done) ;;
+  *) echo "set-state: '$phase' is not a phase (research|plan|implement|verify|ship|done)" >&2; exit 1 ;;
+esac
+dir="$project/work/$task"
+[[ -d "$dir" ]] || { echo "set-state: no task folder at $dir" >&2; exit 1; }
+
+old=""
+[[ -f "$dir/state" ]] && old="$(tr -d '[:space:]' <"$dir/state")"
+printf '%s\n' "$phase" >"$dir/state" || { echo "set-state: could not write $dir/state" >&2; exit 1; }
+
+source "$SCRIPT_DIR/../hooks/_spine-event" 2>/dev/null || exit 0
+SPINE_TASK="$task" spine_event "$project" phase from="${old:-none}" to="$phase"
+exit 0

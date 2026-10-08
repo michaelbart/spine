@@ -124,31 +124,43 @@ numbers from real projects. Read-only, deletable, never on the gate path.
 
 ### B1. Event schema
 
-- [ ] Write `docs/event-schema.md`: every event, every field, a `v` (schema
+- [x] Write `docs/event-schema.md`: every event, every field, a `v` (schema
   version) field on each line, rules (append-only, never read for decisions,
   never fails a task, no secrets).
 
 ### B2. Richer hook events
 
-- [ ] `hook-block` / `hook-ask` record: `rule` (a stable id such as
-  `unresolved-bash-target`, `protected-path`, `manifest`, `install-command`,
-  `phase`), `target` (repo-relative path when resolved), `cmd0` (first token of
-  a Bash command only), and `cmd_sha` (short hash of the full command, to
-  group repeats). **Never store the full command** (may contain secrets).
-- [ ] Selftest asserts the fields and asserts no full command appears.
+- [x] `hook-block` / `hook-ask` record `rule` (stable id), `target`
+  (repo-relative path when resolved), `why` (`var-glob-quote` /
+  `relative-after-cd` / `other`, for unplaceable Bash writes), `cmds`
+  (command-position words, e.g. `cd,pnpm,tail`; replaces the planned `cmd0`,
+  which would have said only `cd` for `cd x && pnpm test`) and `cmd_sha`.
+  **The full command is never stored.** Every event also carries `v` and
+  `session` (hook input `session_id`, else `CLAUDE_CODE_SESSION_ID`), which
+  makes B4's transcript join exact instead of a time-window guess.
+- [x] Selftest asserts the fields, and asserts a secret-looking argument and
+  the redirect target never appear in the logged line.
 
 ### B3. New lifecycle events
 
-Add through `spine-event` calls in skills (or scripts where possible):
+Done 2026-10-08, with three simplifications found while building it (see
+`docs/event-schema.md` "Derived, not logged"): no `task-start` (the first
+`class-set` is the start), no `verify-round` (round number = order of
+`verify-result` events), no `finding-disposition` event (read `disposition`
+from `work/<task>/artifacts/<agent>-verdict.json`). `phase` is written by the
+new `core/scripts/set-state`, which the task and ship skills now call instead
+of writing the state file by hand, so transitions are mechanical.
+`plan-approved` and `deviation` are one-line `spine-event` calls in
+`task/SKILL.md`. Original list, for reference:
 
-- [ ] `task-start` (class unknown yet), `class-set` (exists), `phase`
+- [x] `task-start` (class unknown yet), `class-set` (exists), `phase`
   (research/plan/implement/verify/ship, entered), `plan-approved`,
   `deviation` (kind=real|setup, tier), `verify-round` (n, floor=pass|fail|degraded,
   falsifier and security finding counts by severity), `finding-disposition`
   (fixed|carried|declined, agent, severity), `abandoned` (see E2),
   `shipped` (exists; extend with `tokens_*` rollup, see B4).
-- [ ] `lane=full|lite` field on `task-start` (used only by B8).
-- [ ] Skills call `spine-event`; none of these may add a stop or a prompt.
+- [ ] `lane=full|lite` field on `class-set` (used only by B8; not added).
+- [x] None of these adds a stop or a prompt.
 
 ### B4. The analyzer
 
@@ -250,8 +262,9 @@ confounded to be useful, e.g. non-spine work is a different kind of change):
 
 ### C1. Find out why (needs B2)
 
-- [ ] Ship B2, run normally for a stretch, then group `hook-*` events by
-  `rule` / `cmd0` / `cmd_sha`.
+- [x] B2 shipped (logging in place). [ ] Now run normally for a stretch,
+  then group `hook-*` events by `rule` / `why` / `cmds` / `cmd_sha`
+  (`jq` over `.spine/events.jsonl`, or `spine-stats friction` once B4 exists).
 - Hypothesis to confirm or reject: `path-escalate` denies and `dep-gate` asks
   for any Bash command whose write target `_bash-write-targets` cannot resolve
   (compound commands, pipes, `cd && ...`, package scripts), which is why the
@@ -273,6 +286,27 @@ Candidate fixes, to be chosen from C1's data:
 - Constraint: a Bash write that genuinely cannot be resolved stays fail-closed.
   The fuzz suite (`core-selftest` fuzz section) must still pass, and new fuzz
   cases must cover every newly allowlisted shape.
+
+### C4. dep-gate misses compound and env-prefixed installs (correctness, found 2026-10-08)
+
+Install-command patterns (`.spine/install-command-patterns.conf`, e.g.
+`^pnpm (add|install|i|up|update|remove|rm)( |$)`) are matched with
+`grep -E` against the **whole command string**, so a leading anchor fails for
+`cd apps/api && pnpm add x`, `CI=1 pnpm add x` and `pnpm --filter web add x`.
+The write-target analysis cannot see these either (`pnpm add` is not a file
+write). So a package change can pass the gate that exists to ask about it.
+This is the opposite problem to friction; it adds asks, so do it with C2 and
+measure.
+
+- [ ] Match each pattern against every command segment (split on `&&`, `||`,
+  `;`, `|`, newlines) with leading `VAR=value` assignments stripped.
+- [ ] Selftest with a negative control for each shape above.
+- [ ] Tell the owner which projects' pattern files are `^`-anchored without
+  covering `--filter`/`-F`/`-w` forms (turnpilot's does not).
+- [ ] Separate observation: a `turnpilot` transcript shows `dep-gate` printing
+  `grep: parentheses not balanced`, i.e. some pattern file there once held an
+  invalid regex, which silently disables the check. Make `dep-gate` fail loudly
+  (ask, with a message) when a pattern file does not compile.
 
 ### C3. Acceptance (set the number after B6)
 

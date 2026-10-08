@@ -46,13 +46,18 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_workspace-route"
 source "$SCRIPT_DIR/_spine-event" 2>/dev/null
+declare -F spine_cmd_fields >/dev/null || { spine_cmd_fields() { :; }; spine_unresolved_code() { :; }; }
 declare -F workspace_route >/dev/null || { echo "dep-gate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 tool_name="$(jq -r '.tool_name // empty' <<<"$input")"
+SPINE_SESSION_ID="$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)"
+ev_target=""; ev_why=""
 
 ask() {
-  declare -F spine_event >/dev/null && spine_event "$project" hook-ask hook=dep-gate tool="$tool_name"
+  # ask <rule-id> <message> — rule-id is the stable reason recorded in the event log.
+  local rule="$1"; shift
+  declare -F spine_hook_event >/dev/null && spine_hook_event "$project" hook-ask dep-gate "$tool_name" "$rule" "$ev_target" "$ev_why"
   jq -n --arg reason "$1" \
     '{hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"ask", permissionDecisionReason:$reason}}'
   exit 0
@@ -63,7 +68,7 @@ check_manifest_target() {
   # protected-paths.conf #manifest tag (workspace_route resolves which root
   # that is; single-repo projects always resolve to $project itself).
   local file_path="$1" rel display conf line glob
-  workspace_route "$project" "$file_path" || ask "What happened: I'm about to edit a file, but I can't tell where the project root is, so I can't rule out that it changes the list of packages. What it means for you: nothing has changed yet, and any package change is always your call. To continue: allow the edit, or deny it and tell me what to do instead."
+  workspace_route "$project" "$file_path" || ask no-project-root "What happened: I'm about to edit a file, but I can't tell where the project root is, so I can't rule out that it changes the list of packages. What it means for you: nothing has changed yet, and any package change is always your call. To continue: allow the edit, or deny it and tell me what to do instead."
   [[ -n "$WSR_OWNER_ROOT" ]] || return 0
   conf="$WSR_OWNER_ROOT/.spine/protected-paths.conf"
   [[ -f "$conf" ]] || return 0
@@ -77,7 +82,8 @@ check_manifest_target() {
     glob="$(printf '%s' "$glob" | sed -e 's/[[:space:]]*$//')"
     [[ -z "$glob" ]] && continue
     if _wsr_glob_eq "$rel" "$glob"; then
-      ask "What happened: I'm about to edit '$display', which lists the packages the project depends on. What it means for you: adding or changing a package is always your call — it affects security and how much the project has to maintain. Nothing has changed yet. To continue: allow this edit, or deny it and tell me what to do instead."
+      ev_target="$rel"
+      ask manifest-path "What happened: I'm about to edit '$display', which lists the packages the project depends on. What it means for you: adding or changing a package is always your call — it affects security and how much the project has to maintain. Nothing has changed yet. To continue: allow this edit, or deny it and tell me what to do instead."
     fi
   done < "$conf"
 }
@@ -92,6 +98,7 @@ case "$tool_name" in
   Bash)
     command="$(jq -r '.tool_input.command // empty' <<<"$input")"
     [[ -n "$command" ]] || exit 0
+    spine_cmd_fields "$command"
 
     source "$SCRIPT_DIR/_bash-write-targets"
     declare -F bash_write_targets >/dev/null || { echo "dep-gate: _bash-write-targets did not load — failing closed, cannot evaluate this Bash write safely" >&2; exit 2; }
@@ -99,7 +106,8 @@ case "$tool_name" in
       [[ -n "$line" ]] || continue
       case "$line" in
         UNRESOLVED:*)
-          ask "What happened: I'm about to run '$command', and I can't tell which file it writes (${line#UNRESOLVED:}). What it means for you: I can't rule out that it changes the list of packages, which is always your call. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
+          ev_why="$(spine_unresolved_code "$line")"
+          ask unresolved-bash-target "What happened: I'm about to run '$command', and I can't tell which file it writes (${line#UNRESOLVED:}). What it means for you: I can't rule out that it changes the list of packages, which is always your call. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
           ;;
         PATH:*)
           check_manifest_target "${line#PATH:}"
@@ -121,7 +129,7 @@ case "$tool_name" in
       [[ -f "$pf" ]] || continue
       any_exist=1
       if grep -qEf "$pf" <<<"$command"; then
-        ask "What happened: I'm about to run '$command', which looks like it installs or changes a package. What it means for you: any package change is always your call — it affects security and how much the project has to maintain. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
+        ask install-command "What happened: I'm about to run '$command', which looks like it installs or changes a package. What it means for you: any package change is always your call — it affects security and how much the project has to maintain. Nothing has run yet. To continue: allow the command, or deny it and tell me what to do instead."
       fi
     done
     [[ "$any_exist" -eq 1 ]] || exit 0

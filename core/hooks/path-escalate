@@ -48,12 +48,15 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_workspace-route"
 source "$SCRIPT_DIR/_spine-event" 2>/dev/null
+declare -F spine_cmd_fields >/dev/null || { spine_cmd_fields() { :; }; spine_unresolved_code() { :; }; }
 declare -F workspace_route >/dev/null || { echo "path-escalate: _workspace-route did not load — failing closed, cannot evaluate this write safely" >&2; exit 2; }
 input="$(cat)"
 project="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 tool_name="$(jq -r '.tool_name // empty' <<<"$input")"
-declare -F spine_event >/dev/null && trap '[[ $? -eq 2 ]] && spine_event "$project" hook-block hook=path-escalate tool="$tool_name"' EXIT
+SPINE_SESSION_ID="$(jq -r '.session_id // empty' <<<"$input" 2>/dev/null)"
+ev_rule="internal"; ev_target=""; ev_why=""
+declare -F spine_hook_event >/dev/null && trap '[[ $? -eq 2 ]] && spine_hook_event "$project" hook-block path-escalate "$tool_name" "$ev_rule" "$ev_target" "$ev_why"' EXIT
 
 class="0"
 current_task_file="$project/.spine/current-task"
@@ -98,6 +101,7 @@ check_target() {
 
   if [[ "$is_migration" -eq 1 ]]; then
     if [[ "$class" != "2" ]]; then
+      ev_rule="migration-path"; ev_target="$display"
       printf '%s\n' \
         "What happened: I tried to edit '$display', which is inside '$matched_glob' — a database-migration area you marked as protected." \
         "What it means for you: nothing was changed. Edits there are blocked unless the task is Class 2 (the highest-risk kind of change: I check with you at every step), and this one is not. This is a hard block, not a question." \
@@ -111,6 +115,7 @@ check_target() {
     return 0
   fi
 
+  ev_rule="protected-path"; ev_target="$display"
   printf '%s\n' \
     "What happened: I tried to edit '$display', which is inside '$matched_glob' — a place you marked as needing extra care." \
     "What it means for you: nothing was changed. This task is not yet marked as Class 2 (the highest-risk kind of change: I check with you at every step), and edits there require it." \
@@ -128,12 +133,14 @@ case "$tool_name" in
   Bash)
     command="$(jq -r '.tool_input.command // empty' <<<"$input")"
     [[ -n "$command" ]] || exit 0
+    spine_cmd_fields "$command"
     source "$SCRIPT_DIR/_bash-write-targets"
     declare -F bash_write_targets >/dev/null || { echo "path-escalate: _bash-write-targets did not load — failing closed, cannot evaluate this Bash write safely" >&2; exit 2; }
     while IFS= read -r line; do
       [[ -n "$line" ]] || continue
       case "$line" in
         UNRESOLVED:*)
+          ev_rule="unresolved-bash-target"; ev_why="$(spine_unresolved_code "$line")"
           printf '%s\n' \
             "What happened: I tried to run '$command', and I can't tell which file it writes to (${line#UNRESOLVED:})." \
             "What it means for you: nothing was run. Because it might touch a protected file, I block it rather than guess." \

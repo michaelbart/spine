@@ -501,7 +501,7 @@ minute)", and log the outcome:
 `${CLAUDE_SKILL_DIR}/../../scripts/spine-event map-refresh result=<ok|failed> was=<stale n|empty|missing>`.
 If the refresh fails or times out, carry on: the researcher reads the code
 directly, exactly as it did before, and nothing is reported to the human.
-`/ship` commits the refreshed map on its own. Only after that: write `work/<task-id>/state` = `research`.
+`/ship` commits the refreshed map on its own. Only after that: `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> research`.
 
 **Registry init (Extension C §2.2), same step, before the first
 `registry-sync`:** resolve owner identity —
@@ -561,8 +561,8 @@ The researcher's entire reply is the complete `research.md` content
 
 **Flag check first** (per this skill's own header note on flag-blocked
 advance): read `work/<task-id>/flags.json`; any unacknowledged entry halts
-here, before anything else in this step. Write `state` = `plan`,
-`registry-sync <task-id>`. First run
+here, before anything else in this step. Run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> plan`,
+then `registry-sync <task-id>`. First run
 `${CLAUDE_SKILL_DIR}/../../scripts/check-stale work/<task-id>/research.md`
 — if it reports stale, the grounding drifted since it was written; regenerate
 research (back to step 2) before planning on it — **unless every drifted item
@@ -749,7 +749,8 @@ iteration. Present it with `AskUserQuestion`, in this form (per `core/templates/
 **Record the approval** — `work/<task-id>/approval.json`:
 `{"approver": "<git identity>", "at": "<iso8601>"}`. The approver is whoever's
 session this is, resolved from `git config user.name`/`user.email` in *this*
-session, same as `owner`. `registry-sync <task-id>`. This holds at every
+session, same as `owner`. Log it with
+`${CLAUDE_SKILL_DIR}/../../scripts/spine-event plan-approved autonomy=<mode>`, then `registry-sync <task-id>`. This holds at every
 class: the person who owns the task approves its plan. Class 2 adds more
 checking (guided at every step, protected-path escalation, the adversaries),
 not a second approver. Mandatory cross-review would recreate the
@@ -758,8 +759,8 @@ can't prove who reviewed anything.
 
 ## 4. Implement
 
-**Flag check first**, same rule as step 3. On approval: write
-`state` = `implement`, `registry-sync <task-id>`. This is what unblocks
+**Flag check first**, same rule as step 3. On approval: run
+`${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> implement`, then `registry-sync <task-id>`. This is what unblocks
 `phase-gate` — it only restricts writes during `research`/`plan`.
 
 Work the plan's steps directly (you have full tool access again; `phase-gate`
@@ -819,10 +820,16 @@ literal, not judgment-call vocabulary translation:
   > **Safe to ignore:** <records I'll update either way>
   <!-- touchpoint:end -->
 
+Log each one as you record it, so a later recap can compare what was logged
+with what the diff shows:
+`${CLAUDE_SKILL_DIR}/../../scripts/spine-event deviation kind=real tier=<record-and-proceed|halt>`
+for a `deviations.md` record, and `... spine-event deviation kind=setup` for a
+`SETUP:` note.
+
 **Circuit breaker:** count every deviations.md record regardless of tier.
 On the third for this task, the plan is invalidated — `git stash push -u -m
 "spine: circuit breaker, work/<task-id>"` to preserve what you'd built
-without losing it, write `state` back to `research`, `registry-sync
+without losing it, run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> research`, `registry-sync
 <task-id>`, and tell the human plainly: three wrong guesses means the
 research was wrong once, not that each guess should be patched forward.
 Fresh research is required before re-planning.
@@ -835,8 +842,8 @@ reaffirms it as-is, dated, and the deviations.md resolution records which.
 
 **Flag check first**, same rule as step 3. Implementation acceptance
 checks (from the plan) should already pass before you move on — check them
-yourself first; don't hand a known-broken diff to `/verify`. Then: write
-`state` = `verify`, `registry-sync <task-id>`.
+yourself first; don't hand a known-broken diff to `/verify`. Then: run
+`${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> verify`, then `registry-sync <task-id>`.
 
 **This phase's shape depends on `work/<task-id>/autonomy`** (absent =
 `guided`). The independence that `/verify` protects comes from the falsifier
@@ -852,7 +859,7 @@ stop and wait — this session does not proceed to ship on an unverified diff, t
 same waiting posture step 3 uses at plan approval. When resumed,
 **read `work/<task-id>/verify.md` directly** (its `Result:` line reads `PASS` or
 `FAIL` verbatim). If `FAIL`: fix it (back to implementation, same task) and ask
-the human to re-run `/verify`. If `PASS`: write `state` = `ship`, `registry-sync`,
+the human to re-run `/verify`. If `PASS`: run `${CLAUDE_SKILL_DIR}/../../scripts/set-state <task-id> ship`, `registry-sync`,
 then ask the human to run `/ship <task-id>` and wait the same way. Say
 it in this form (per `core/templates/human-touchpoint.md`):
 

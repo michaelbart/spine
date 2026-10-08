@@ -6,7 +6,12 @@
 # classification, verify rounds, bypasses). Nothing reads it to make a
 # decision — it exists so a later recap can say what actually happened. It
 # must never change what a hook or script does, so every failure path
-# returns 0 and it prints nothing.
+# returns 0 and it prints nothing. Field reference: docs/event-schema.md.
+#
+# Every line carries v (schema version), ts, task, event, and — when the
+# session id is known (SPINE_SESSION_ID, set by hooks from their input, else
+# the CLAUDE_CODE_SESSION_ID env var) — session, which joins an event to the
+# Claude transcript it happened in.
 spine_event() {
   local project="${1:-}" event="${2:-}" task="" f
   [[ -n "$project" && -n "$event" ]] || return 0
@@ -14,9 +19,80 @@ spine_event() {
   command -v jq >/dev/null 2>&1 || return 0
   f="$project/.spine/current-task"
   [[ -f "$f" ]] && task="$(tr -d '[:space:]' < "$f" 2>/dev/null)"
+  [[ -z "${SPINE_TASK:-}" ]] || task="$SPINE_TASK"   # a caller that knows the task (set-state) wins
   mkdir -p "$project/.spine" 2>/dev/null || return 0
   jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg task "$task" --arg event "$event" \
-    '{ts:$ts,task:$task,event:$event} + ($ARGS.positional | map(select(contains("=")) | {(split("=")[0]): (split("=")[1:] | join("="))}) | add // {})' \
+    --arg sid "${SPINE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}" \
+    '{v:1,ts:$ts,task:$task,event:$event} + (if $sid != "" then {session:$sid} else {} end) + ($ARGS.positional | map(select(contains("=")) | {(split("=")[0]): (split("=")[1:] | join("="))}) | add // {})' \
     --args "$@" >> "$project/.spine/events.jsonl" 2>/dev/null || true
+  return 0
+}
+
+# spine_cmd_fields <bash command> — sets SPINE_CMDS (comma-joined command-position
+# words, e.g. "cd,pnpm,tail") and SPINE_CMD_SHA (10 hex of the command's sha256,
+# to group repeats). The full command is never recorded: it may carry secrets.
+# Leading VAR=value assignments are skipped. Words are cut to [A-Za-z0-9._-],
+# 32 chars, at most 6 kept.
+spine_cmd_fields() {
+  SPINE_CMDS="" SPINE_CMD_SHA=""
+  local cmd="${1:-}" tok word expect=1 n=0 semi
+  local -a toks=()
+  [[ -n "$cmd" ]] || return 0
+  read -r -a toks <<<"$cmd" 2>/dev/null || true
+  for tok in ${toks[@]+"${toks[@]}"}; do
+    semi=0
+    case "$tok" in
+      '&&'|'||'|';'|'|'|'&') expect=1; continue ;;
+      *';') tok="${tok%;}"; semi=1 ;;
+    esac
+    if [[ "$expect" -eq 1 ]]; then
+      case "$tok" in
+        *=*) ;;
+        *)
+          word="$(printf '%s' "${tok##*/}" | tr -cd 'A-Za-z0-9._-' | cut -c1-32)"
+          if [[ -n "$word" ]]; then
+            SPINE_CMDS="${SPINE_CMDS:+$SPINE_CMDS,}$word"
+            expect=0
+            n=$((n + 1))
+          fi
+          ;;
+      esac
+    fi
+    [[ "$semi" -eq 0 ]] || expect=1
+    [[ "$n" -lt 6 ]] || break
+  done
+  if command -v shasum >/dev/null 2>&1; then
+    SPINE_CMD_SHA="$(printf '%s' "$cmd" | shasum -a 256 2>/dev/null | cut -c1-10)"
+  elif command -v sha256sum >/dev/null 2>&1; then
+    SPINE_CMD_SHA="$(printf '%s' "$cmd" | sha256sum 2>/dev/null | cut -c1-10)"
+  fi
+  return 0
+}
+
+# spine_unresolved_code <"UNRESOLVED:..." line> — a stable reason code for why
+# _bash-write-targets could not place a Bash write.
+spine_unresolved_code() {
+  case "${1:-}" in
+    *"variable/glob/quote"*) echo "var-glob-quote" ;;
+    *"after a 'cd'"*) echo "relative-after-cd" ;;
+    *) echo "other" ;;
+  esac
+}
+
+# spine_hook_event <project> <hook-block|hook-ask> <hook> <tool> [rule] [target] [why]
+# One call per intervention. rule is a stable id (protected-path, migration-path,
+# pre-plan-write, manifest-path, install-command, unresolved-bash-target,
+# no-project-root, internal); target is a repo-relative path when one was
+# resolved; why is spine_unresolved_code's output. Adds cmds/cmd_sha when
+# spine_cmd_fields ran for this call.
+spine_hook_event() {
+  local project="${1:-}" event="${2:-}" hook="${3:-}" tool="${4:-}" rule="${5:-}" target="${6:-}" why="${7:-}"
+  local -a kv=("hook=$hook" "tool=$tool")
+  [[ -z "$rule" ]] || kv+=("rule=$rule")
+  [[ -z "$target" ]] || kv+=("target=$target")
+  [[ -z "$why" ]] || kv+=("why=$why")
+  [[ -z "${SPINE_CMDS:-}" ]] || kv+=("cmds=$SPINE_CMDS")
+  [[ -z "${SPINE_CMD_SHA:-}" ]] || kv+=("cmd_sha=$SPINE_CMD_SHA")
+  spine_event "$project" "$event" "${kv[@]}"
   return 0
 }
