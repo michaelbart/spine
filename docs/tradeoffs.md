@@ -26,8 +26,11 @@ is closer to a milestone-sized review (20 to 40 minutes). Treat these as guesses
 stops per shipped task. Nearly all were Bash commands the write-target parser could not
 place: a relative path after `cd` (the largest group), a variable in the target, or a
 quoted `>` taken for a redirect (about one in ten). The parser now resolves a literal
-`cd x && ...` chain and ignores quoted text; a variable target still stops. Re-measure
-with `spine-stats friction` after a few weeks of use.
+`cd x && ...` chain, follows variables the same command assigned a plain literal, and
+ignores quoted text. Measured on 9,012 real commands that cuts blocked commands by about a
+third (483 to 309) and logged events by about two thirds (the duplicate `dep-gate` entry is
+gone). Inline code (`python3 -c`, `node -e`), variables set elsewhere and `cd` chains joined
+by `;` still stop. Re-measure with `spine-stats friction` after a few weeks of use.
 
 **`/prototype`** is cheap by design: no plan, no floor, no adversary. If a prototype
 session regularly runs long it has become implementation and belongs in a `/task`.
