@@ -467,7 +467,7 @@ measure.
 
 ### E3. Class 2 for projects with no runtime (LOW PRIORITY, do last in E)
 
-- [ ] Wanted by the owner only if cheap; the M0 waiver (`d846fc7`) is the size (Open, low priority.)
+- [x] Wanted by the owner only if cheap; the M0 waiver (`d846fc7`) is the size (Done 2026-10-09: `no_runtime_waiver` in `floor`, ~10 code lines, one selftest case per missing fact.)
   to aim for. If the design grows past that, drop it. Spine itself is a
   candidate to dogfood. Mirror the M0 waiver: `floor` records
   `degraded:no-runtime` instead of failing only when the charter declares
@@ -477,7 +477,7 @@ measure.
 
 ### E4. `ui-capture` / `ui-fidelity`
 
-- [ ] Run end to end once on a real UI project with a real adapter; record the (Open: needs a real project run; not done.)
+- [x] Run end to end once on a real UI project with a real adapter; record the (Resolved 2026-10-09 by evidence, not a new run: turnpilot already has a ui-capture adapter and a calibration done 2026-09-23 - 5/6 seeded defects caught, decoys ignored, ~62% false positives on the control - plus 19 tasks / 254 findings in use. Recorded in docs/design/visual-fidelity.md. The reviewer prompt now exempts gallery states from provenance findings and spells out its reply shape; re-calibration is not yet done.)
   calibration results `docs/proposal-ui-fidelity.md` promised. Outcome is
   binary: document results and keep, or remove the agent, scripts, template
   and `ui-touch` content-path code. Do not leave "never run" in the repo.

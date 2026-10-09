@@ -537,6 +537,13 @@ other milestone, or a missing declaration keeps the hard gate. The waiver
 lapses the moment `smoke-run` is `implemented`. See `docs/design/design-stage.md`,
 "The M0 bootstrap waiver".
 
+**No-runtime waiver.** A pure library, CLI or batch project has no stack to seed, run and compare, so
+`smoke-*` can never be `implemented` and Class 2 would be unreachable. `floor` waives the Class 2 smoke
+hard gate (recording `degraded:waived-no-runtime`, never a pass) only when all three independent facts
+hold: `smoke-run` is `not-applicable` with a reason containing `no runtime`; the project charter
+(`docs/charter.md`) has a line `Runtime: none`; and the `test` capability is `implemented`. Any one missing
+and the hard gate applies in full. `unavailable` is the wrong shape for this waiver; it is the M0 shape.
+
 ### 3.9 `ui-conformance` — declared tokens/components actually present, never visual similarity
 
 Conditional existence, same shape as `ticket-fetch`/`open-pr`/

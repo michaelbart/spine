@@ -55,7 +55,15 @@ no step could see.
   plan gate plus the reviewer); a write hook keyed on `*.fixtures.*` (a
   filename convention is per-project and core is stack-blind); a CLAUDE.md
   "never invent content" rule as the only defense (advisory).
-- **Not yet verified:** no project has a `ui-capture` adapter yet, so the
-  agent and step 1e have never run end to end. The core scripts are covered
-  by `core-selftest`; the agent's quality is not.
+- **Measured (turnpilot, the only project with a `ui-capture` adapter).**
+  Calibration on 2026-09-23 with seeded defects: 5 of 6 caught (the sixth went
+  unreviewed: one agent per screen ran out of budget at 3 of 12 states), both
+  decoys correctly ignored. On an unmodified control it filed 16 findings, 6 real
+  and 10 noise (about 62% false positives), nearly all from gallery states
+  rendering test data. In use since: 19 tasks, 254 findings with `render` evidence,
+  of which 23 were fixed; 47 high-severity findings were left unfixed. The agent
+  now exempts gallery states from provenance findings and spells out its reply
+  shape; neither change has been re-calibrated yet. Re-run `.spine/calibration/`
+  in turnpilot to confirm. The reviewer's own severities are unreliable (it rated
+  a run-together headline low and unchanged test data high).
 

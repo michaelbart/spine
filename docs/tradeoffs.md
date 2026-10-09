@@ -89,9 +89,11 @@ the ceremony around those artifacts into pure cost.
   runs `floor 0` (types and lint on the changed files) and logs the result. An off-by-one
   that type-checks and lints still ships on the model's own judgment; `path-escalate`
   catches a protected-path touch after the fact.
-- **Class 2 needs a smoke-testable runtime.** `smoke-seed/run/golden` have no
-  `not-applicable` escape hatch at Class 2, so a pure CLI or library project cannot pass
-  that floor. Deliberate; a waiver in the style of the M0 one is a low-priority option.
+- **Class 2 needs a smoke-testable runtime, unless the charter says there is none.**
+  `smoke-seed/run/golden` have no general `not-applicable` escape hatch at Class 2.
+  A project can declare `Runtime: none` in its charter, mark `smoke-run` not-applicable
+  for "no runtime", and have `test` implemented; then the gate is waived as DEGRADED
+  (never a pass), by the same three-independent-facts rule as the M0 waiver.
 - **Some floor layers have never run.** `callers`, `clone-scan` and `mutate` are
   unavailable in every recorded task in both projects, so the promise that the floor
   fails on new duplication is not true there until an adapter exists. `/spine` reports
@@ -142,4 +144,3 @@ default or recommended way to work.
 | A product-spec layer | The charter stays at constraints; a product spec stays optional and human-authored. |
 | A concurrency or stress-test lane | The smoke capability is the insertion point. |
 | Reverting a shipped task | `git revert` is adequate solo; a reviewed compensating task would be a design of its own. |
-| Class 2 for no-runtime projects | Low priority; aim for the size of the M0 waiver or drop it. |

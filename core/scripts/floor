@@ -126,6 +126,20 @@ bootstrap_smoke_waiver() {
   return 0
 }
 
+# No-runtime waiver for the Class 2 smoke hard gate: a pure library, CLI or batch
+# project has no stack to seed, run and compare, so smoke can never be
+# `implemented`. Waived (recorded as DEGRADED, never a pass) only when ALL hold:
+# smoke-run is `not-applicable` with a reason containing "no runtime"; the
+# project charter declares it with a line `Runtime: none`; and the `test`
+# capability is `implemented`, so a real test layer stands in. Remove any one
+# and the hard gate applies unchanged. See ADAPTER-CONTRACT.md §3.8.
+no_runtime_waiver() {
+  [[ "$(status_of smoke-run)" == "not-applicable" ]] || return 1
+  [[ "$(reason_of smoke-run)" == *"no runtime"* ]] || return 1
+  grep -qiE '^Runtime:[[:space:]]*none[[:space:]]*$' "$project/docs/charter.md" 2>/dev/null || return 1
+  [[ "$(status_of test)" == "implemented" ]]
+}
+
 results="[]"
 add_result() {
   # add_result <capability> <status: pass|fail|degraded> <detail>
@@ -332,6 +346,10 @@ if [[ "${finish:-0}" -ne 1 ]]; then
       if [[ "$smoke_status" != "implemented" ]] && bootstrap_smoke_waiver; then
         echo "DEGRADED: smoke-run (waived: M0 bootstrap) — Class 2 smoke hard gate waived for milestone M0 task ${task_id}: smoke-run is a declared skeleton target in capabilities.json and work/M0/milestone.md, not yet built. NOT a pass — smoke did not run. Lapses automatically once smoke-run is implemented."
         add_result "smoke-run" "degraded:waived-bootstrap" "Class 2 smoke hard gate waived (M0 bootstrap, task ${task_id}); smoke did not run"
+        include_smoke=0
+      elif [[ "$smoke_status" != "implemented" ]] && no_runtime_waiver; then
+        echo "DEGRADED: smoke-run (waived: no runtime) — Class 2 smoke hard gate waived: the charter declares 'Runtime: none', smoke-run is not-applicable for that reason, and the test capability is implemented. NOT a pass: smoke did not run."
+        add_result "smoke-run" "degraded:waived-no-runtime" "Class 2 smoke hard gate waived (charter declares Runtime: none); smoke did not run"
         include_smoke=0
       elif [[ "$smoke_status" != "implemented" ]]; then
         echo "FAIL: smoke — not implemented ($smoke_status) at Class 2 — smoke is a hard gate at this class, not a soft skip" >&2

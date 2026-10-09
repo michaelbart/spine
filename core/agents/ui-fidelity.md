@@ -44,7 +44,12 @@ state's render — and check, in this order:
    visible in that state's reference screenshot. Anything in neither is
    invented content: file it `high` if it is copy or a figure a user would
    act on, `medium` otherwise. Values that are plainly seeded runtime data
-   (a date, a generated id) are at most `low`.
+   (a date, a generated id) are at most `low`. **Only for states whose
+   `coverage.json` `driver` is `real` or `steps`.** A `gallery` state renders
+   typed TEST DATA by design (names, counts and sentences that differ from the
+   reference are expected there), so file no provenance finding for its copy or
+   figures; in a gallery state report invented *structure* only (a whole
+   section or component that neither the spec nor the reference has).
 
 **Do not report**: antialiasing or sub-pixel differences, offsets of a few
 pixels, seed-data differences that don't change meaning, or anything you
@@ -67,4 +72,10 @@ is itself a finding (`medium`) — quote the coverage entry as evidence.
 
 Shared reporting discipline, efficiency and reply shape:
 `core/ADAPTER-CONTRACT.md` §5.1 — your entire reply is one JSON object,
-`"agent": "ui-fidelity"`, `task_id` as given.
+`"agent": "ui-fidelity"`, `task_id` as given. The key for findings is
+`verdicts` (not `findings`), and each has `claim`, `severity`
+(`high`|`medium`|`low` only) and one `evidence` object (not an array):
+`{"agent":"ui-fidelity","task_id":"<id>","attacked":["<state>: compared",
+"<state>: not compared (no_driver)"],"verdicts":[{"claim":"<one sentence>",
+"severity":"medium","evidence":{"kind":"render",...}}]}`. A reply with any
+other shape is dropped whole by `verdict-filter`.

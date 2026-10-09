@@ -730,6 +730,37 @@ expect_bootstrap "floor: class 2, smoke-run not-applicable (wrong shape) even wi
   fail "M0" "not-applicable" "$SKEL" "unavailable (no code yet — skeleton target)"
 
 # ---------------------------------------------------------------------------
+# floor: no-runtime waiver for the Class 2 smoke hard gate. Waived only when
+# smoke-run is not-applicable for "no runtime", the charter says `Runtime: none`
+# and `test` is implemented. Each case removes exactly one fact and must fall back
+# to the hard gate; the waiver is DEGRADED, never a pass.
+# ---------------------------------------------------------------------------
+# expect_noruntime <label> <waived|fail> <smoke-status> <smoke-reason> <charter-line> <test-status>
+expect_noruntime() {
+  local label="$1" expect="$2" sst="$3" srs="$4" charter="$5" tst="$6" proj out log code st
+  proj="$(new_smoke_hardgate_fixture)"
+  jq --arg s "$sst" --arg r "$srs" --arg t "$tst" '.["smoke-run"] = {status:$s, reason:$r} | .test = {status:$t, reason:"selftest"}' \
+    "$proj/.spine/capabilities.json" >"$proj/.spine/capabilities.json.new" && mv "$proj/.spine/capabilities.json.new" "$proj/.spine/capabilities.json"
+  if [[ "$tst" == "implemented" ]]; then printf '#!/bin/bash\necho ok\n' >"$proj/.spine/adapters/test"; chmod +x "$proj/.spine/adapters/test"; fi
+  mkdir -p "$proj/docs"; printf '# Charter\n\n%s\n' "$charter" >"$proj/docs/charter.md"
+  git -C "$proj" add -A >/dev/null 2>&1
+  out="$tmp_root/noruntime-$RANDOM.json"; log="$tmp_root/logs/noruntime-$RANDOM.log"
+  if ( cd "$proj" && "$FLOOR" 2 --out "$out" >"$log" 2>&1 ); then code=0; else code=$?; fi
+  st="$(result_status "$out" smoke-run)"
+  if [[ "$expect" == "waived" ]]; then
+    if [[ "$code" == "0" && "$st" == "degraded:waived-no-runtime" ]] && grep -q "waived: no runtime" "$log"; then pass "$label"; else fail "$label (exit=$code status=$st)"; fi
+  else
+    if [[ "$code" != "0" && "$st" == "fail" ]]; then pass "$label"; else fail "$label (exit=$code status=$st)"; fi
+  fi
+}
+NR="smoke does not apply: no runtime"
+expect_noruntime "floor: class 2, no-runtime project (all three facts) -> waived as degraded, not pass" waived "not-applicable" "$NR" "Runtime: none" "implemented"
+expect_noruntime "floor: class 2, charter does not declare Runtime: none -> hard gate still fails" fail "not-applicable" "$NR" "Runtime: web service" "implemented"
+expect_noruntime "floor: class 2, reason lacks the 'no runtime' marker -> hard gate still fails" fail "not-applicable" "selftest: just skipping it" "Runtime: none" "implemented"
+expect_noruntime "floor: class 2, test capability not implemented -> hard gate still fails" fail "not-applicable" "$NR" "Runtime: none" "unavailable"
+expect_noruntime "floor: class 2, smoke-run unavailable (wrong shape) even with the charter line -> hard gate still fails" fail "unavailable" "$NR" "Runtime: none" "implemented"
+
+# ---------------------------------------------------------------------------
 # hooks: phase-gate / path-escalate / dep-gate direct repro coverage
 # ---------------------------------------------------------------------------
 # Three separate real bypasses of this layer have each been found only by
