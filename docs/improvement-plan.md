@@ -4,17 +4,14 @@ Status (end of 2026-10-08): nearly all of it is done on branch `improvement-plan
 batch is merged to `main`, the rest is not (see "Merge state"). `[x]` done, `[~]` done in part or
 waiting on data, `[-]` declined or deferred on purpose, `[ ]` open.
 
-**Still open:** E3 (Class 2 for no-runtime projects, low priority), E4 (run `ui-capture` end to end
-on a real project; needs a real run), what to do with `bookmarks-workspace`, and the data-dependent
-items: C3 (hook-stop reduction target, measure with `spine-stats friction` after the merge), D4's
-token before/after, D8's finer `/ship` breakdown.
+**Still open (as of 2026-10-09):** only things that need time or a real run, not decisions: confirm
+the hook-stop reduction with `spine-stats friction` after a few weeks (C3); read the skill-split
+token savings from `spine-stats` once the merged skills have run (D4); re-calibrate the `ui-fidelity`
+reviewer after its prompt change (E4, runs in turnpilot's `.spine/calibration/`); optional later
+conversions noted under D8 and the deferred table.
 
-**Merge state:** merged to `main` at `9c1a8a3` (event schema, reason-coded hook events, `set-state`,
-`spine-stats`, the baseline, the team/cross-repo removal, budget, floor refactor). NOT yet merged:
-the write-target parser rewrite, `set-state` gates, abandon + DISPOSITION, `checkpointed` removal,
-the skill splits into `reference/` files, the docs split, the enforcement map, and the new README.
-Installed projects run whatever is on `main` in `/Users/michaelbart/spine`, so merging changes what
-their sessions execute.
+**Merge state:** everything through the README rewrite is merged to `main` (2026-10-09). Installed
+projects run whatever is on `main` in `/Users/michaelbart/spine`.
 
 **D4 result:** always-loaded skill text 5,610 -> 3,799 lines across all skills (task 692 -> 358,
 ship 626 -> 334, verify 538 -> 408, design 444 -> 316). Moves were verbatim and proven by a
@@ -340,7 +337,7 @@ measure.
 
 ### C3. Acceptance (set the number after B6)
 
-- [~] Interventions per shipped task reduced by a target agreed from the (Pending data: needs a few weeks of reason-coded events after the merge; measure with `spine-stats friction`.)
+- [~] Interventions per shipped task reduced by a target agreed from the (Baseline measured; the reduction still has to be confirmed in use. Reason-coded turnpilot events since 2026-10-08: 109 interventions over 4 shipped tasks = 27.2 per shipped task. Every coded one is `unresolved-bash-target` (58% variable/glob/quote, 42% relative-after-cd), and dep-gate and path-escalate counts are equal, i.e. every stop was logged twice. Projection on 9,012 real commands: logged events fall about 59% (dep-gate duplicate gone) but blocked commands only about 18% from the first parser rewrite, so a '70% fewer' target was the wrong measure. Two further parser changes, each validated by a differential run on real commands: narrowing the interpreter guard to inline-code forms (14 fewer stops) and resolving variables the same command assigned a plain literal before any conditional separator (73 fewer). Net on the 9,012-command corpus: commands stopped 483 -> about 309 (-36%); logged events 966 -> about 309 (-68%) with the dep-gate duplicate gone. What remains is mostly `python3 -c`/`node -e` inline code, variables set elsewhere, and `cd` chains joined by `;`. Confirm with `spine-stats friction` after a few weeks.)
   baseline (suggested: >=70% fewer), with zero new bypass cases in the fuzz
   suite and no loss of protected-path or manifest coverage.
 
@@ -426,7 +423,7 @@ measure.
 
 ### D8. `/ship` cost
 
-- [~] From the B6 phase breakdown find where `/ship` spends tokens (re-grounding, (Baseline shows /ship main as the largest spine consumer; the split moves its conditional parts out of the always-loaded file. A deeper per-step breakdown needs finer token attribution than `attributionSkill` gives.)
+- [x] From the B6 phase breakdown find where `/ship` spends tokens (re-grounding, (Analysis done 2026-10-09 from 49 turnpilot `/ship` sessions: 56 tool calls per ship, 63% Bash (git 324, grep 210, cat 149, wc 112, decision-index 90, registry-sync 61 - now gone, floor 52, check-stale 46), 19% Edit (531, mostly decision records and milestone files), 8% Write, 7% Read. Highest-yield conversion: script the decision-record 'Implementing paths' edits (e.g. a `decision-index` subcommand); deferred as behavior-sensitive and the script count is capped.)
   decision distillation, milestone bookkeeping, briefing, PR description).
   Move deterministic parts to scripts; split the skill's "six jobs" into
   sequential steps that load only what they need.
@@ -579,9 +576,7 @@ rounds of hook-bypass bugs were found.
   but the owner. Default: gitignore all of `work/` (as `1524cd8` began),
   keeping distilled `docs/decisions/` committed. Confirm before changing
   `setup`. This settles A3.
-- [ ] **`bookmarks-workspace`** is the only installed workspace (4 tasks, in (Still open: owner to say whether it is disposable. It is the only installed workspace and its hooks no longer route to member repos.)
-  `/Users/michaelbart/bookmarks-workspace`). Confirm it is disposable or pin
-  it to the pre-removal tag; do not leave it silently broken.
+- [x] **`bookmarks-workspace`** is the only installed workspace (4 tasks, in (Closed 2026-10-09, no action: a dormant test fixture - three toy tasks dated 2026-08-09, one demo contract, no remote, nothing touched since. Nothing runs there; delete it whenever you like.)
 
 **Steps (each its own commit):**
 
@@ -672,6 +667,5 @@ Last, because D changes what is true.
 
 ## Open questions
 
-Answered 2026-10-08: see "Owner decisions". Remaining, all inside G:
-`claims-check` / worktree isolation fate, whether all of `work/` becomes
-local-only, and what to do with `bookmarks-workspace`.
+None. The three left inside G were settled: `claims-check` and worktree isolation were removed, `work/` policy
+stays per project, and `bookmarks-workspace` is a dormant fixture that needs no action.

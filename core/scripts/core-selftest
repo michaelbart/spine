@@ -1028,6 +1028,24 @@ bwt_case 'U'  "builtin cd src && echo x > auth/f"
 bwt_case 'U'  "cd src & echo x > auth/f"
 bwt_case 'U'  $'cd src/auth\necho x > f'
 bwt_case 'U'  "cd src/auth | cat && echo x > f"
+# interpreters: inline code is scanned in full; running a file is not
+bwt_case 'U'  'python3 -c "print(1 > 0)" > out'
+bwt_case 'U'  'node -e "console.log(1>0)"'
+bwt_case 'U'  'env FOO=1 sh -c "echo > src/auth/f"'
+bwt_case 'PATH:src/auth/f' 'sudo cp a src/auth/f'
+bwt_case 'PATH:out.txt' 'python3 script.py "a > b" > out.txt'
+bwt_case 'PATH:build.log' 'time make > build.log'
+bwt_case ''   'bash script.sh "a > b"'
+bwt_case ''   'node script.js --flag "a>b"'
+# variables: resolved only from an unconditional literal assignment in the same command
+bwt_case 'PATH:work/20261001-x/class' 'T=20261001-x; echo ok > work/$T/class'
+bwt_case 'PATH:src/auth/f' 'D=src/auth; echo x > ${D}/f'
+bwt_case 'PATH:work/a/f' 'T=a && echo x > work/$T/f'
+bwt_case 'U'  'false && T=safe; echo x > $T/auth/f'
+bwt_case 'U'  'T=$(date); echo x > work/$T/f'
+bwt_case 'U'  'T=a; read T; echo x > work/$T/f'
+bwt_case 'U'  'echo x > $UNSET/f'
+bwt_case 'U'  'T=src; cd $T && echo x > auth/f'
 # data, not writes: these used to stop real work
 bwt_case ''   'grep -E "a>b" file'
 bwt_case ''   'echo "x => y"'

@@ -100,8 +100,9 @@ the ceremony around those artifacts into pure cost.
   checks skipped across many verifies.
 - **Write-blocking hooks do not see every way to write a file.** They recognise
   `Edit`/`Write` and common Bash shapes and fail closed on a target they cannot place.
-  Text that an interpreter may execute (`bash -c`, `eval`, a script interpreter, `awk`,
-  `xargs`, `sudo`) is scanned in full, quotes and heredocs included. A write buried
+  Text that could be executed (`eval`, `source`, `awk`, `xargs`, `find`, or inline code
+  given to a shell or interpreter such as `bash -c`, `python3 -c`, `node -e`, a heredoc
+  fed to one, or a pipe into a shell) is scanned in full, quotes and heredocs included. A write buried
   inside an interpreter's own call (`python -c "open(...)"`) is still invisible.
 - **Adapters are trusted between recalibrations.** `adapter-conformance` is a
   black-box exit-code and output-shape check: it cannot tell a fake-but-passing self-test

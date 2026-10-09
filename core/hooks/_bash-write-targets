@@ -68,12 +68,18 @@
 #     the command, and every `cd` accounted for). Anything else marks every
 #     later relative target UNRESOLVED. Targets before the first `cd` are
 #     relative to the project, as they run first.
+#   - A `$NAME` / `${NAME}` in a target is replaced only when the same command
+#     earlier assigned NAME a plain literal (`T=20261001-x; ... > work/$T/class`)
+#     and no `&&`, `||` or `|` came before that assignment; an assignment after
+#     one of those, a command substitution, `read`/`for`/`eval`/`unset`... and
+#     anything else leave the variable unknown and the target UNRESOLVED.
 #   - Text inside single quotes, and inside double quotes without `$(` or a
 #     backtick, is data (a `>` in a regex or an arrow in a string is not a
 #     redirect), and the body of a `cat`/`tee` heredoc is data. Neither
-#     applies when the command could execute that text: any shell, eval,
-#     source, script interpreter, awk, xargs, env or sudo word in the command
-#     turns this masking off and the old, stricter scan applies.
+#     applies when the command could execute that text: eval, source, awk,
+#     xargs, find, a shell or interpreter given inline code (-c, -e, -p...), a
+#     heredoc fed to an interpreter, or a pipe into a shell turns this masking
+#     off and the old, stricter scan applies.
 
 _bwt_is_devnull_like() {
   case "$1" in
@@ -107,10 +113,19 @@ _bwt_emit() {
 # The directory later relative targets resolve against within one call:
 # "" = the project root, "?" = unknown, anything else = a literal directory.
 _bwt_cwd=""
+# Literal variables assigned earlier in the same command, one NAME=value per line.
+_bwt_vars=""
 
 _bwt_target() {
   # _bwt_target <what> <path> — report one write target, resolved against _bwt_cwd.
-  local what="$1" t="$2"
+  local what="$1" t="$2" kv n v
+  if [[ "$t" == *'$'* && -n "$_bwt_vars" ]]; then
+    while IFS= read -r kv; do
+      [[ -n "$kv" ]] || continue
+      n="${kv%%=*}"; v="${kv#*=}"
+      t="${t//\$\{$n\}/$v}"; t="${t//\$$n/$v}"
+    done <<<"$_bwt_vars"
+  fi
   if [[ "$t" != /* ]]; then
     if [[ "$_bwt_cwd" == "?" ]]; then
       echo "UNRESOLVED:relative $what '$t' after a 'cd' earlier in the same command — working directory can't be confidently determined"
@@ -169,6 +184,21 @@ _bwt_strip_heredocs() {
   }' <<<"$1"
 }
 
+_bwt_runs_quoted_text() {
+  # True when the command could run quoted or heredoc text as code. eval, source,
+  # awk, xargs, find, watch and parallel always treat a string argument as code or
+  # commands. A shell or language interpreter does so only in an inline form: a
+  # flag that carries the program (-c, -e, -p...) right after it, a heredoc, or a
+  # pipe into a shell. `python3 script.py "a > b"` runs a file; its quoted
+  # arguments are data.
+  local c="$1" w='(^|[;&|[:space:](`])'
+  local interps='((ba|z|da|k|c)?sh|python[0-9.]*|node|nodejs|deno|bun|perl|ruby|php|lua|osascript)'
+  grep -qE "${w}(eval|source|awk|gawk|xargs|find|watch|parallel)([[:space:]]|\$)|(^|[[:space:]])\.[[:space:]]" <<<"$c" && return 0
+  grep -qE "${w}${interps}([[:space:]]+-[^[:space:]]+)*[[:space:]]+-[A-Za-z]*[ceEpr][A-Za-z]*([[:space:]]|\$)" <<<"$c" && return 0
+  grep -qE "${w}${interps}([[:space:]]|\$)" <<<"$c" || return 1
+  grep -qE '<<|\|[[:space:]]*(ba|z|da|k|c)?sh([[:space:]]|$)' <<<"$c"
+}
+
 bash_write_targets() {
   local command="$1"
   [[ -n "$command" ]] || return 0
@@ -187,15 +217,13 @@ bash_write_targets() {
 
   # Could this command execute text that sits inside quotes or a heredoc?
   local interp=0
-  if grep -qE '(^|[;&|[:space:](`])((ba|z|da|k|c)?sh|eval|source|exec|python[0-9.]*|node|nodejs|deno|bun|perl|ruby|php|lua|osascript|awk|gawk|xargs|env|sudo|doas|nohup|time|command|builtin|find|watch|parallel)([[:space:]]|$)|(^|[[:space:]])\.[[:space:]]' <<<"$command"; then
-    interp=1
-  fi
+  if _bwt_runs_quoted_text "$command"; then interp=1; fi
   [[ "$interp" -eq 1 ]] || command="$(_bwt_strip_heredocs "$command")"
 
   # Working directory. Only the exact `cd <literal> && ...` chain is tracked
   # (see the header); every other `cd`, pushd, popd, group, substitution or
   # background job leaves later relative targets unknown.
-  _bwt_cwd=""
+  _bwt_cwd=""; _bwt_vars=""
   local cd_words
   cd_words="$(grep -oE '(^|[;&|[:space:](`{])(cd|pushd|popd)([[:space:]]|$)' <<<"$command" | wc -l | tr -d ' ')"
   if [[ "$cd_words" -gt 0 ]] && { [[ "$interp" -eq 1 ]] || grep -qE '[(){}`]|(^|[^&>])&($|[^&>0-9])' <<<"$command"; }; then
@@ -213,12 +241,13 @@ bash_write_targets() {
   while IFS= read -r item || [[ -n "$item" ]]; do items+=("$item"); done <<<"$normalized"
 
   local seg seg_m sep="start" sep_before next_sep idx=0 n=${#items[@]} w
-  local cd_arg cd_seen=0
+  local cd_arg cd_seen=0 uncond=1 an av
   for ((idx = 0; idx < n; idx++)); do
     seg="${items[idx]}"
     case "$seg" in '&&'|'||'|';'|'|') sep="$seg"; continue ;; esac
     [[ -n "${seg// /}" ]] || continue
-    sep_before="$sep"; sep=";"   # two segments with no marker between them were split by a newline
+    sep_before="$sep"; sep=";"
+    case "$sep_before" in '&&'|'||'|'|') uncond=0 ;; esac   # two segments with no marker between them were split by a newline
     next_sep=";"
     if [[ $((idx + 1)) -lt $n ]]; then
       case "${items[idx + 1]}" in '&&'|'||'|';'|'|') next_sep="${items[idx + 1]}" ;; esac
@@ -234,6 +263,20 @@ bash_write_targets() {
     local _bwt_cmd1 _bwt_cmd2
     _bwt_cmd1="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//' | awk '{print $1}')"
     _bwt_cmd2="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//' | awk '{print $2}')"
+
+    # --- variables: a lone literal assignment before any conditional separator ---
+    if [[ "$seg" =~ ^[[:space:]]*(export[[:space:]]+)?([A-Za-z_][A-Za-z0-9_]*)=([^[:space:]]*)[[:space:]]*$ ]]; then
+      an="${BASH_REMATCH[2]}"; av="${BASH_REMATCH[3]}"
+      _bwt_vars="$(grep -v "^$an=" <<<"$_bwt_vars" || true)"
+      if [[ "$uncond" -eq 1 && -n "$av" ]] && _bwt_is_confidently_resolvable "$av" && [[ "$av" != *'{'* && "$av" != *'}'* ]]; then
+        _bwt_vars="${_bwt_vars:+$_bwt_vars
+}$an=$av"
+      fi
+      continue
+    fi
+    if [[ -n "$_bwt_vars" ]] && grep -qE '(^|[;&|[:space:](`])(read|for|unset|eval|declare|local|typeset|mapfile|readarray)([[:space:]]|$)|printf[[:space:]]+-v|\(\(' <<<"$seg"; then
+      _bwt_vars=""
+    fi
 
     # --- cd: tracked only in the exact case described in the header ---
     if [[ "$cd_words" -gt 0 && "$_bwt_cwd" != "?" ]]; then
@@ -296,36 +339,13 @@ bash_write_targets() {
       done
     fi
 
-    # --- ln: destination is the arg after -t, else the last non-flag
-    # token — same shape as cp/mv/install below, kept separate only so a
-    # symlink creation (`ln -s TARGET LINKNAME`) is unambiguously reported
-    # as its own write target. `ln -s` is the mechanism a stacked bypass of
-    # phase-gate/path-escalate/dep-gate's containment/glob checks used in
-    # direct repro: plant a symlink whose *name* looks unremarkable, then
-    # a later Edit/Write to that name resolves through it. Catching the
-    # `ln` call itself here is the first of two layers closing that gap —
-    # the second is _path-route's _pr_realpath, which also resolves
-    # an already-existing symlink regardless of how it got there. ---
-    if grep -qE '\bln\b' <<<"$seg_m"; then
-      local -a ln_nonflag=()
-      local ln_dest="" ln_take_next=0
-      for w in $seg; do
-        if [[ "$ln_take_next" -eq 1 ]]; then
-          ln_dest="$w"; ln_take_next=0; continue
-        fi
-        if [[ "$w" == "-t" ]]; then ln_take_next=1; continue; fi
-        [[ "$w" == -* ]] && continue
-        ln_nonflag+=("$w")
-      done
-      if [[ -z "$ln_dest" && "${#ln_nonflag[@]}" -gt 1 ]]; then
-        ln_dest="${ln_nonflag[${#ln_nonflag[@]}-1]}"
-      fi
-      [[ -z "$ln_dest" ]] || _bwt_target "ln destination" "$ln_dest"
-    fi
-
-    # --- cp/mv/install: destination is the arg after -t, else the last
-    # non-flag token ---
-    if grep -qE '\b(cp|mv|install)\b' <<<"$seg_m"; then
+    # --- ln/cp/mv/install: destination is the arg after -t, else the last
+    # non-flag token. `ln -s TARGET LINKNAME` counts: planting a symlink with an
+    # unremarkable name that a later Edit/Write resolves through is a bypass of
+    # the containment and glob checks. Catching the `ln` here is the first of two
+    # layers; the second is _path-route's _pr_realpath, which resolves an
+    # already-existing symlink however it got there. ---
+    if grep -qE '\b(ln|cp|mv|install)\b' <<<"$seg_m"; then
       local -a nonflag=()
       local dest="" take_next=0
       for w in $seg; do
@@ -339,7 +359,7 @@ bash_write_targets() {
       if [[ -z "$dest" && "${#nonflag[@]}" -gt 1 ]]; then
         dest="${nonflag[${#nonflag[@]}-1]}"
       fi
-      [[ -z "$dest" ]] || _bwt_target "cp/mv/install destination" "$dest"
+      [[ -z "$dest" ]] || _bwt_target "ln/cp/mv/install destination" "$dest"
     fi
 
     # --- truncate: all non-flag tokens, skipping -s/--size's argument ---
